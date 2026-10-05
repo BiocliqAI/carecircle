@@ -474,25 +474,42 @@ Evening (9:00 PM):
   };
 }
 
-/** Transcribes a WhatsApp voice note with Gemini. Returns null when Gemini isn't configured or fails. */
-export async function transcribeAudio(base64: string, mimeType: string): Promise<string | null> {
+/**
+ * Transcribes a WhatsApp voice note with Gemini, primed for health updates (Indian English and Indian
+ * languages, translated to English). `meds` are the patient's medicine names; `hint` is the browser's
+ * rough live transcript, which may contain mistakes. Returns null when Gemini isn't configured or fails.
+ */
+export let lastTranscribeError: string | null = null;
+export async function transcribeAudio(base64: string, mimeType: string, ctx: { meds?: string[]; hint?: string | null } = {}): Promise<string | null> {
+  lastTranscribeError = null;
   const apiKey = getGeminiApiKey();
-  if (!apiKey) return null;
+  if (!apiKey) { lastTranscribeError = "Gemini is not configured"; return null; }
   try {
     const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey });
+    const system = [
+      "You transcribe short WhatsApp voice notes from patients and their family members in India sending health updates to their clinic.",
+      "The speaker may use Indian English, Hindi, Tamil, Telugu, Kannada, Malayalam or a mix. Output an English transcript only; translate if needed.",
+      "Expect health vocabulary: dizzy, dizziness, fainted, fainting, giddy, breathless, breathlessness, chest pain, palpitations, swelling, swollen ankles, headache, vomiting, nausea, loose motions, fever, cough, tired, weak, pain, cramps, sugar, BP, pressure, pulse, weight, oxygen, SpO2, tablets, medicines, insulin, urine, water.",
+      "Prefer the medically plausible word when the audio is ambiguous (e.g. 'dizzy' not 'busy', 'fainting' not 'painting', 'giddy' not 'giddy-up').",
+      "Write numbers as digits. Blood pressure as systolic/diastolic (e.g. 'BP 150/95' for 'one fifty by ninety five'). Sugar as a number (e.g. 'sugar 180'). Weight with kg.",
+      ctx.meds?.length ? `This patient's medicines: ${ctx.meds.join(", ")}. Spell them this way if mentioned.` : "",
+      "Output only the transcript, no quotes, labels or commentary. If there is no speech, output nothing.",
+    ].filter(Boolean).join("\n");
     const resp = (await ai.interactions.create({
       model: getGeminiModel(),
       store: false,
-      system_instruction:
-        "Transcribe this patient's or caregiver's WhatsApp voice note verbatim (any Indian language; translate to English). Output only the transcript text, with numbers as digits (e.g. 'BP 142/90').",
+      system_instruction: system,
       input: [
-        { type: "text", text: "Transcribe this voice note." },
-        { type: "audio", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: mimeType || "audio/webm" },
+        { type: "text", text: ctx.hint ? `Transcribe this voice note. A rough automatic transcript (may contain errors) was: "${ctx.hint.slice(0, 300)}"` : "Transcribe this voice note." },
+        { type: "audio", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: (mimeType || "audio/webm").split(";")[0] },
       ],
     } as never)) as { output_text?: string | null };
-    return resp.output_text?.trim() || null;
-  } catch {
+    const text = resp.output_text?.trim().replace(/^["“]|["”]$/g, "") || null;
+    return text;
+  } catch (e) {
+    lastTranscribeError = (e as Error).message?.slice(0, 300) ?? "unknown error";
+    console.error("[gemini] voice transcription failed:", lastTranscribeError);
     return null;
   }
 }

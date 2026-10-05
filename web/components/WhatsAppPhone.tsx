@@ -113,7 +113,8 @@ export function Phone({
   bump: number;
   onClose?: () => void;
 }) {
-  const { mode, clinic } = useSession();
+  const { mode, clinic, clock } = useSession();
+  const aiVoice = !!clock?.ai;
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -499,11 +500,12 @@ export function Phone({
               ) : (
                 <div className="stack" style={{ gap: 6 }}>
                   {rec.url ? <audio src={rec.url} controls style={{ width: "100%", height: 32 }} /> : <small style={{ color: "#54656f" }}>{rec.noMic ? "No microphone here, so type what the voice note says." : ""}</small>}
-                  {rec.live && <small style={{ color: "#54656f" }}>Transcribed while you spoke. Fix anything that’s wrong, then send.</small>}
-                  <input value={rec.transcript} onChange={(e) => setRec({ ...rec, transcript: e.target.value })} placeholder={rec.noMic ? "What was said, e.g. “BP 150 by 95, feeling dizzy”" : "What was said (it is logged and acted on when you send)"} />
+                  {rec.live && <small style={{ color: "#54656f" }}>{aiVoice && !rec.noMic ? "Live preview. When you send, the clinic’s AI transcribes the recording itself, so small mistakes here don’t matter." : "Transcribed while you spoke. Fix anything that’s wrong, then send."}</small>}
+                  {!rec.live && aiVoice && !rec.noMic && <small style={{ color: "#54656f" }}>The clinic’s AI will transcribe the recording when you send. Typing is optional.</small>}
+                  <input value={rec.transcript} onChange={(e) => setRec({ ...rec, transcript: e.target.value })} placeholder={rec.noMic ? "What was said, e.g. “BP 150 by 95, feeling dizzy”" : aiVoice ? "Optional" : "What was said (it is logged and acted on when you send)"} />
                   <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
                     <button type="button" className="btn sm" onClick={cancelVoice}>Discard</button>
-                    <button type="button" className="btn sm primary" disabled={sending || (rec.noMic && !rec.transcript.trim())} onClick={sendVoice}>{sending ? <span className="spin" /> : "➤"} Send voice note</button>
+                    <button type="button" className="btn sm primary" disabled={sending || (rec.noMic && !rec.transcript.trim())} onClick={sendVoice}>{sending ? <><span className="spin" /> {aiVoice && !rec.noMic ? "Transcribing…" : "Sending…"}</> : "➤ Send voice note"}</button>
                   </div>
                 </div>
               )}

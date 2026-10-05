@@ -1,7 +1,8 @@
 import { now } from "@/lib/clock";
 import { get, run } from "@/lib/db";
-import { getUser, ingestMessage, runScheduler } from "@/lib/engine";
-import { transcribeAudio } from "@/lib/gemini";
+import { getUser, ingestMessage, latestVisit, runScheduler } from "@/lib/engine";
+import { lastTranscribeError, transcribeAudio } from "@/lib/gemini";
+import { fixHealthWords } from "@/lib/speechfix";
 import { addDocument } from "@/lib/records";
 import { err, json, ready } from "@/lib/server";
 import { sendWhatsApp } from "@/lib/whatsapp";
@@ -27,11 +28,17 @@ export async function POST(req: Request) {
   try {
     if (b.kind === "voice") {
       const dur = Math.max(1, Math.round(Number(b.durationSec) || 1));
-      let transcript = b.transcript?.trim() || null;
-      let via: string | null = transcript ? (b.transcriptSource === "browser" ? "live speech recognition" : "typed") : null;
-      if (!transcript) {
-        transcript = await transcribeAudio(b.base64, b.mime || "audio/webm");
-        if (transcript) via = "gemini";
+      // Gemini (when configured) transcribes the audio with medical context and replaces the browser's
+      // rough live text. Without Gemini, the browser text gets a health-word correction pass.
+      const typed = b.transcript?.trim() || null;
+      const meds = latestVisit(pid, t)?.plan.medications.map((m) => m.name) ?? [];
+      let transcript: string | null = null;
+      let via: string | null = null;
+      const fromAi = b.transcriptSource === "typed" && typed ? null : await transcribeAudio(b.base64, b.mime || "audio/webm", { meds, hint: typed });
+      if (fromAi) { transcript = fromAi; via = "Gemini"; }
+      else if (typed) {
+        transcript = b.transcriptSource === "browser" ? fixHealthWords(typed) : typed;
+        via = b.transcriptSource === "browser" ? "live speech recognition" : "typed";
       }
       const docId = addDocument(pid, { title: `Voice note ${fmtDur(dur)} from ${user.name}`, category: "voice", mime: b.mime || "audio/webm", base64: b.base64, notes: transcript ? `Transcript (${via}): ${transcript}` : undefined, source: "whatsapp" }, t, user.id);
       if (transcript) {
@@ -41,7 +48,7 @@ export async function POST(req: Request) {
         sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: "🎧 Got your voice note. It's saved for your care team to listen to.\nTo log readings automatically, you can also type them, e.g. “BP 140/90”." });
       }
       runScheduler();
-      return json({ ok: true, document: docId, transcript, via });
+      return json({ ok: true, document: docId, transcript, via, ...(via === "Gemini" ? {} : { aiError: lastTranscribeError }) });
     }
     const name = (b.filename || "Document").slice(0, 100);
     const msgId = run("INSERT INTO messages(patient_id, user_id, direction, body, created_at, kind) VALUES(?,?,?,?,?,?)", pid, user.id, "IN", `📎 ${name}`, t, "document").lastInsertRowid;
