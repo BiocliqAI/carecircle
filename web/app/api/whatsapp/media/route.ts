@@ -15,7 +15,7 @@ const fmtDur = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)
 // (typed for the demo, or transcribed by Gemini) are logged like a text message, so readings are parsed.
 export async function POST(req: Request) {
   await ready();
-  const b = (await req.json()) as { userId?: string; kind?: "document" | "voice"; base64?: string; mime?: string; filename?: string; durationSec?: number; transcript?: string };
+  const b = (await req.json()) as { userId?: string; kind?: "document" | "voice"; base64?: string; mime?: string; filename?: string; durationSec?: number; transcript?: string; transcriptSource?: "browser" | "typed" };
   const user = b.userId ? getUser(b.userId) : undefined;
   if (!user || (user.role !== "PATIENT" && user.role !== "CAREGIVER")) return err("Unknown WhatsApp user", 404);
   if (!b.base64) return err("Nothing to send");
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     if (b.kind === "voice") {
       const dur = Math.max(1, Math.round(Number(b.durationSec) || 1));
       let transcript = b.transcript?.trim() || null;
-      let via = transcript ? "typed" : null;
+      let via: string | null = transcript ? (b.transcriptSource === "browser" ? "live speech recognition" : "typed") : null;
       if (!transcript) {
         transcript = await transcribeAudio(b.base64, b.mime || "audio/webm");
         if (transcript) via = "gemini";

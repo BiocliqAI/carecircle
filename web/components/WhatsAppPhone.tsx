@@ -120,10 +120,13 @@ export function Phone({
   const [error, setError] = useState<string | null>(null);
   const [showDocPicker, setShowDocPicker] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
-  const [rec, setRec] = useState<null | { state: "recording" | "review"; started: number; secs: number; blob?: Blob; url?: string; transcript: string; noMic?: boolean }>(null);
+  const [rec, setRec] = useState<null | { state: "recording" | "review"; started: number; secs: number; blob?: Blob; url?: string; transcript: string; noMic?: boolean; live?: boolean }>(null);
   const [sos, setSos] = useState<null | "confirm" | "calling" | "sent">(null);
   const [sosTarget, setSosTarget] = useState<string | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
+  const speechRef = useRef<SpeechRec | null>(null);
+  const [live, setLive] = useState<{ final: string; interim: string; on: boolean } | null>(null);
+  const [speechLang, setSpeechLang] = useState("en-IN");
   const chunks = useRef<Blob[]>([]);
   const isPatient = (contact?.role ?? role) === "PATIENT";
 
@@ -148,15 +151,57 @@ export function Phone({
       mediaRef.current = mr;
       mr.start();
       setRec({ state: "recording", started: Date.now(), secs: 0, transcript: "" });
+      startSpeech();
     } catch {
       // No microphone (or permission denied): let the presenter type what the voice note says.
       setRec({ state: "review", started: Date.now(), secs: 5, transcript: "", noMic: true });
     }
   }
+  /** Live transcription with the browser's speech recognition (Chrome / Edge). Words appear as you speak. */
+  function startSpeech() {
+    const Ctor = speechCtor();
+    if (!Ctor) { setLive(null); return; }
+    const r = new Ctor();
+    r.lang = speechLang;
+    r.continuous = true;
+    r.interimResults = true;
+    let final = "";
+    r.onresult = (e) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) final = `${final} ${res[0].transcript}`.trim();
+        else interim += res[0].transcript;
+      }
+      setLive({ final, interim, on: true });
+    };
+    r.onerror = () => setLive((l) => (l ? { ...l, on: false } : null));
+    r.onend = () => setLive((l) => (l ? { ...l, on: false, interim: "" } : null));
+    try {
+      r.start();
+      speechRef.current = r;
+      setLive({ final: "", interim: "", on: true });
+    } catch {
+      setLive(null);
+    }
+  }
+  function stopSpeech(): string {
+    const r = speechRef.current;
+    speechRef.current = null;
+    if (r) { r.onresult = null; try { r.stop(); } catch { /* already stopped */ } }
+    let text = "";
+    setLive((l) => { text = l ? `${l.final} ${l.interim}`.trim() : ""; return null; });
+    return text;
+  }
   function stopVoice() {
+    // Take the transcript so far (final + interim words) into the editable field.
+    const words = live ? `${live.final} ${live.interim}`.trim() : "";
+    stopSpeech();
+    setRec((r) => (r ? { ...r, transcript: words || r.transcript, live: !!words } : r));
     mediaRef.current?.state === "recording" ? mediaRef.current.stop() : undefined;
   }
   function cancelVoice() {
+    stopSpeech();
     if (mediaRef.current?.state === "recording") {
       mediaRef.current.onstop = null;
       mediaRef.current.stop();
@@ -172,7 +217,7 @@ export function Phone({
     try {
       const blob = rec.blob ?? silentWav(rec.secs);
       const base64 = await blobToDataUrl(blob);
-      await api("/api/whatsapp/media", { body: { userId, kind: "voice", base64, mime: blob.type || "audio/webm", durationSec: Math.max(1, rec.secs), transcript: rec.transcript.trim() || undefined } });
+      await api("/api/whatsapp/media", { body: { userId, kind: "voice", base64, mime: blob.type || "audio/webm", durationSec: Math.max(1, rec.secs), transcript: rec.transcript.trim() || undefined, transcriptSource: rec.live ? "browser" : "typed" } });
       cancelVoice();
       await load();
       onSent();
@@ -437,17 +482,25 @@ export function Phone({
           {rec && (
             <div className="wa-voice">
               {rec.state === "recording" ? (
-                <div className="row between">
-                  <span className="rec-dot" /> <b>Recording… {fmtSecs(rec.secs)}</b>
-                  <div className="row" style={{ gap: 6, marginLeft: "auto" }}>
-                    <button type="button" className="btn sm" onClick={cancelVoice}>Cancel</button>
-                    <button type="button" className="btn sm primary" onClick={stopVoice}>■ Stop</button>
+                <div className="stack" style={{ gap: 8 }}>
+                  <div className="row between">
+                    <span className="rec-dot" /> <b>Recording… {fmtSecs(rec.secs)}</b>
+                    <div className="row" style={{ gap: 6, marginLeft: "auto" }}>
+                      <button type="button" className="btn sm" onClick={cancelVoice}>Cancel</button>
+                      <button type="button" className="btn sm primary" onClick={stopVoice}>■ Stop</button>
+                    </div>
                   </div>
+                  {live ? (
+                    <div className="wa-live" aria-live="polite">
+                      {live.final || live.interim ? <>{live.final} <span style={{ color: "#8696a0" }}>{live.interim}</span></> : <span style={{ color: "#8696a0" }}>{live.on ? "Listening… start speaking" : "Transcription paused"}</span>}
+                    </div>
+                  ) : speechCtor() ? null : <small style={{ color: "#54656f" }}>Live transcription needs Chrome or Edge. You can type what was said after stopping.</small>}
                 </div>
               ) : (
                 <div className="stack" style={{ gap: 6 }}>
                   {rec.url ? <audio src={rec.url} controls style={{ width: "100%", height: 32 }} /> : <small style={{ color: "#54656f" }}>{rec.noMic ? "No microphone here, so type what the voice note says." : ""}</small>}
-                  <input value={rec.transcript} onChange={(e) => setRec({ ...rec, transcript: e.target.value })} placeholder={rec.noMic ? "What was said, e.g. “BP 150 by 95, feeling dizzy”" : "Optional: what was said (for demo transcription)"} />
+                  {rec.live && <small style={{ color: "#54656f" }}>Transcribed while you spoke. Fix anything that’s wrong, then send.</small>}
+                  <input value={rec.transcript} onChange={(e) => setRec({ ...rec, transcript: e.target.value })} placeholder={rec.noMic ? "What was said, e.g. “BP 150 by 95, feeling dizzy”" : "What was said (it is logged and acted on when you send)"} />
                   <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
                     <button type="button" className="btn sm" onClick={cancelVoice}>Discard</button>
                     <button type="button" className="btn sm primary" disabled={sending || (rec.noMic && !rec.transcript.trim())} onClick={sendVoice}>{sending ? <span className="spin" /> : "➤"} Send voice note</button>
@@ -470,7 +523,14 @@ export function Phone({
             {text.trim() ? (
               <button type="submit" disabled={sending || ocrBusy}>{sending ? <span className="spin" /> : "➤"}</button>
             ) : (
-              <button type="button" disabled={sending || ocrBusy || !!rec} onClick={startVoice} title="Record a voice note">🎤</button>
+              <>
+                {speechCtor() && !rec && (
+                  <select aria-label="Voice note language" value={speechLang} onChange={(e) => setSpeechLang(e.target.value)} className="wa-lang" title="Language for live transcription">
+                    <option value="en-IN">EN</option><option value="hi-IN">HI</option><option value="ta-IN">TA</option><option value="te-IN">TE</option><option value="kn-IN">KN</option><option value="ml-IN">ML</option>
+                  </select>
+                )}
+                <button type="button" disabled={sending || ocrBusy || !!rec} onClick={startVoice} title="Record a voice note">🎤</button>
+              </>
             )}
           </form>
 
@@ -545,4 +605,23 @@ function silentWav(seconds: number): Blob {
   v.setUint32(28, rate, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, n, true);
   for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
   return new Blob([buf], { type: "audio/wav" });
+}
+
+// ---------------------------------------------------------------- browser speech recognition (Chrome / Edge)
+interface SpeechRecResult { isFinal: boolean; 0: { transcript: string } }
+interface SpeechRecEvent { resultIndex: number; results: { length: number; [i: number]: SpeechRecResult } }
+interface SpeechRec {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((e: SpeechRecEvent) => void) | null;
+  onerror: ((e: unknown) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+function speechCtor(): (new () => SpeechRec) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
