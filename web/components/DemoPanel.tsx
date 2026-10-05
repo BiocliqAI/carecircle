@@ -51,30 +51,15 @@ export function DemoPanel({ open, onClose, onHide }: { open: boolean; onClose: (
         </div>
 
         <section>
-          <h4>View as</h4>
-          {personas.length === 0 && <small className="muted">No one yet. Set up the clinic first.</small>}
-          {groups.map(([label, roles]) => {
-            const ps = personas.filter((p) => roles.includes(p.role));
-            if (!ps.length) return null;
-            return (
-              <div key={label} className="drawer-group">
-                <small className="muted">{label}</small>
-                {ps.map((p) => (
-                  <button key={p.id} className={`drawer-persona ${user?.id === p.id ? "on" : ""}`} onClick={() => viewAs(p.id)}>
-                    <span className="avatar" style={{ background: avatarColor(p.name), width: 26, height: 26, fontSize: 10 }}>{initials(p.name)}</span>
-                    <span><b>{p.name}</b><small>{p.role === "CAREGIVER" || p.role === "PATIENT" ? p.title : ROLE_LABEL[p.role]}</small></span>
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-          {user && <button className="btn sm" style={{ marginTop: 6 }} onClick={() => viewAs(null)}>Sign out</button>}
+          <h4>Personas</h4>
+          <button className="btn" onClick={() => viewAs(null)}>⇄ Back to the persona picker</button>
+          {user && <small className="muted" style={{ display: "block", marginTop: 6 }}>Signed in as {user.name} ({ROLE_LABEL[user.role]}).</small>}
         </section>
 
         <section>
           <h4>WhatsApp</h4>
-          <Link className="btn" href="/whatsapp" onClick={onClose}>💬 Open WhatsApp simulator</Link>
-          <small className="muted" style={{ display: "block", marginTop: 6 }}>Patients and caregivers reply here as if on their own phones.</small>
+          <Link className="btn" href="/whatsapp" onClick={onClose}>📱 All phones side by side</Link>
+          <small className="muted" style={{ display: "block", marginTop: 6 }}>Presenter view: the patient and both caregivers at once. Each patient and caregiver also has their own phone on their page.</small>
         </section>
 
         <section>

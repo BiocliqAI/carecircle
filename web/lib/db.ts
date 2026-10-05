@@ -84,6 +84,17 @@ CREATE TABLE IF NOT EXISTS patient_baseline (
   patient_id TEXT PRIMARY KEY REFERENCES patients(id), data TEXT NOT NULL, captured_at INTEGER NOT NULL, captured_by TEXT,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS patient_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL REFERENCES patients(id), author_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'clinical', body TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS notes_patient ON patient_notes(patient_id, created_at);
+CREATE TABLE IF NOT EXISTS patient_documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL REFERENCES patients(id), title TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'other', mime TEXT NOT NULL, size INTEGER NOT NULL, data BLOB NOT NULL, notes TEXT,
+  source TEXT NOT NULL DEFAULT 'clinic', uploaded_by TEXT, uploaded_at INTEGER NOT NULL, message_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS docs_patient ON patient_documents(patient_id, uploaded_at);
 CREATE TABLE IF NOT EXISTS onboarding_drafts (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, step INTEGER NOT NULL, data TEXT NOT NULL,
   created_by TEXT, created_at INTEGER NOT NULL, updated_by TEXT, updated_at INTEGER NOT NULL
@@ -142,6 +153,7 @@ export function resetDb(): void {
   const db = getDb();
   db.exec(`
     DROP TABLE IF EXISTS patient_baseline; DROP TABLE IF EXISTS consents; DROP TABLE IF EXISTS onboarding_drafts;
+    DROP TABLE IF EXISTS patient_notes; DROP TABLE IF EXISTS patient_documents;
     DROP TABLE IF EXISTS escalation_events; DROP TABLE IF EXISTS escalations; DROP TABLE IF EXISTS observations;
     DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS visits;
     DROP TABLE IF EXISTS caregivers; DROP TABLE IF EXISTS patients; DROP TABLE IF EXISTS convo_state;

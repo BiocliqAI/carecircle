@@ -16,7 +16,7 @@ export async function api<T = unknown>(path: string, opts?: { method?: string; b
 export interface SessionUser {
   id: string;
   name: string;
-  role: "DOCTOR" | "PA" | "PATIENT" | "CAREGIVER";
+  role: "ADMIN" | "DOCTOR" | "PA" | "PATIENT" | "CAREGIVER";
   title: string;
   phone: string;
 }
@@ -96,10 +96,11 @@ export function useSession(): SessionCtx {
   return c;
 }
 
-export function homeFor(user: SessionUser | null, patientIds: string[]): string {
+export function homeFor(user: SessionUser | null, _patientIds: string[] = []): string {
   if (!user) return "/";
+  if (user.role === "ADMIN") return "/admin";
   if (user.role === "DOCTOR" || user.role === "PA") return "/doctor";
-  return patientIds.length === 1 ? `/patients/${patientIds[0]}` : "/home";
+  return "/me";
 }
 
 const COLORS = ["#0f766e", "#7c3aed", "#db2777", "#ea580c", "#2563eb", "#059669", "#9333ea", "#0891b2", "#c2410c"];
@@ -109,4 +110,4 @@ export function avatarColor(s: string): string {
   return COLORS[h % COLORS.length];
 }
 export const initials = (n: string) => n.replace(/^Dr\.?\s+/, "").split(" ").map((x) => x[0]).slice(0, 2).join("").toUpperCase();
-export const ROLE_LABEL: Record<string, string> = { DOCTOR: "Doctor", PA: "Physician Assistant", PATIENT: "Patient", CAREGIVER: "Caregiver" };
+export const ROLE_LABEL: Record<string, string> = { ADMIN: "Clinic admin", DOCTOR: "Doctor", PA: "Physician Assistant", PATIENT: "Patient", CAREGIVER: "Caregiver" };

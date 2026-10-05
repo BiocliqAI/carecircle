@@ -1,151 +1,115 @@
 "use client";
-// Home page in live-clinic mode: first-run clinic setup, then the onboarding checklist and sign-in.
+// Live clinic landing: the persona picker. Everyone enters here and lands on their own page.
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { api, avatarColor, homeFor, initials, ROLE_LABEL, useSession } from "./client";
+import { avatarColor, homeFor, initials, useSession, type SessionUser } from "./client";
 
-interface Checklist {
-  clinic: boolean;
-  doctors: number;
-  pas: number;
-  patients: number;
-  caregivers: number;
-  baselines: number;
-  withVisit: number;
-  consentsGiven: number;
-  consentsPending: number;
-  inbound: number;
-  escalations: number;
-}
+type PersonaKey = "ADMIN" | "DOCTOR" | "PA" | "PATIENT" | "CAREGIVER";
+
+const PERSONAS: { key: PersonaKey; n: string; title: string; tag: string; can: string[]; empty: string }[] = [
+  { key: "ADMIN", n: "01", title: "Clinic admin", tag: "Sets up the clinic and its people", can: ["Create the clinic", "Add doctors", "Add assistants", "Edit them any time"], empty: "" },
+  { key: "DOCTOR", n: "02", title: "Doctor", tag: "Sees the whole story between visits", can: ["All patients at a glance", "Deep-dive patient dashboard", "Clinical notes & visits", "Onboard & edit patients", "Manage assistants"], empty: "The admin adds doctors" },
+  { key: "PA", n: "03", title: "Physician assistant", tag: "Runs onboarding and records", can: ["Onboard patients", "Edit details & care circles", "Documents & notes", "Every patient's dashboard"], empty: "The admin adds assistants" },
+  { key: "PATIENT", n: "04", title: "Patient", tag: "Just uses WhatsApp", can: ["Text readings in any words", "Tap reply buttons", "Send reports & voice notes", "🆘 Call for help", "See my dashboard"], empty: "Onboard a patient first" },
+  { key: "CAREGIVER", n: "05", title: "Caregiver", tag: "Family who act on alerts", can: ["Get alerts on WhatsApp", "ACK and record the outcome", "Log readings for them", "See their dashboard"], empty: "Added when a patient is onboarded" },
+];
 
 export function LiveHome() {
-  const { clinic } = useSession();
-  return clinic ? <ClinicHome /> : <Setup />;
-}
-
-function Setup() {
-  const { refresh, notifyChange } = useSession();
+  const { user, patientIds } = useSession();
   const router = useRouter();
-  const [c, setC] = useState({ name: "", address: "", phone: "+91 " });
-  const [dr, setDr] = useState({ name: "", title: "", phone: "+91 ", email: "", regNo: "" });
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setErr(null);
-    try {
-      await api("/api/clinic", { body: { action: "setup", clinic: c, doctor: dr } });
-      await refresh();
-      notifyChange();
-      router.push("/doctor");
-    } catch (x) {
-      setErr((x as Error).message);
-      setBusy(false);
-    }
-  }
-
-  return (
-    <main className="page" style={{ maxWidth: 860 }}>
-      <section className="hero">
-        <small className="eyebrow">Live clinic · first-time setup</small>
-        <h1 style={{ fontSize: 28, margin: "6px 0 8px" }}>Set up your clinic on CareCircle</h1>
-        <p>Takes about a minute. Next you’ll add the care team, onboard a patient and their family care circle, capture the baseline and record Visit 1. From then on, the patient’s WhatsApp drives everything.</p>
-      </section>
-      <form className="stack gap16" onSubmit={submit}>
-        <div className="card">
-          <div className="card-head"><h3>1 · Clinic</h3></div>
-          <div className="grid g3">
-            <label className="f">Clinic name *<input required autoFocus value={c.name} placeholder="e.g. Sunrise Heart & Kidney Clinic" onChange={(e) => setC({ ...c, name: e.target.value })} /></label>
-            <label className="f">Area / address<input value={c.address} placeholder="Jayanagar, Bengaluru" onChange={(e) => setC({ ...c, address: e.target.value })} /></label>
-            <label className="f">Front-desk phone<input value={c.phone} onChange={(e) => setC({ ...c, phone: e.target.value })} /></label>
-          </div>
-        </div>
-        <div className="card">
-          <div className="card-head"><div><h3>2 · First doctor</h3><small>You’ll be signed in as this doctor. You can add more doctors and PAs under Team.</small></div></div>
-          <div className="grid g3">
-            <label className="f">Full name *<input required value={dr.name} placeholder="Dr. Anita Menon" onChange={(e) => setDr({ ...dr, name: e.target.value })} /></label>
-            <label className="f">Specialty / qualification<input value={dr.title} placeholder="MD (Nephrology)" onChange={(e) => setDr({ ...dr, title: e.target.value })} /></label>
-            <label className="f">Mobile *<input required value={dr.phone} onChange={(e) => setDr({ ...dr, phone: e.target.value })} /></label>
-            <label className="f">Email<input type="email" value={dr.email} onChange={(e) => setDr({ ...dr, email: e.target.value })} /></label>
-            <label className="f">Medical registration no.<input value={dr.regNo} placeholder="e.g. KMC 123456" onChange={(e) => setDr({ ...dr, regNo: e.target.value })} /></label>
-          </div>
-        </div>
-        {err && <div className="alert bad">{err}</div>}
-        <div className="row">
-          <button className="btn primary" disabled={busy}>{busy ? <span className="spin" /> : null} Create clinic →</button>
-          <small className="muted">Data stays on this Mac (data/clinic.db). The sample demo is separate: run <code>npm run dev</code>.</small>
-        </div>
-      </form>
-    </main>
-  );
-}
-
-function ClinicHome() {
-  const { user, personas, switchTo, notifyChange, patientIds } = useSession();
-  const router = useRouter();
-  const [stale, setStale] = useState(false);
-  const { refresh } = useSession();
-
-  // Already signed in: go to the right home (clinicians → Today, families → their dashboard).
+  // Already signed in: go to their page. "Switch persona" signs out and comes back here.
   useEffect(() => {
     if (user) router.replace(homeFor(user, patientIds));
   }, [user, patientIds, router]);
+  if (user) return <main className="page"><div className="empty"><span className="spin" /></div></main>;
+  return <PersonaPicker />;
+}
 
-  async function go(id: string) {
+function PersonaPicker() {
+  const { personas, clinic, switchTo, notifyChange, refresh } = useSession();
+  const router = useRouter();
+  const [open, setOpen] = useState<PersonaKey | null>(null);
+  const [stale, setStale] = useState(false);
+
+  async function enter(p: SessionUser) {
     try {
-      const r = await switchTo(id);
-      const u = personas.find((p) => p.id === id) ?? null;
+      const r = await switchTo(p.id);
       notifyChange();
-      router.push(homeFor(u, r?.patientIds ?? []));
+      router.push(homeFor(p, r?.patientIds ?? []));
     } catch {
-      // The persona list is stale (e.g. the database was reset or replaced since this page loaded).
+      // The persona list is out of date (the clinic was reset or changed since this page loaded).
       await refresh().catch(() => undefined);
-      notifyChange();
       setStale(true);
+      setOpen(null);
     }
   }
-  if (user) return <main className="page"><div className="empty"><span className="spin" /></div></main>;
-  const group = (roles: string[]) => personas.filter((p) => roles.includes(p.role));
+  function pick(key: PersonaKey, people: SessionUser[]) {
+    if (people.length === 1) return enter(people[0]);
+    if (people.length > 1) setOpen(open === key ? null : key);
+  }
 
   return (
-    <main className="page signin">
-      <div className="signin-head">
-        <span className="brand-mark big">💚</span>
-        <h1>Who’s using CareCircle?</h1>
-        <p className="muted">Clinic staff use the dashboard. Patients and caregivers mostly use WhatsApp, and can also view their own record here.</p>
-      </div>
-      {stale && <div className="alert warn" style={{ marginBottom: 16 }}><div>That person no longer exists. The clinic data changed since this page loaded. Pick again.</div></div>}
-      <div className="stack gap16">
-        {(
-          [
-            ["Clinic staff", ["DOCTOR", "PA"], "No staff yet."],
-            ["Patients", ["PATIENT"], "No patients yet."],
-            ["Caregivers", ["CAREGIVER"], "No caregivers yet."],
-          ] as [string, string[], string][]
-        ).map(([title, roles, empty]) => (
-          <section key={title} className="card">
-            <div className="card-head"><h3>{title}</h3></div>
-            {group(roles).length === 0 ? (
-              <div className="muted">{empty}</div>
-            ) : (
-              <div className="grid g3">
-                {group(roles).map((p) => (
-                  <button key={p.id} className="persona" onClick={() => go(p.id)}>
-                    <span className="avatar" style={{ background: avatarColor(p.name) }}>{initials(p.name)}</span>
-                    <span>
-                      <b>{p.name}</b>
-                      <br />
-                      <small>{p.role === "CAREGIVER" || p.role === "PATIENT" ? p.title : ROLE_LABEL[p.role]}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        ))}
-      </div>
+    <main className="pp">
+      <div className="pp-glow" aria-hidden />
+      <header className="pp-head">
+        <div className="pp-brand"><span className="brand-mark">💚</span> CareCircle</div>
+        <p className="pp-kicker">{clinic ? clinic.name : "A new clinic"}</p>
+        <h1>Who’s stepping in<br /><em>today?</em></h1>
+        <p className="pp-sub">Between-visit care that runs on WhatsApp. Pick a role to see the product through their eyes. Each one lands on its own page.</p>
+      </header>
+
+      {stale && <div className="pp-note">That person no longer exists. The clinic changed since this page loaded, so the list has been refreshed.</div>}
+
+      <section className="pp-grid">
+        {PERSONAS.map((p, i) => {
+          const people = personas.filter((x) => x.role === p.key);
+          const locked = p.key !== "ADMIN" && !clinic;
+          const disabled = locked || people.length === 0;
+          const start = p.key === "ADMIN" && !clinic;
+          return (
+            <article key={p.key} className={`pp-card p-${p.key.toLowerCase()} ${disabled ? "off" : ""} ${start ? "start" : ""} ${open === p.key ? "open" : ""}`} style={{ animationDelay: `${120 + i * 90}ms` }}>
+              <button className="pp-hit" disabled={disabled} onClick={() => pick(p.key, people)} aria-expanded={people.length > 1 ? open === p.key : undefined}>
+                <span className="pp-n">{p.n}</span>
+                <span className="pp-title">{p.title}</span>
+                <span className="pp-tag">{p.tag}</span>
+                <ul>{p.can.map((c) => <li key={c}>{c}</li>)}</ul>
+                <span className="pp-foot">
+                  {start ? (
+                    <b>Start here →</b>
+                  ) : locked ? (
+                    <small>After the admin sets up the clinic</small>
+                  ) : people.length === 0 ? (
+                    <small>{p.empty}</small>
+                  ) : (
+                    <>
+                      <span className="pp-faces">
+                        {people.slice(0, 4).map((x) => <span key={x.id} className="avatar" style={{ background: avatarColor(x.name) }}>{initials(x.name)}</span>)}
+                        {people.length > 4 && <span className="avatar more">+{people.length - 4}</span>}
+                      </span>
+                      <b>{people.length === 1 ? `Enter as ${people[0].name}` : `Choose from ${people.length} →`}</b>
+                    </>
+                  )}
+                </span>
+              </button>
+              {open === p.key && (
+                <div className="pp-people">
+                  {people.map((x) => (
+                    <button key={x.id} onClick={() => enter(x)}>
+                      <span className="avatar" style={{ background: avatarColor(x.name) }}>{initials(x.name)}</span>
+                      <span><b>{x.name}</b><small>{x.title || ""}</small></span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </section>
+
+      <footer className="pp-foot-note">
+        <span>Doctors are never paged: the family care circle owns every alert.</span>
+        <span>Demo tools · <kbd>Shift</kbd> + <kbd>D</kbd></span>
+      </footer>
     </main>
   );
 }

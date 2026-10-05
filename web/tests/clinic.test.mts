@@ -17,6 +17,7 @@ const engine = await import("../lib/engine");
 const { now } = await import("../lib/clock");
 const { canView } = await import("../lib/server");
 const { EMPTY_BASELINE } = await import("../lib/types");
+const records = await import("../lib/records");
 
 after(() => fs.rmSync(tmpDb, { force: true }));
 
@@ -26,14 +27,15 @@ describe("Live clinic onboarding", () => {
   let drB = "";
   let pid = "";
 
-  it("starts empty: nothing is seeded in live mode", async () => {
+  it("starts empty: only the admin persona exists in live mode", async () => {
     await ensureSeeded();
-    assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM users")!.n, 0);
+    assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM users WHERE role != 'ADMIN'")!.n, 0);
+    assert.equal(engine.getUser("u_admin")!.role, "ADMIN");
     assert.equal(clinic.getClinic(), null);
   });
 
   it("sets up the clinic with its first doctor", () => {
-    drId = clinic.setupClinic({ name: "Sunrise Clinic", address: "Jayanagar", phone: "+91 80 1234 5678" }, { name: "Anita Menon", title: "MD (Nephrology)", phone: "+91 90000 00001", email: "anita@example.com", regNo: "KMC 1" }, now());
+    drId = clinic.setupClinic({ name: "Sunrise Clinic", address: "Jayanagar", phone: "+91 80 1234 5678" }, { name: "Anita Menon", title: "MD (Nephrology)", phone: "+91 90000 00001", email: "anita@example.com", regNo: "KMC 1" }, now())!;
     assert.equal(clinic.getClinic()!.name, "Sunrise Clinic");
     const u = engine.getUser(drId)!;
     assert.equal(u.role, "DOCTOR");
@@ -169,12 +171,101 @@ describe("Live clinic onboarding", () => {
     assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM messages WHERE created_at >= ? AND direction = 'OUT' AND body LIKE '%Ravi%'", t)!.n, 0, "drafts never message anyone");
   });
 
+  it("edits patient details and rejects a caregiver's number", () => {
+    records.updatePatient(pid, { name: "Kamala R. Iyer", age: 69, address: "Basavanagudi" }, now(), paId);
+    const p = engine.getPatient(pid)!;
+    assert.equal(p.name, "Kamala R. Iyer");
+    assert.equal(p.age, 69);
+    assert.equal(engine.getUser(p.user_id!)!.name, "Kamala R. Iyer", "the WhatsApp user follows the patient");
+    assert.throws(() => records.updatePatient(pid, { phone: "+91 98000 22222" }, now(), paId), /caregiver/);
+    records.updatePatient(pid, { doctorId: drB }, now(), paId);
+    assert.equal(engine.getPatient(pid)!.doctor_id, drB);
+    records.updatePatient(pid, { doctorId: drId }, now(), paId);
+  });
+
+  it("edits the care circle: reorder, replace, max two", () => {
+    const [l1, l2] = engine.getCaregivers(pid);
+    const t = now();
+    // swap order: backup becomes primary
+    records.setCareCircle(pid, [
+      { id: l2.id, name: l2.name, relation: l2.relation!, phone: l2.phone, dashboard: true },
+      { id: l1.id, name: l1.name, relation: l1.relation!, phone: l1.phone, dashboard: true },
+    ], t, paId);
+    const swapped = engine.getCaregivers(pid);
+    assert.deepEqual(swapped.map((c) => c.name), ["Suresh Iyer", "Meena Iyer"]);
+    assert.equal(swapped[0].user_id, l2.user_id, "existing people keep their account");
+    // replace the backup with a new person: consent requested + welcome sent; removed person told
+    records.setCareCircle(pid, [
+      { id: swapped[0].id, name: "Suresh Iyer", relation: "Son", phone: "+91 98000 33333", dashboard: true },
+      { name: "Lata Rao", relation: "Neighbour", phone: "+91 98000 44444", dashboard: false },
+    ], t + 1000, paId);
+    const now2 = engine.getCaregivers(pid);
+    assert.equal(now2[1].name, "Lata Rao");
+    assert.equal(now2[1].dashboard, 0);
+    assert.ok(engine.getConsents(pid).some((c) => c.user_id === now2[1].user_id && c.status === "PENDING"));
+    assert.ok(get("SELECT 1 FROM messages WHERE user_id = ? AND body LIKE '%removed from%'", l1.user_id!));
+    assert.throws(() => records.setCareCircle(pid, [
+      { name: "A", relation: "", phone: "+91 98000 50001", dashboard: true },
+      { name: "B", relation: "", phone: "+91 98000 50002", dashboard: true },
+      { name: "C", relation: "", phone: "+91 98000 50003", dashboard: true },
+    ], t, paId), /at most 2/);
+    assert.throws(() => records.setCareCircle(pid, [], t, paId), /at least one/);
+  });
+
+  it("keeps notes per author", () => {
+    const id = records.addNote(pid, "Advised low-salt diet.", "clinical", now(), drId);
+    assert.equal(records.listNotes(pid)[0].author_name, "Dr. Anita Menon");
+    assert.throws(() => records.editNote(id, "changed", now(), paId), /own notes/);
+    records.editNote(id, "Advised low-salt diet; review in 2 weeks.", now(), drId);
+    assert.match(records.listNotes(pid)[0].body, /review in 2 weeks/);
+    records.editNote(id, null, now(), drId);
+    assert.equal(records.listNotes(pid).length, 0);
+  });
+
+  it("stores, edits and deletes documents", () => {
+    const png = "data:image/png;base64," + Buffer.from("fake-png-bytes").toString("base64");
+    const id = records.addDocument(pid, { title: "RFT report", category: "lab", mime: "image/png", base64: png }, now(), paId);
+    const list = records.listDocuments(pid);
+    assert.equal(list[0].title, "RFT report");
+    assert.equal(list[0].size, "fake-png-bytes".length);
+    assert.equal(Buffer.from(records.getDocumentFile(id)!.data).toString(), "fake-png-bytes");
+    records.updateDocument(id, { title: "RFT Sept", category: "nonsense" }, now(), paId);
+    assert.equal(records.listDocuments(pid)[0].title, "RFT Sept");
+    assert.equal(records.listDocuments(pid)[0].category, "lab", "unknown categories are ignored");
+    assert.throws(() => records.addDocument(pid, { title: "big", category: "lab", mime: "image/png", base64: Buffer.alloc(6 * 1024 * 1024).toString("base64") }, now(), paId), /5 MB/);
+    records.deleteDocument(id, now(), paId);
+    assert.equal(records.listDocuments(pid).length, 0);
+  });
+
+  it("SOS raises an urgent alert to the primary caregiver", () => {
+    const p = engine.getPatient(pid)!;
+    const t = now() + 5000;
+    const r = records.raiseSos(p.user_id!, t);
+    assert.equal(r.calling, "Suresh Iyer");
+    const esc = get<{ type: string; level: number; state: string }>("SELECT type, level, state FROM escalations WHERE patient_id = ? AND rule_key = 'sos'", pid)!;
+    assert.equal(esc.type, "URGENT");
+    assert.equal(esc.state, "NOTIFIED");
+    const primary = engine.getCaregivers(pid)[0];
+    assert.ok(get("SELECT 1 FROM messages WHERE user_id = ? AND kind = 'escalation' AND created_at >= ?", primary.user_id!, t));
+    assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM messages WHERE direction = 'OUT' AND user_id IN (SELECT id FROM users WHERE role IN ('DOCTOR','PA'))")!.n, 0, "the clinic is still never messaged");
+  });
+
+  it("edits and removes staff", () => {
+    clinic.updateStaff(paId, { name: "Rahul V.", phone: "+91 90000 00002", title: "Senior PA" }, now(), drId);
+    assert.equal(engine.getUser(paId)!.name, "Rahul V.");
+    assert.throws(() => clinic.removeStaff(drId, now(), "u_admin"), /Reassign/);
+    const tmp = clinic.addStaff({ name: "Temp PA", role: "PA", title: "", phone: "+91 90000 00099", email: "", regNo: "" }, now(), drId);
+    clinic.removeStaff(tmp, now(), drId);
+    assert.equal(engine.getUser(tmp), undefined);
+  });
+
   it("reset erases the clinic but keeps Gemini settings", async () => {
     const { setSetting, getSetting } = await import("../lib/db");
     setSetting("gemini_model", "gemini-test");
     clinic.resetClinic();
     assert.equal(clinic.getClinic(), null);
-    assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM users")!.n, 0);
+    assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM users WHERE role != 'ADMIN'")!.n, 0);
+    assert.ok(engine.getUser("u_admin"), "the admin persona survives a reset");
     assert.equal(clinic.listDrafts().length, 0);
     assert.equal(getSetting("gemini_model"), "gemini-test");
   });

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, useSession } from "@/components/client";
 import { BaselineForm, baselineForSubmit } from "@/components/baseline";
-import { EMPTY_BASELINE, LAB_META, ageFromDob, bmi, type Baseline } from "@/lib/types";
+import { EMPTY_BASELINE, LAB_META, MAX_CAREGIVERS, ageFromDob, bmi, type Baseline } from "@/lib/types";
 import { fmtDateTime } from "@/lib/time";
 
 interface Cg { name: string; relation: string; phone: string; dashboard: boolean }
@@ -36,7 +36,7 @@ export default function NewPatient() {
     api<{ draft: { id: string; step: number; updated_at: number; data: { f?: typeof f; cgs?: Cg[]; baseline?: Baseline } } }>(`/api/drafts?id=${encodeURIComponent(id)}`)
       .then(({ draft }) => {
         if (draft.data.f) setF((x) => ({ ...x, ...draft.data.f }));
-        if (draft.data.cgs?.length) setCgs(draft.data.cgs);
+        if (draft.data.cgs?.length) setCgs(draft.data.cgs.slice(0, MAX_CAREGIVERS));
         if (draft.data.baseline) setBaseline({ ...EMPTY_BASELINE, ...draft.data.baseline, labs: (draft.data.baseline.labs ?? []).map((l) => ({ ...l, value: l.value ?? NaN })) });
         setDraftId(draft.id);
         setSavedAt(draft.updated_at);
@@ -69,12 +69,13 @@ export default function NewPatient() {
     }
     if (s === 1) {
       const filled = cgs.filter((c) => c.name.trim() || digits(c.phone).length > 2);
-      if (!filled.length || !cgs[0].name.trim()) return "Add at least the Level 1 caregiver";
+      if (!filled.length || !cgs[0].name.trim()) return "Add at least the primary caregiver";
       for (const [i, c] of cgs.entries()) {
         if (!c.name.trim() && digits(c.phone).length <= 2) continue;
-        if (!c.name.trim()) return `Enter a name for Level ${i + 1}`;
-        if (!PHONE_RE.test(c.phone) || digits(c.phone).length < 10) return `Enter a WhatsApp number for Level ${i + 1}`;
-        if (digits(c.phone) === digits(f.phone)) return `Level ${i + 1} can't use the patient's own number`;
+        const who = i === 0 ? "the primary caregiver" : "the backup caregiver";
+        if (!c.name.trim()) return `Enter a name for ${who}`;
+        if (!PHONE_RE.test(c.phone) || digits(c.phone).length < 10) return `Enter a WhatsApp number for ${who}`;
+        if (digits(c.phone) === digits(f.phone)) return `${who[0].toUpperCase()}${who.slice(1)} can't use the patient's own number`;
       }
       const nums = cgs.filter((c) => c.name.trim()).map((c) => digits(c.phone));
       if (new Set(nums).size !== nums.length) return "Each caregiver needs a different WhatsApp number";
@@ -204,13 +205,13 @@ export default function NewPatient() {
         <div className="card">
           <div className="card-head">
             <div>
-              <h3>Care circle (escalation order)</h3>
-              <small>If something is missed or a reading goes outside the doctor’s limits, Level 1 is alerted on WhatsApp first. If they don’t respond, Level 2, then Level 3. The clinic is never auto-alerted.</small>
+              <h3>Care circle</h3>
+              <small>If something is missed or a reading goes outside the doctor’s limits, the primary caregiver is alerted on WhatsApp first. If they don’t respond, the backup. The clinic is never auto-alerted.</small>
             </div>
           </div>
           {cgs.map((c, i) => (
             <div key={i} className="cg-row">
-              <span className="lvl">L{i + 1}</span>
+              <span className="lvl" title={i === 0 ? "Primary" : "Backup"}>{i === 0 ? "1st" : "2nd"}</span>
               <div className="grid g3" style={{ flex: 1, alignItems: "end" }}>
                 <Field label={`Name${i === 0 ? " *" : ""}`}><input value={c.name} onChange={(e) => setCg(i, { name: e.target.value })} /></Field>
                 <Field label="Relation"><input value={c.relation} onChange={(e) => setCg(i, { relation: e.target.value })} placeholder="Daughter, Son, Neighbour…" /></Field>
@@ -222,7 +223,7 @@ export default function NewPatient() {
             </div>
           ))}
           <div className="row">
-            {cgs.length < 3 && <button type="button" className="btn sm" onClick={() => setCgs([...cgs, blankCg()])}>+ Add Level {cgs.length + 1}</button>}
+            {cgs.length < MAX_CAREGIVERS && <button type="button" className="btn sm" onClick={() => setCgs([...cgs, blankCg()])}>+ Add backup caregiver</button>}
             {cgs.length > 1 && <button type="button" className="btn sm" onClick={() => setCgs(cgs.slice(0, -1))}>Remove last</button>}
           </div>
         </div>
@@ -243,7 +244,7 @@ export default function NewPatient() {
             <div className="card-head"><h3>Care circle</h3><button className="btn sm ghost" onClick={() => setStep(1)}>Edit</button></div>
             {cgs.filter((c) => c.name.trim()).map((c, i) => (
               <div key={i} className="row between" style={{ padding: "4px 0" }}>
-                <span><span className="badge brand">L{i + 1}</span> {c.name} <span className="muted">({c.relation || "Family"}) · {c.phone}</span></span>
+                <span><span className="badge brand">{i === 0 ? "Primary" : "Backup"}</span> {c.name} <span className="muted">({c.relation || "Family"}) · {c.phone}</span></span>
                 <small>{c.dashboard ? "Dashboard ✓" : "WhatsApp only"}</small>
               </div>
             ))}

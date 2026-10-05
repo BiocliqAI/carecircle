@@ -7,7 +7,7 @@ import { parseMessage } from "./parser";
 import { sendWhatsApp } from "./whatsapp";
 import { DAY, HOUR, MIN, atLocal, dayStart, fmtDate, fmtTime, localDow, localHHMM } from "./time";
 import type { CarePlan, ClinicVitals, EscalationType, ParsedMessage, Visit, VitalType } from "./types";
-import { LAB_META, SYMPTOMS, VITAL_META, shortName } from "./types";
+import { LAB_META, MAX_CAREGIVERS, SYMPTOMS, VITAL_META, shortName } from "./types";
 import { dayIndex, describeMed, doseAt, medDueOn } from "./meds";
 
 // ---------------------------------------------------------------- loaders
@@ -111,6 +111,7 @@ export function patientIdsForUser(user: UserRow): string[] {
 
 const first = (name: string) => shortName(name);
 const doctorName = (p: PatientRow) => getUser(p.doctor_id)?.name ?? "your doctor";
+export const clinicLabel = () => clinicName();
 const clinicName = () => {
   const raw = getSetting("clinic");
   return raw ? (JSON.parse(raw) as { name: string }).name : null;
@@ -128,7 +129,7 @@ export interface ConsentRow {
 export const getConsents = (pid: string) => all<ConsentRow>("SELECT user_id, role, status, requested_at, responded_at, message_id FROM consents WHERE patient_id = ?", pid);
 const pendingConsent = (pid: string, userId: string) => !!get("SELECT 1 FROM consents WHERE patient_id = ? AND user_id = ? AND status = 'PENDING'", pid, userId);
 
-function requestConsent(pid: string, userId: string, role: string, t: number) {
+export function requestConsent(pid: string, userId: string, role: string, t: number) {
   run("INSERT INTO consents(patient_id, user_id, role, status, requested_at) VALUES(?,?,?,'PENDING',?) ON CONFLICT(patient_id, user_id) DO NOTHING", pid, userId, role, t);
 }
 
@@ -309,7 +310,7 @@ function complianceEscalate(p: PatientRow, ruleKey: string, title: string, detai
   createEscalation(p, { type: "COMPLIANCE", ruleKey, title, detail, advice: `Please check in with ${first(p.name)} and help complete it.`, taskIds }, t);
 }
 
-interface NewEsc {
+export interface NewEsc {
   type: EscalationType;
   ruleKey: string;
   title: string;
@@ -320,7 +321,7 @@ interface NewEsc {
   taskIds?: number[];
 }
 
-function createEscalation(p: PatientRow, e: NewEsc, t: number): number | null {
+export function createEscalation(p: PatientRow, e: NewEsc, t: number): number | null {
   const dup = get<EscalationRow>(`SELECT * FROM escalations WHERE patient_id = ? AND rule_key = ? AND state IN ${OPEN}`, p.id, e.ruleKey);
   if (dup) {
     escEvent(dup.id, t, "REPEAT", dup.level, "system", e.detail);
@@ -989,7 +990,7 @@ export function onboardPatient(input: OnboardInput, t: number, actor: string): s
     run("INSERT INTO patients(id, user_id, name, age, sex, phone, conditions, address, doctor_id, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", pid, uid, input.name, input.age, input.sex, input.phone, input.conditions, input.address, input.doctorId, t);
     const docU = getUser(input.doctorId);
     if (docU) run("INSERT INTO care_team(patient_id, name, specialty, role, user_id) VALUES(?,?,?,?,?)", pid, docU.name, docU.title, "PRIMARY", docU.id);
-    for (const c of input.caregivers.filter((c) => c.name && c.phone)) {
+    for (const c of input.caregivers.filter((c) => c.name && c.phone).slice(0, MAX_CAREGIVERS)) {
       let cu = get<{ id: string }>("SELECT id FROM users WHERE phone = ? AND role = 'CAREGIVER'", c.phone)?.id;
       if (!cu) {
         cu = `u_cg_${slug}_${c.level}`;

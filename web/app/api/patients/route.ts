@@ -3,7 +3,7 @@ import { cleanBaseline, deleteDraft, saveBaseline } from "@/lib/clinic";
 import { getUser, onboardPatient, type OnboardInput } from "@/lib/engine";
 import { get } from "@/lib/db";
 import { err, isClinician, json, ready, sessionUser } from "@/lib/server";
-import { ageFromDob, type Baseline } from "@/lib/types";
+import { MAX_CAREGIVERS, ageFromDob, type Baseline } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +16,7 @@ export async function POST(req: Request) {
   if (!body.phone || !/^\+?[\d\s-]{8,}$/.test(body.phone)) return err("A valid WhatsApp number is required");
   const cgs = (body.caregivers || []).filter((c) => c.name?.trim() && c.phone?.trim());
   if (!cgs.length) return err("Add at least one caregiver (Level 1) for the care circle");
+  if (cgs.length > MAX_CAREGIVERS) return err(`A care circle has at most ${MAX_CAREGIVERS} caregivers (primary and backup)`);
   if (cgs.some((c) => c.phone.replace(/\D/g, "") === body.phone!.replace(/\D/g, ""))) return err("A caregiver can't use the patient's own WhatsApp number");
   const t = now();
   const baseline = body.baseline ? cleanBaseline(body.baseline, t) : null;

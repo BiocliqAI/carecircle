@@ -489,7 +489,13 @@ export async function simulateDays(days: number): Promise<void> {
 
 let seeding: Promise<void> | null = (globalThis as unknown as { __ccSeeding?: Promise<void> | null }).__ccSeeding ?? null;
 export async function ensureSeeded(): Promise<void> {
-  if (LIVE) return void getDb(); // live clinic: schema only, everything is onboarded through the UI
+  if (LIVE) {
+    // Live clinic: schema plus the admin persona; everything else is onboarded through the UI.
+    getDb();
+    const { ensureAdmin } = await import("./clinic");
+    ensureAdmin();
+    return;
+  }
   const has = (() => {
     try {
       return !!get("SELECT 1 FROM users WHERE id = 'u_mom'");

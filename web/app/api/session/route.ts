@@ -11,7 +11,7 @@ export async function GET() {
   await ready();
   const user = await sessionUser();
   const personas = all<{ id: string; name: string; role: string; title: string; phone: string }>(
-    "SELECT id, name, role, title, phone FROM users ORDER BY CASE role WHEN 'DOCTOR' THEN 0 WHEN 'PA' THEN 1 WHEN 'PATIENT' THEN 2 ELSE 3 END, name",
+    "SELECT id, name, role, title, phone FROM users ORDER BY CASE role WHEN 'ADMIN' THEN 0 WHEN 'DOCTOR' THEN 1 WHEN 'PA' THEN 2 WHEN 'PATIENT' THEN 3 ELSE 4 END, name",
   );
   return json({ user, patientIds: user ? patientIdsForUser(user) : [], personas, mode: MODE, clinic: getClinic() });
 }

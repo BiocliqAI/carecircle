@@ -4,6 +4,7 @@ import { dayFluid, getConsents, getCaregivers, getPatient, getUser, getVisits, l
 import { intervalSummary, longRange, medChanges, type EscalationView } from "@/lib/summary";
 import { canView, err, json, ready, sessionUser } from "@/lib/server";
 import { getBaseline } from "@/lib/clinic";
+import { listDocuments, listNotes, updatePatient, type PatientEdit } from "@/lib/records";
 import { DAY } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -86,5 +87,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     kidney: hasKidney ? longRange(id) : null,
     baseline: getBaseline(id),
     consents: getConsents(id),
+    notes: user.role === "DOCTOR" || user.role === "PA" ? listNotes(id) : [],
+    documents: listDocuments(id),
   });
+}
+
+// Edit patient details (doctor / PA on the care team).
+export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  await ready();
+  const { id } = await ctx.params;
+  const user = await sessionUser();
+  if (!user || (user.role !== "DOCTOR" && user.role !== "PA") || !canView(user, id)) return err("Only the care team can edit patient details", 403);
+  try {
+    updatePatient(id, (await req.json()) as PatientEdit, now(), user.id);
+    return json({ ok: true });
+  } catch (e) {
+    return err((e as Error).message, 409);
+  }
 }

@@ -26,18 +26,20 @@ npm run clinic                        # http://localhost:3100 (dev server)
 npm run clinic:build && npm run clinic:start
 ```
 
-Flow:
+Flow: everyone starts at the **persona picker** (`/`) and lands on their own page.
 
-1. **Setup** (`/`): clinic name and address, plus the first doctor. You're signed in as that doctor.
-2. **Team** (`/team`): add more doctors and PAs (specialty, mobile, email, registration no.). Doctors see only their own patients; PAs see everyone. A **Getting started** checklist on **Today** shows the next step.
-3. **+ New patient**: a 4-step wizard.
-   - **Patient:** details, plus the treating doctor when a PA onboards.
-   - **Care circle:** L1–L3 caregivers, with dashboard access per caregiver.
-   - **Baseline:** DOB, language, blood group, height, intake vitals, conditions, allergies, history, lifestyle, current medicines, recent lab reports.
-   - **Review.**
-4. **WhatsApp consent**: the patient and each caregiver get a welcome message and reply **YES** or **NO** in the simulator. Status shows on Patient 360 and on the home checklist.
-5. **Visit 1**: pre-filled from the baseline (current medicines with reminder times from OD/BD/TDS, intake vitals, allergy note). Saving it activates the care plan, and from then on it's the same engine as the demo.
-6. **Reset between customers**: **Clinic settings → Start afresh**, or the Demo panel (type the clinic name to confirm). Gemini settings are kept.
+| Persona | Lands on | Can do |
+|---|---|---|
+| **Clinic admin** | `/admin` | Create the clinic; add, edit and remove doctors and assistants; Gemini key; Start afresh. No patient data. |
+| **Doctor** | `/doctor` (Today) | All patients at a glance, Patient 360 deep dive, clinical notes, record visits, onboard and edit patients, manage assistants (`/team`). |
+| **Physician assistant** | `/doctor` (Today) | Onboard patients (resumable drafts), edit details and care circles (max 2: primary + backup), documents, notes, every patient's dashboard. |
+| **Patient** | `/me` | Their WhatsApp phone beside their dashboard: text, reply buttons, photos/PDFs, voice notes (mic, or a typed transcript), 🆘 call for help. |
+| **Caregiver** | `/me` | Their phone beside the patient's record: alerts, ACK / Miss, outcomes, logging on the patient's behalf. |
+
+- **Getting started:** the Admin creates the clinic and staff. A doctor or PA then onboards a patient (details → care circle → baseline → review), the patient and caregivers reply **YES**, and the doctor records Visit 1.
+- **Visit 1** is pre-filled from the baseline: current medicines with reminder times from OD/BD/TDS, intake vitals, and the allergy note. Saving it activates the care plan.
+- **Switch persona** (sidebar or top bar) returns to the picker.
+- **Reset between customers:** Admin → **Start afresh** (type the clinic name to confirm).
 
 Rules for baseline data:
 

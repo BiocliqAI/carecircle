@@ -473,3 +473,26 @@ Evening (9:00 PM):
     },
   };
 }
+
+/** Transcribes a WhatsApp voice note with Gemini. Returns null when Gemini isn't configured or fails. */
+export async function transcribeAudio(base64: string, mimeType: string): Promise<string | null> {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) return null;
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const resp = (await ai.interactions.create({
+      model: getGeminiModel(),
+      store: false,
+      system_instruction:
+        "Transcribe this patient's or caregiver's WhatsApp voice note verbatim (any Indian language; translate to English). Output only the transcript text, with numbers as digits (e.g. 'BP 142/90').",
+      input: [
+        { type: "text", text: "Transcribe this voice note." },
+        { type: "audio", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: mimeType || "audio/webm" },
+      ],
+    } as never)) as { output_text?: string | null };
+    return resp.output_text?.trim() || null;
+  } catch {
+    return null;
+  }
+}

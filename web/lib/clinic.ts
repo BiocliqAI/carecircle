@@ -78,16 +78,51 @@ export function listDoctors(): { id: string; name: string; title: string | null 
   return all("SELECT id, name, title FROM users WHERE role = 'DOCTOR' ORDER BY name");
 }
 
-/** First-run setup: the clinic and its first doctor. Returns the doctor's user id (signed in next). */
-export function setupClinic(clinic: Omit<Clinic, "setupAt">, doctor: Omit<StaffInput, "role">, t: number): string {
+export const ADMIN_ID = "u_admin";
+
+/** The clinic administrator persona (live mode). Manages the clinic and staff; never sees patient records. */
+export function ensureAdmin() {
+  if (!getUser(ADMIN_ID)) run("INSERT INTO users(id, name, role, phone, title, created_at) VALUES(?,?,?,?,?,?)", ADMIN_ID, "Clinic Admin", "ADMIN", null, "Administrator", Date.now());
+}
+
+/** First-run setup by the admin: the clinic, optionally with its first doctor. Returns the doctor's id if one was added. */
+export function setupClinic(clinic: Omit<Clinic, "setupAt">, doctor: Omit<StaffInput, "role"> | null, t: number, actor: string | null = null): string | null {
   if (getClinic()) throw new Error("The clinic is already set up");
   if (!clinic.name?.trim()) throw new Error("Clinic name is required");
   return tx(() => {
     setSetting("clinic", JSON.stringify({ name: clinic.name.trim(), address: clinic.address?.trim() || "", phone: clinic.phone?.trim() || "", setupAt: t } satisfies Clinic));
-    const id = addStaff({ ...doctor, role: "DOCTOR" }, t, null);
-    audit(t, id, "CLINIC_SETUP", "clinic", "clinic", { name: clinic.name.trim() });
+    const id = doctor?.name?.trim() ? addStaff({ ...doctor, role: "DOCTOR" }, t, actor) : null;
+    audit(t, actor ?? id, "CLINIC_SETUP", "clinic", "clinic", { name: clinic.name.trim() });
     return id;
   });
+}
+
+/** Edit a doctor or PA. Role can't change (create a new staff member instead). */
+export function updateStaff(id: string, s: Partial<Omit<StaffInput, "role">>, t: number, actor: string) {
+  const u = getUser(id);
+  if (!u || (u.role !== "DOCTOR" && u.role !== "PA")) throw new Error("Staff member not found");
+  const name = s.name?.trim() ? (u.role === "DOCTOR" && !/^dr\.?\s/i.test(s.name.trim()) ? `Dr. ${s.name.trim()}` : s.name.trim()) : u.name;
+  const phone = s.phone?.trim() || u.phone || "";
+  if (!/^\+?[\d\s-]{8,}$/.test(phone)) throw new Error("A valid phone number is required");
+  if (s.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s.email)) throw new Error("Email address looks invalid");
+  const dup = all<{ id: string; phone: string | null }>("SELECT id, phone FROM users WHERE role IN ('DOCTOR','PA') AND id != ?", id).some((x) => x.phone && normPhone(x.phone) === normPhone(phone));
+  if (dup) throw new Error("Another staff member has this phone number");
+  run(
+    "UPDATE users SET name = ?, phone = ?, title = ?, email = ?, reg_no = ? WHERE id = ?",
+    name, phone, s.title !== undefined ? s.title.trim() || null : null, s.email !== undefined ? s.email.trim() || null : null, s.regNo !== undefined ? s.regNo.trim() || null : null, id,
+  );
+  run("UPDATE care_team SET name = ? WHERE user_id = ?", name, id);
+  audit(t, actor, "STAFF_UPDATED", "user", id, { name });
+}
+
+/** Remove a doctor or PA. A doctor who still has patients must hand them over first. */
+export function removeStaff(id: string, t: number, actor: string) {
+  const u = getUser(id);
+  if (!u || (u.role !== "DOCTOR" && u.role !== "PA")) throw new Error("Staff member not found");
+  const n = get<{ n: number }>("SELECT COUNT(*) AS n FROM patients WHERE doctor_id = ?", id)!.n;
+  if (n) throw new Error(`${u.name} is the treating doctor for ${n} patient${n > 1 ? "s" : ""}. Reassign them first.`);
+  run("DELETE FROM users WHERE id = ?", id);
+  audit(t, actor, "STAFF_REMOVED", "user", id, { name: u.name, role: u.role });
 }
 
 export function updateClinic(c: Partial<Omit<Clinic, "setupAt">>, t: number, actor: string) {
@@ -105,6 +140,7 @@ export function resetClinic() {
   resetDb();
   for (const [k, v] of keep) setSetting(k, v!);
   resetClockCache();
+  ensureAdmin();
 }
 
 // ---------------------------------------------------------------- baseline

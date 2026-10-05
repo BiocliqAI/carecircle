@@ -1,6 +1,9 @@
 // Shared domain types for the CareCircle MVP.
 
-export type Role = "DOCTOR" | "PA" | "PATIENT" | "CAREGIVER";
+export type Role = "ADMIN" | "DOCTOR" | "PA" | "PATIENT" | "CAREGIVER";
+
+/** Care circle size for the current product scope: a primary and a backup caregiver. */
+export const MAX_CAREGIVERS = 2;
 
 export type VitalType = "bp" | "weight" | "glucose" | "hr" | "spo2" | "temp" | "pain";
 
