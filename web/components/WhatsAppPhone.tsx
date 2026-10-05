@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useSession } from "./client";
 import { dayKey, fmtDate, fmtTime } from "@/lib/time";
+import { speechCtor, type SpeechRec } from "./speech";
 
 export interface Contact {
   id: string;
@@ -609,21 +610,3 @@ function silentWav(seconds: number): Blob {
   return new Blob([buf], { type: "audio/wav" });
 }
 
-// ---------------------------------------------------------------- browser speech recognition (Chrome / Edge)
-interface SpeechRecResult { isFinal: boolean; 0: { transcript: string } }
-interface SpeechRecEvent { resultIndex: number; results: { length: number; [i: number]: SpeechRecResult } }
-interface SpeechRec {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  onresult: ((e: SpeechRecEvent) => void) | null;
-  onerror: ((e: unknown) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-}
-function speechCtor(): (new () => SpeechRec) | null {
-  if (typeof window === "undefined") return null;
-  const w = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
-}

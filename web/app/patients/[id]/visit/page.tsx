@@ -6,6 +6,7 @@ import { api, useSession } from "@/components/client";
 import { Highlights } from "@/components/interval";
 import { VisitPrepare } from "@/components/VisitPrepare";
 import { Icon } from "@/components/Icon";
+import { Dictate } from "@/components/Dictate";
 import { Spark } from "@/components/Spark";
 import { shorthand } from "@/components/PatientChart";
 import type { IntervalSummary, MedChangeRow } from "@/lib/summary";
@@ -184,7 +185,8 @@ function DoctorConsult({ id }: { id: string }) {
             <div className="card-head"><h3>Diagnosis and clinical note</h3></div>
             <div className="stack">
               <label className="f">Diagnosis<textarea value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} style={{ minHeight: 50 }} /></label>
-              <label className="f">Clinical note<textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Findings, counselling, changes made…" /></label>
+              <label className="f">Clinical note<textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Findings, counselling, changes made…" style={{ minHeight: 110 }} /></label>
+              <Dictate patientId={id} label="Dictate the note" onText={(t) => setNotes((cur) => (cur.trim() ? `${cur.trim()}\n${t}` : t))} />
             </div>
           </div>
 

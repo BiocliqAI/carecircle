@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./client";
 import { ConsentList, type ConsentView } from "./baseline";
+import { Dictate } from "./Dictate";
 import { fmtDateTime } from "@/lib/time";
 import { MAX_CAREGIVERS } from "@/lib/types";
 
@@ -210,7 +211,11 @@ export function NotesTab({ pid, notes, viewerId, viewerRole, onChange }: { pid: 
           <div className="card-head"><h3>{viewerRole === "DOCTOR" ? "Add a clinical note" : "Add a note"}</h3><small>Visible to the care team only, never to the patient or family</small></div>
           <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder={viewerRole === "DOCTOR" ? "Assessment, plan, counselling given…" : "Call summary, logistics, follow-ups…"} style={{ minHeight: 90 }} />
           {err && <div className="alert bad" style={{ marginTop: 8 }}>{err}</div>}
-          <div style={{ marginTop: 8 }}><button className="btn primary" disabled={busy || !text.trim()} onClick={async () => { if (await act({ action: "add", body: text })) setText(""); }}>Save note</button></div>
+          <div className="row" style={{ marginTop: 8, alignItems: "flex-start" }}>
+            <button className="btn primary" disabled={busy || !text.trim()} onClick={async () => { if (await act({ action: "add", body: text })) setText(""); }}>Save note</button>
+            <div style={{ flex: 1, minWidth: 240 }}><Dictate patientId={pid} onText={(t) => setText((cur) => (cur.trim() ? `${cur.trim()}\n${t}` : t))} /></div>
+          </div>
+          <small className="muted" style={{ display: "block", marginTop: 6 }}>Dictated text is added to the box above. Check it, especially doses, before saving.</small>
         </section>
         {notes.length === 0 ? <div className="card muted">No notes yet.</div> : (
           <section className="card" style={{ padding: 0 }}>

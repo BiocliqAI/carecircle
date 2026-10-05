@@ -742,3 +742,5 @@ body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; backg
 .dt-cal { width: 42px; height: 44px; border-radius: 10px; background: var(--c-brand-soft); color: var(--c-brand); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; flex: none; }
 .dt-cal b { font-size: 16px; } .dt-cal small { font-size: 11px; text-transform: uppercase; color: var(--c-brand); margin-top: 2px; }
 @media (max-width: 900px) { .dt-tiles { grid-template-columns: 1fr; } .dt-card-top { flex-direction: column; } .dt-next { min-width: 0; width: 100%; } }
+.dict-live { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; background: #F8FAF9; border: 1px solid var(--c-line); font-size: 14px; }
+.dict-preview { font-size: 14px; line-height: 1.5; min-height: 20px; color: var(--c-ink2); }

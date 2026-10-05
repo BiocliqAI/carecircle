@@ -513,3 +513,41 @@ export async function transcribeAudio(base64: string, mimeType: string, ctx: { m
     return null;
   }
 }
+
+/**
+ * Transcribes a clinician's dictated note (doctor / PA) with clinical vocabulary. The text is returned
+ * for the clinician to review before saving; nothing is saved automatically.
+ */
+export async function transcribeDictation(base64: string, mimeType: string, ctx: { meds?: string[]; conditions?: string; hint?: string | null } = {}): Promise<string | null> {
+  lastTranscribeError = null;
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) { lastTranscribeError = "Gemini is not configured"; return null; }
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const system = [
+      "You transcribe a doctor's or physician assistant's dictated clinical note in an Indian clinic. Output English.",
+      "Use correct clinical spelling for drugs, doses and terms (e.g. telmisartan 80 mg OD, furosemide 40 mg BD, eGFR, creatinine, HbA1c, CKD stage 3, NYHA class II, pedal oedema, orthopnoea).",
+      "Write doses with units (mg, mcg, mL, units), frequencies as OD / BD / TDS / HS / SOS where dictated, blood pressure as 150/95, and numbers as digits.",
+      "Honour spoken formatting commands: 'full stop' → '.', 'comma' → ',', 'new line' or 'next line' → line break, 'new paragraph' → blank line. Remove fillers (um, uh) and false starts.",
+      "Do not add, infer or reorder clinical content. Do not summarise. If a word is unclear, keep your best reading; never invent doses.",
+      ctx.meds?.length ? `The patient's current medicines: ${ctx.meds.join(", ")}.` : "",
+      ctx.conditions ? `Known conditions: ${ctx.conditions}.` : "",
+      "Output only the note text.",
+    ].filter(Boolean).join("\n");
+    const resp = (await ai.interactions.create({
+      model: getGeminiModel(),
+      store: false,
+      system_instruction: system,
+      input: [
+        { type: "text", text: ctx.hint ? `Transcribe this dictation. A rough automatic transcript (may contain errors) was: "${ctx.hint.slice(0, 600)}"` : "Transcribe this dictation." },
+        { type: "audio", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: (mimeType || "audio/webm").split(";")[0] },
+      ],
+    } as never)) as { output_text?: string | null };
+    return resp.output_text?.trim().replace(/^["“]|["”]$/g, "") || null;
+  } catch (e) {
+    lastTranscribeError = (e as Error).message?.slice(0, 300) ?? "unknown error";
+    console.error("[gemini] dictation failed:", lastTranscribeError);
+    return null;
+  }
+}
