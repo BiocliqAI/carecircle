@@ -96,7 +96,7 @@ export default function NewPatient() {
     <main className="page" style={{ maxWidth: 980 }}>
       <div className="page-head">
         <div>
-          <small><Link href="/doctor">← Command Centre</Link></small>
+          <small><Link href="/patients">← Patients</Link></small>
           <h1>Onboard a patient</h1>
           <div className="muted">About 5 minutes. The patient and each caregiver get a WhatsApp consent message. Nobody installs an app.</div>
         </div>

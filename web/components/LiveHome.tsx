@@ -39,7 +39,7 @@ function Setup() {
       await api("/api/clinic", { body: { action: "setup", clinic: c, doctor: dr } });
       await refresh();
       notifyChange();
-      router.push("/clinic");
+      router.push("/doctor");
     } catch (x) {
       setErr((x as Error).message);
       setBusy(false);
@@ -63,7 +63,7 @@ function Setup() {
           </div>
         </div>
         <div className="card">
-          <div className="card-head"><div><h3>2 · First doctor</h3><small>You’ll be signed in as this doctor. Add more doctors and PAs on the next screen.</small></div></div>
+          <div className="card-head"><div><h3>2 · First doctor</h3><small>You’ll be signed in as this doctor. You can add more doctors and PAs under Team.</small></div></div>
           <div className="grid g3">
             <label className="f">Full name *<input required value={dr.name} placeholder="Dr. Anita Menon" onChange={(e) => setDr({ ...dr, name: e.target.value })} /></label>
             <label className="f">Specialty / qualification<input value={dr.title} placeholder="MD (Nephrology)" onChange={(e) => setDr({ ...dr, title: e.target.value })} /></label>
@@ -83,21 +83,22 @@ function Setup() {
 }
 
 function ClinicHome() {
-  const { clinic, personas, switchTo, notifyChange, bump, user, refresh } = useSession();
-  const [stale, setStale] = useState(false);
+  const { user, personas, switchTo, notifyChange, patientIds } = useSession();
   const router = useRouter();
-  const [cl, setCl] = useState<Checklist | null>(null);
+  const [stale, setStale] = useState(false);
+  const { refresh } = useSession();
 
+  // Already signed in: go to the right home (clinicians → Today, families → their dashboard).
   useEffect(() => {
-    api<{ checklist: Checklist }>("/api/clinic").then((r) => setCl(r.checklist)).catch(() => undefined);
-  }, [bump]);
+    if (user) router.replace(homeFor(user, patientIds));
+  }, [user, patientIds, router]);
 
-  async function go(id: string, to?: string) {
+  async function go(id: string) {
     try {
       const r = await switchTo(id);
       const u = personas.find((p) => p.id === id) ?? null;
       notifyChange();
-      router.push(to ?? homeFor(u, r?.patientIds ?? []));
+      router.push(homeFor(u, r?.patientIds ?? []));
     } catch {
       // The persona list is stale (e.g. the database was reset or replaced since this page loaded).
       await refresh().catch(() => undefined);
@@ -105,148 +106,46 @@ function ClinicHome() {
       setStale(true);
     }
   }
-  const staff = personas.filter((p) => p.role === "DOCTOR" || p.role === "PA");
-  const clinicianId = user && (user.role === "DOCTOR" || user.role === "PA") ? user.id : staff[0]?.id;
-  const asClinician = (to: string) => (clinicianId ? go(clinicianId, to) : router.push(to));
+  if (user) return <main className="page"><div className="empty"><span className="spin" /></div></main>;
   const group = (roles: string[]) => personas.filter((p) => roles.includes(p.role));
 
-  const steps: { done: boolean; title: string; detail: string; action?: [string, () => void] }[] = cl
-    ? [
-        { done: cl.clinic, title: "Clinic created", detail: clinic!.name },
-        { done: cl.doctors + cl.pas > 1, title: "Add the care team", detail: `${cl.doctors} doctor${cl.doctors === 1 ? "" : "s"} · ${cl.pas} PA${cl.pas === 1 ? "" : "s"}`, action: ["Manage staff", () => asClinician("/clinic")] },
-        { done: cl.patients > 0, title: "Onboard a patient and care circle", detail: cl.patients ? `${cl.patients} patient${cl.patients === 1 ? "" : "s"} · ${cl.caregivers} caregiver${cl.caregivers === 1 ? "" : "s"}` : "Patient details, L1–L3 caregivers, baseline", action: ["+ New patient", () => asClinician("/patients/new")] },
-        { done: cl.patients > 0 && cl.baselines >= cl.patients, title: "Capture the baseline", detail: `${cl.baselines} of ${cl.patients} patients: history, current medicines, labs, intake vitals` },
-        { done: cl.consentsGiven > 0 && cl.consentsPending === 0, title: "Consent on WhatsApp", detail: cl.consentsGiven + cl.consentsPending ? `${cl.consentsGiven} replied YES · ${cl.consentsPending} waiting` : "Each person replies YES to the welcome message", action: ["Open WhatsApp", () => router.push("/whatsapp")] },
-        { done: cl.withVisit > 0, title: "Record Visit 1 and the care plan", detail: `${cl.withVisit} of ${cl.patients} patients have an active plan`, action: cl.patients ? ["Command Centre", () => asClinician("/doctor")] : undefined },
-        { done: cl.inbound > cl.consentsGiven, title: "First WhatsApp log", detail: "e.g. “BP 142/90, took tablets”, sent from the patient’s phone", action: ["Open WhatsApp", () => router.push("/whatsapp")] },
-        { done: cl.escalations > 0, title: "First care-circle escalation", detail: cl.escalations ? `${cl.escalations} so far` : "Send an out-of-range reading, then use +1h to watch L1 → L2" },
-      ]
-    : [];
-  const doneCount = steps.filter((s) => s.done).length;
-
   return (
-    <main className="page">
-      <section className="hero">
-        <small className="eyebrow">Live clinic</small>
-        <h1 style={{ fontSize: 30, margin: "6px 0 8px" }}>{clinic!.name}</h1>
-        <p>{clinic!.address ? `${clinic!.address} · ` : ""}Everything here was onboarded for real: no sample data. Patients and families use the WhatsApp simulator, and the care team uses this dashboard.</p>
-        <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn primary" onClick={() => asClinician("/patients/new")}>+ Onboard a patient</button>
-          <button className="btn" onClick={() => asClinician("/doctor")}>Command Centre</button>
-          <button className="btn" onClick={() => router.push("/whatsapp")}>WhatsApp simulator</button>
-        </div>
-      </section>
-
-      {stale && (
-        <div className="alert warn" style={{ marginBottom: 16 }}>
-          <div>That person no longer exists. The clinic data changed since this page loaded (it may have been reset). The page has been refreshed; pick a persona again{clinic ? "" : " or set up the clinic"}.</div>
-        </div>
-      )}
-      <div className="grid side">
-        <div className="stack gap16">
-          {(
-            [
-              ["Care team (web dashboard)", ["DOCTOR", "PA"], "No staff yet."],
-              ["Patients (WhatsApp + read-only dashboard)", ["PATIENT"], "No patients yet. Onboard one to see them here."],
-              ["Caregivers / care circle (WhatsApp + dashboard)", ["CAREGIVER"], "Caregivers appear once a patient is onboarded."],
-            ] as [string, string[], string][]
-          ).map(([title, roles, empty]) => (
-            <div key={title} className="card">
-              <div className="card-head"><h3>{title}</h3>{roles[0] === "DOCTOR" && <button className="btn sm" onClick={() => asClinician("/clinic")}>+ Add staff</button>}</div>
-              {group(roles).length === 0 ? (
-                <div className="muted">{empty}</div>
-              ) : (
-                <div className="grid g3">
-                  {group(roles).map((p) => (
-                    <button key={p.id} className="persona" onClick={() => go(p.id)}>
-                      <span className="avatar" style={{ background: avatarColor(p.name) }}>{initials(p.name)}</span>
-                      <span>
-                        <b>{p.name}</b>
-                        <br />
-                        <small>{p.role === "CAREGIVER" || p.role === "PATIENT" ? p.title : ROLE_LABEL[p.role]}</small>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="stack gap16">
-          <div className="card">
-            <div className="card-head">
-              <h3>Go-live checklist</h3>
-              {cl && <span className="badge brand">{doneCount}/{steps.length}</span>}
-            </div>
-            {cl && <div className="progress" style={{ marginBottom: 10 }}><span style={{ width: `${(doneCount / steps.length) * 100}%` }} /></div>}
-            <ol className="checklist">
-              {steps.map((s) => (
-                <li key={s.title} className={s.done ? "done" : ""}>
-                  <span className="tick">{s.done ? "✓" : ""}</span>
-                  <div style={{ flex: 1 }}>
-                    <b>{s.title}</b>
-                    <div className="muted">{s.detail}</div>
-                  </div>
-                  {s.action && !s.done && <button className="btn sm" onClick={s.action[1]}>{s.action[0]}</button>}
-                </li>
-              ))}
-            </ol>
-          </div>
-          <div className="card">
-            <div className="card-head"><h3>Running a customer demo</h3></div>
-            <ol className="steps">
-              <li>Ask the customer for <b>their</b> clinic and doctor names, and set them up.</li>
-              <li>As the PA, onboard a patient. Use a family member in the room as Level 1.</li>
-              <li>Open WhatsApp: reply <b>YES</b> as the patient and as each caregiver.</li>
-              <li>As the doctor, record Visit 1. The plan arrives on the patient’s WhatsApp.</li>
-              <li>Send a high BP reading. Level 1 is alerted, then <b>+1h</b> moves it to Level 2.</li>
-              <li>Use <b>Simulate 7 days</b>, then open the pre-visit brief and record Visit 2.</li>
-            </ol>
-          </div>
-          <EraseCard clinicName={clinic!.name} />
-        </div>
+    <main className="page signin">
+      <div className="signin-head">
+        <span className="brand-mark big">💚</span>
+        <h1>Who’s using CareCircle?</h1>
+        <p className="muted">Clinic staff use the dashboard. Patients and caregivers mostly use WhatsApp, and can also view their own record here.</p>
+      </div>
+      {stale && <div className="alert warn" style={{ marginBottom: 16 }}><div>That person no longer exists. The clinic data changed since this page loaded. Pick again.</div></div>}
+      <div className="stack gap16">
+        {(
+          [
+            ["Clinic staff", ["DOCTOR", "PA"], "No staff yet."],
+            ["Patients", ["PATIENT"], "No patients yet."],
+            ["Caregivers", ["CAREGIVER"], "No caregivers yet."],
+          ] as [string, string[], string][]
+        ).map(([title, roles, empty]) => (
+          <section key={title} className="card">
+            <div className="card-head"><h3>{title}</h3></div>
+            {group(roles).length === 0 ? (
+              <div className="muted">{empty}</div>
+            ) : (
+              <div className="grid g3">
+                {group(roles).map((p) => (
+                  <button key={p.id} className="persona" onClick={() => go(p.id)}>
+                    <span className="avatar" style={{ background: avatarColor(p.name) }}>{initials(p.name)}</span>
+                    <span>
+                      <b>{p.name}</b>
+                      <br />
+                      <small>{p.role === "CAREGIVER" || p.role === "PATIENT" ? p.title : ROLE_LABEL[p.role]}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        ))}
       </div>
     </main>
-  );
-}
-
-function EraseCard({ clinicName }: { clinicName: string }) {
-  const { switchTo } = useSession();
-  const [open, setOpen] = useState(false);
-  const [confirm, setConfirm] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function erase() {
-    setBusy(true);
-    setErr(null);
-    try {
-      await api("/api/clinic", { body: { action: "reset", confirm } });
-      await switchTo(null);
-      window.location.href = "/";
-    } catch (e) {
-      setErr((e as Error).message);
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="card danger-zone">
-      <div className="card-head"><h3>Start afresh</h3></div>
-      <p className="muted" style={{ marginTop: 0 }}>Erases the clinic, staff, patients, caregivers, messages and alerts, and returns to the setup screen. This can’t be undone.</p>
-      {!open ? (
-        <button className="btn danger" onClick={() => setOpen(true)}>Erase all records…</button>
-      ) : (
-        <div className="stack">
-          <label className="f">Type <b>{clinicName}</b> to confirm<input autoFocus value={confirm} onChange={(e) => setConfirm(e.target.value)} /></label>
-          {err && <div className="alert bad">{err}</div>}
-          <div className="row">
-            <button className="btn danger" disabled={confirm.trim() !== clinicName || busy} onClick={erase}>{busy ? <span className="spin" /> : null} Erase everything</button>
-            <button className="btn" onClick={() => { setOpen(false); setConfirm(""); setErr(null); }}>Cancel</button>
-          </div>
-        </div>
-      )}
-    </div>
   );
 }

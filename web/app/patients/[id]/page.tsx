@@ -491,7 +491,7 @@ function OnboardingCard({ d }: { d: Data }) {
         {pending > 0 && <span className="badge warn">{pending} waiting</span>}
       </div>
       {d.consents.length ? <ConsentList consents={d.consents} people={people} /> : <div className="muted">No consent requests on record.</div>}
-      {pending > 0 && <small className="muted" style={{ display: "block", marginTop: 8 }}>Open the WhatsApp simulator and reply <b>YES</b> from each phone.</small>}
+      {pending > 0 && (d.viewer.role === "DOCTOR" || d.viewer.role === "PA") && <small className="muted" style={{ display: "block", marginTop: 8 }}>Open the WhatsApp simulator and reply <b>YES</b> from each phone.</small>}
     </div>
   );
 }

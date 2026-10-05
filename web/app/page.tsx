@@ -81,7 +81,7 @@ function DemoLanding() {
           <div className="card">
             <div className="card-head"><h3>🎬 10-minute demo script</h3></div>
             <ol className="steps">
-              <li><b>Dr. Rao → Command Centre.</b> Three patients. Abdul’s low-oxygen alert is with his family at Level 2. It shows on the dashboard, but the doctor gets no message.</li>
+              <li><b>Dr. Rao → Today.</b> Three patients. Abdul’s low-oxygen alert is with his family at Level 2. It shows on the dashboard, but the doctor gets no message.</li>
               <li><b>Open Ramesh → Pre-visit brief.</b> 4 weeks since Visit 1: adherence, BP trend, a weight-gain episode the son took to the clinic, and knee pain that stopped his walks.</li>
               <li><b>WhatsApp simulator → Ramesh:</b> type <i>“BP 172/104, feeling dizzy”</i>. Wife Lakshmi (L1) gets the alert. Click <b>+1h</b>: it moves to son Arjun (L2). Arjun replies <i>ACK</i>, then <i>2</i>, then a note.</li>
               <li><b>Back to Ramesh → Start Visit 2.</b> Adjust the medicines and save. You’ll see the <b>Visit 1 → Visit 2 diff</b> and what happened in between.</li>

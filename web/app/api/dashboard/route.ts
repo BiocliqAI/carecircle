@@ -7,7 +7,7 @@ import { DAY } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
-// Command Centre: pull-based visibility for Doctor/PA. Nothing here notifies the doctor.
+// Today / Patients: pull-based visibility for Doctor/PA. Nothing here notifies the doctor.
 export async function GET() {
   await ready();
   const user = await sessionUser();
@@ -59,6 +59,13 @@ export async function GET() {
               creatinine: get<{ value: number; flag: string | null }>("SELECT value, flag FROM labs WHERE patient_id = ? AND marker = 'creatinine' ORDER BY taken_at DESC LIMIT 1", p.id) ?? null,
             }
           : null,
+        onboarding: {
+          hasVisit: !!visit,
+          hasBaseline: !!get("SELECT 1 FROM patient_baseline WHERE patient_id = ?", p.id),
+          consentsPending: get<{ n: number }>("SELECT COUNT(*) AS n FROM consents WHERE patient_id = ? AND status = 'PENDING'", p.id)!.n,
+          consentsDeclined: get<{ n: number }>("SELECT COUNT(*) AS n FROM consents WHERE patient_id = ? AND status = 'DECLINED'", p.id)!.n,
+        },
+        doctorName: getUser(p.doctor_id)?.name ?? null,
         open: open.map((e) => {
           const cg = cgs.find((c) => c.level === e.level);
           return { id: e.id, type: e.type, title: e.title, state: e.state, level: e.level, levelName: cg?.name ?? null, since: e.started_at, levelAt: e.level_at, ackBy: e.ack_by ? getUser(e.ack_by)?.name : null };

@@ -29,7 +29,7 @@ npm run clinic:build && npm run clinic:start
 Flow:
 
 1. **Setup** (`/`): clinic name and address, plus the first doctor. You're signed in as that doctor.
-2. **Clinic** (`/clinic`): add more doctors and PAs (specialty, mobile, email, registration no.). Doctors see only their own patients; PAs see everyone.
+2. **Team** (`/team`): add more doctors and PAs (specialty, mobile, email, registration no.). Doctors see only their own patients; PAs see everyone. A **Getting started** checklist on **Today** shows the next step.
 3. **+ New patient**: a 4-step wizard.
    - **Patient:** details, plus the treating doctor when a PA onboards.
    - **Care circle:** L1–L3 caregivers, with dashboard access per caregiver.
@@ -37,7 +37,7 @@ Flow:
    - **Review.**
 4. **WhatsApp consent**: the patient and each caregiver get a welcome message and reply **YES** or **NO** in the simulator. Status shows on Patient 360 and on the home checklist.
 5. **Visit 1**: pre-filled from the baseline (current medicines with reminder times from OD/BD/TDS, intake vitals, allergy note). Saving it activates the care plan, and from then on it's the same engine as the demo.
-6. **Reset between customers**: Clinic → Reset clinic (type the clinic name to confirm). Gemini settings are kept.
+6. **Reset between customers**: **Clinic settings → Start afresh**, or the Demo panel (type the clinic name to confirm). Gemini settings are kept.
 
 Rules for baseline data:
 
@@ -80,7 +80,7 @@ Notes:
 
 ## Demo script (≈10 min)
 
-1. **Login** (`/`): pick **Dr. Meera Rao**. The **Command Centre** lists 3 patients. Ramesh's Visit 2 is today, and Abdul has a live SpO₂ alert waiting on Level 2 (shown for visibility; the clinic is not notified).
+1. **Login** (`/`): pick **Dr. Meera Rao**. **Today** lists the patients who need attention (all patients are under **Patients**). Ramesh's Visit 2 is today, and Abdul has a live SpO₂ alert waiting on Level 2 (shown for visibility; the clinic is not notified).
 2. **Pre-visit brief**: open **Ramesh**. *Since last visit* shows adherence rings, highlights (BP trend, weight peak, knee pain → skipped walks), clinic baseline vs. home readings, and alerts with their outcomes. Then look at the *Adherence* heatmap, *Trends* and *Timeline* (every reading links to its WhatsApp message).
 3. **WhatsApp** (`/whatsapp`): Ramesh and Lakshmi (L1) are shown side by side.
    - As Ramesh, send `BP 165/100, ankles swollen`. A deviation alert goes to Lakshmi.
@@ -98,7 +98,17 @@ Notes:
    - **Visit form**: "Apply kidney template" button, rich medicine rows (split doses like Lasix 40/20, courses, alternate-day, PRN), and the "Reconcile reported changes" panel.
 7. **Onboarding**: as the doctor, use **+ New patient** → care circle → Visit 1 plan. The welcome and plan messages appear in the simulator.
 
-Presenter tools (WhatsApp page / top bar): **+15 min / +1 h / +6 h** clock fast-forward (fires reminders and escalation timeouts), **Simulate 7 days** (realistic replies for all patients), **Reset demo** on the landing page.
+**Layout:** clinicians get a sidebar with Today, Patients, Team, Clinic settings and **+ Onboard patient**. Patients and caregivers get a simple top bar with their own record.
+
+**Demo tools:** the **🎬 Demo** button (bottom right, or **Shift+D**) opens one panel with:
+- persona switching ("View as")
+- the WhatsApp simulator
+- **+15 min / +1 h / +6 h** clock fast-forward (fires reminders and escalation timeouts)
+- **Simulate 7 days** (realistic replies for all patients)
+- the Gemini key
+- reset/erase
+
+You can hide the Demo button so the clinic screens look like the product.
 
 ## Data provenance
 
@@ -116,6 +126,6 @@ Patient **A Gopal**'s data is grounded in the family's real record (`Appa blood 
 | `lib/clinic.ts` & `lib/mode.ts` | Live-clinic mode: clinic setup, staff, baseline intake (validation + storage), go-live checklist, reset |
 | `lib/seed.ts` & `lib/seed_gopal.ts` | Demo clinics (Dr. Rao & Dr. Dileep), 4 patients with scripted between-visit history |
 | `components/kidney.tsx` | Header badges, pre-visit kidney panel, long-range "Kidney & labs" tab, lab entry, med-change reconciliation, care team |
-| `app/` | Pages (Command Centre, Patient 360, record visit, compare, onboarding, WhatsApp simulator) and API routes |
+| `app/` | Pages (Today, Patients, Team, Clinic settings, Patient 360, record visit, compare, onboarding, WhatsApp simulator) and API routes |
 
 Safety invariants: doctors and PAs never receive automated messages; AI never changes alert or escalation state; every observation keeps its source message and the person who logged it; medicine changes from other doctors are logged and reconciled, never auto-applied.

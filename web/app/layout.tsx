@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { SessionProvider } from "@/components/client";
-import { TopBar } from "@/components/TopBar";
+import { AppShell } from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "CareCircle — between-visit care on WhatsApp",
@@ -13,8 +13,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <SessionProvider>
-          <TopBar />
-          {children}
+          <AppShell>{children}</AppShell>
         </SessionProvider>
       </body>
     </html>
