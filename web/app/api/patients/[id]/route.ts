@@ -4,6 +4,7 @@ import { dayFluid, getConsents, getCaregivers, getPatient, getUser, getVisits, l
 import { intervalSummary, longRange, medChanges, type EscalationView } from "@/lib/summary";
 import { canView, err, json, ready, sessionUser } from "@/lib/server";
 import { getBaseline } from "@/lib/clinic";
+import { getPrep } from "@/lib/prep";
 import { listDocuments, listNotes, updatePatient, type PatientEdit } from "@/lib/records";
 import { DAY } from "@/lib/time";
 
@@ -88,6 +89,17 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     baseline: getBaseline(id),
     consents: getConsents(id),
     notes: user.role === "DOCTOR" || user.role === "PA" ? listNotes(id) : [],
+    latestLabs: (() => {
+      const rows = all<{ marker: string; value: number; taken_at: number; flag: string | null }>("SELECT marker, value, taken_at, flag FROM labs WHERE patient_id = ? ORDER BY taken_at DESC, id DESC", id);
+      const out: { marker: string; value: number; at: number; flag: string | null; prev: number | null }[] = [];
+      for (const r of rows) {
+        const e = out.find((x) => x.marker === r.marker);
+        if (!e) out.push({ marker: r.marker, value: r.value, at: r.taken_at, flag: r.flag, prev: null });
+        else if (e.prev === null && r.taken_at < e.at) e.prev = r.value;
+      }
+      return out;
+    })(),
+    prep: user.role === "DOCTOR" || user.role === "PA" ? getPrep(id) : null,
     documents: listDocuments(id),
   });
 }

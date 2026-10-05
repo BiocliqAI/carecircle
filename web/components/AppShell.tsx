@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 import { avatarColor, homeFor, initials, ROLE_LABEL, useSession } from "./client";
 import { DemoPanel } from "./DemoPanel";
+import { Icon, Mark } from "./Icon";
 import { fmtDateTime } from "@/lib/time";
 
 const DemoCtx = createContext<{ open: () => void }>({ open: () => undefined });
@@ -13,15 +14,15 @@ export const useDemoPanel = () => useContext(DemoCtx);
 
 type NavItem = [href: string, label: string, icon: string, active: (p: string) => boolean];
 const NAV: Record<string, NavItem[]> = {
-  ADMIN: [["/admin", "Clinic & staff", "🏥", (p) => p === "/admin"]],
+  ADMIN: [["/admin", "Clinic & staff", "clinic", (p) => p === "/admin"]],
   DOCTOR: [
-    ["/doctor", "Today", "☀️", (p) => p === "/doctor"],
-    ["/patients", "Patients", "👥", (p) => p.startsWith("/patients")],
-    ["/team", "Assistants", "🧑‍⚕️", (p) => p === "/team"],
+    ["/doctor", "Today", "today", (p) => p === "/doctor"],
+    ["/patients", "Patients", "patients", (p) => p.startsWith("/patients")],
+    ["/team", "Assistants", "assistant", (p) => p === "/team"],
   ],
   PA: [
-    ["/doctor", "Today", "☀️", (p) => p === "/doctor"],
-    ["/patients", "Patients", "👥", (p) => p.startsWith("/patients")],
+    ["/doctor", "Today", "tasks", (p) => p === "/doctor"],
+    ["/patients", "Patients", "patients", (p) => p.startsWith("/patients")],
   ],
 };
 
@@ -35,16 +36,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!loading && !user && path !== "/" && path !== "/whatsapp") router.replace("/");
   }, [loading, user, path, router]);
   const [panel, setPanel] = useState(false);
-  const [hidden, setHidden] = useState(false);
+  const [hidden, setHidden] = useState(true); // decided on mount (avoids a flash of the button)
 
   useEffect(() => {
-    try { setHidden(localStorage.getItem("cc_demo_hidden") === "1"); } catch { /* storage unavailable */ }
+    try {
+      const pref = localStorage.getItem("cc_demo_hidden");
+      // Live clinic: hidden unless the presenter brought it back (Shift+D). Sample demo: shown.
+      setHidden(pref === "1" || (pref === null && document.documentElement.dataset.mode === "live"));
+    } catch { /* storage unavailable */ }
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
       if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "d") {
         setHidden(false);
-        try { localStorage.removeItem("cc_demo_hidden"); } catch { /* storage unavailable */ }
+        try { localStorage.setItem("cc_demo_hidden", "0"); } catch { /* storage unavailable */ }
         setPanel((x) => !x);
       }
       if (e.key === "Escape") setPanel(false);
@@ -91,7 +96,7 @@ function Brand() {
   const { mode, clinic } = useSession();
   return (
     <Link href="/" className="brand">
-      <span className="brand-mark">💚</span>
+      <Mark />
       <span className="brand-text">
         CareCircle
         {mode === "live" && clinic ? <small>{clinic.name}</small> : mode === "demo" ? <small>Sample clinic</small> : null}
@@ -117,11 +122,11 @@ function Sidebar({ path }: { path: string }) {
   return (
     <aside className="sidebar">
       <Brand />
-      {user && (user.role === "DOCTOR" || user.role === "PA") && <Link href="/patients/new" className="btn primary side-cta">+ Onboard patient</Link>}
+      {user && (user.role === "DOCTOR" || user.role === "PA") && <Link href="/patients/new" className="side-cta"><Icon name="plus" size={16} stroke={2.2} />Onboard patient</Link>}
       <nav>
         {items.map(([href, label, icon, active]) => (
           <Link key={href} href={href} className={active(path) ? "active" : ""}>
-            <span className="ic" aria-hidden>{icon}</span>{label}
+            <Icon name={icon} />{label}
           </Link>
         ))}
       </nav>
@@ -133,7 +138,7 @@ function Sidebar({ path }: { path: string }) {
             <span style={{ flex: 1, minWidth: 0 }}><b>{user.name}</b><small>{ROLE_LABEL[user.role]}</small></span>
           </div>
         )}
-        <button className="side-switch" onClick={switchPersona}>⇄ Switch persona</button>
+        <button className="side-switch" onClick={switchPersona}><Icon name="swap" size={15} /> Switch persona</button>
       </div>
     </aside>
   );

@@ -95,6 +95,13 @@ CREATE TABLE IF NOT EXISTS patient_documents (
   source TEXT NOT NULL DEFAULT 'clinic', uploaded_by TEXT, uploaded_at INTEGER NOT NULL, message_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS docs_patient ON patient_documents(patient_id, uploaded_at);
+CREATE TABLE IF NOT EXISTS patient_reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, user_id TEXT NOT NULL, at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reviews_patient ON patient_reviews(patient_id, at);
+CREATE TABLE IF NOT EXISTS visit_prep (
+  patient_id TEXT PRIMARY KEY, data TEXT NOT NULL, updated_by TEXT, updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS onboarding_drafts (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, step INTEGER NOT NULL, data TEXT NOT NULL,
   created_by TEXT, created_at INTEGER NOT NULL, updated_by TEXT, updated_at INTEGER NOT NULL
@@ -111,6 +118,7 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["users", "email", "TEXT"],
   ["users", "reg_no", "TEXT"],
   ["users", "created_at", "INTEGER"],
+  ["patient_documents", "filed_at", "INTEGER"],
 ];
 
 function migrate(db: DatabaseSyncT) {
@@ -153,7 +161,7 @@ export function resetDb(): void {
   const db = getDb();
   db.exec(`
     DROP TABLE IF EXISTS patient_baseline; DROP TABLE IF EXISTS consents; DROP TABLE IF EXISTS onboarding_drafts;
-    DROP TABLE IF EXISTS patient_notes; DROP TABLE IF EXISTS patient_documents;
+    DROP TABLE IF EXISTS patient_notes; DROP TABLE IF EXISTS patient_documents; DROP TABLE IF EXISTS patient_reviews; DROP TABLE IF EXISTS visit_prep;
     DROP TABLE IF EXISTS escalation_events; DROP TABLE IF EXISTS escalations; DROP TABLE IF EXISTS observations;
     DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS visits;
     DROP TABLE IF EXISTS caregivers; DROP TABLE IF EXISTS patients; DROP TABLE IF EXISTS convo_state;

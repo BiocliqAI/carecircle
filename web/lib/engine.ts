@@ -342,8 +342,8 @@ export function createEscalation(p: PatientRow, e: NewEsc, t: number): number | 
   return id;
 }
 
-function escalationText(p: PatientRow, esc: EscalationRow, prev: CaregiverRow | null, timer: number): string {
-  const pre = prev ? `${prev.name} (Level ${prev.level}) hasn't responded in ${timer} min, so this is now with you.\n\n` : "";
+function escalationText(p: PatientRow, esc: EscalationRow, prev: CaregiverRow | null, timer: number, passed = false): string {
+  const pre = prev ? (passed ? `${prev.name} couldn't take this and passed it to you.\n\n` : `${prev.name} hasn't responded in ${timer} min, so this is now with you.\n\n`) : "";
   const doc = doctorName(p);
   if (esc.type === "URGENT")
     return `🚨 URGENT — ${p.name}\n${pre}${esc.detail}\n\n${esc.advice}\nPlease call ${first(p.name)} right now. If unwell, call 108 / go to the nearest emergency, and inform ${doc}.\n\nReply *ACK* to take ownership.`;
@@ -352,11 +352,12 @@ function escalationText(p: PatientRow, esc: EscalationRow, prev: CaregiverRow | 
   return `📋 Care Circle — ${p.name}\n${pre}${esc.detail}\n${esc.advice}\n\nReply *ACK* to take ownership.`;
 }
 
-function notifyLevel(p: PatientRow, esc: EscalationRow, level: number, t: number, prev: CaregiverRow | null) {
+function notifyLevel(p: PatientRow, esc: EscalationRow, level: number, t: number, prev: CaregiverRow | null, passed = false) {
   const cg = getCaregivers(p.id).find((c) => c.level === level);
   if (!cg || !cg.user_id) return;
   const timer = TIMER_MIN(latestVisit(p.id, t)?.plan, esc.type);
-  sendWhatsApp({ userId: cg.user_id, patientId: p.id, body: escalationText(p, esc, prev, timer), quick: ["ACK – I'll handle it", "Miss"], kind: "escalation", at: t });
+  const backup = getCaregivers(p.id).find((c) => c.level === level + 1);
+  sendWhatsApp({ userId: cg.user_id, patientId: p.id, body: escalationText(p, esc, prev, timer, passed), quick: backup ? ["I'll handle it", `Pass to ${first(backup.name)}`] : ["I'll handle it"], kind: "escalation", at: t });
   escEvent(esc.id, t, "NOTIFIED", level, cg.name);
 }
 
@@ -372,9 +373,9 @@ export function timeoutCaregiver(escId: number, t: number, via: "whatsapp" | "da
   const next = cgs.find((c) => c.level > esc.level);
   if (next) {
     run("UPDATE escalations SET level = ?, level_at = ? WHERE id = ?", next.level, t, esc.id);
-    escEvent(esc.id, t, "TIMEOUT", esc.level, "system", `${cur?.name ?? "Level " + esc.level} did not acknowledge within ${timer} min${via === "whatsapp" ? " (simulated miss)" : ""}`);
+    escEvent(esc.id, t, "TIMEOUT", esc.level, via === "timer" ? "system" : cur?.name ?? "system", via === "timer" ? `${cur?.name ?? "Level " + esc.level} did not acknowledge within ${timer} min` : `${cur?.name ?? "Level " + esc.level} passed it on`);
     audit(t, "system", "ESCALATION_LEVEL_UP", "escalation", esc.id, { from: esc.level, to: next.level, via });
-    notifyLevel(p, { ...esc, level: next.level, level_at: t }, next.level, t, cur);
+    notifyLevel(p, { ...esc, level: next.level, level_at: t }, next.level, t, cur, via !== "timer");
     if (via !== "timer" && cur?.user_id) {
       sendWhatsApp({
         userId: cur.user_id,
@@ -659,7 +660,7 @@ function kidneyMorningCheck(p: PatientRow, t: number) {
 const ACK_RE = /^\s*(ack\b|acknowledged?|ok(ay)?\b|on it|i'?ll handle|will handle|handling|yes\b|👍)/i;
 const YES_RE = /^\s*(yes|y|i agree|agree|ok|okay|haan|ha)\W*$/i;
 const NO_RE = /^\s*(no|n|stop|i do not agree|disagree)\W*$/i;
-const MISS_RE = /^\s*(miss(ed)?|timeout|simulate\s*timeout|skip|unresponsive)\b/i;
+const MISS_RE = /^\s*(miss(ed)?|timeout|simulate\s*timeout|skip|unresponsive|pass(\s+(it\s+)?to\b.*)?|can'?t\s+now)\b/i;
 
 export async function ingestMessage(userId: string, body: string, opts: { allowAi?: boolean; at?: number } = {}): Promise<void> {
   const t = opts.at ?? now();

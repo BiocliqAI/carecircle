@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
 import { api, useSession } from "@/components/client";
 import { Highlights } from "@/components/interval";
+import { VisitPrepare } from "@/components/VisitPrepare";
+import { Icon } from "@/components/Icon";
+import { Spark } from "@/components/Spark";
+import { shorthand } from "@/components/PatientChart";
 import type { IntervalSummary, MedChangeRow } from "@/lib/summary";
 import { DEFAULT_THRESHOLDS, DEFAULT_TIMERS, FREQ_TIMES, KIDNEY_TEMPLATE, SYMPTOMS, VITAL_META, type Baseline, type CarePlan, type ClinicVitals, type Medication, type Visit, type VitalType } from "@/lib/types";
 import { DAY, TZ_OFFSET_MS, dayStart, fmtDate } from "@/lib/time";
@@ -57,10 +61,20 @@ interface VisitData {
   summary: IntervalSummary | null;
   careTeam: { id: number; name: string; role: string }[];
   medChanges: MedChangeRow[];
+  prep?: { vitals: Record<string, string | undefined>; vitalsAt: number | null; vitalsByName: string | null; flags: { id: string; text: string }[]; questions: string; readyAt: number | null; readyByName: string | null } | null;
+  doctor?: { name: string } | null;
 }
 
-export default function RecordVisit({ params }: { params: Promise<{ id: string }> }) {
+export default function VisitPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { user, loading } = useSession();
+  if (loading) return <main className="page"><div className="empty"><span className="spin" /></div></main>;
+  if (user?.role === "PA") return <VisitPrepare id={id} />;
+  return <DoctorConsult id={id} />;
+}
+
+/** Doctor, in the consultation: summary on the left, the plan edited in place on the right. */
+function DoctorConsult({ id }: { id: string }) {
   const router = useRouter();
   const { loading, notifyChange } = useSession();
   const [d, setD] = useState<VisitData | null>(null);
@@ -97,6 +111,8 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
           if (b.allergies || b.notes) setNotes([b.allergies && `Allergies: ${b.allergies}`, b.notes && `Intake: ${b.notes}`].filter(Boolean).join("\n"));
         }
       }
+      const pv = x.prep?.vitals;
+      if (pv && Object.values(pv).some(Boolean)) setVitals(Object.fromEntries(Object.entries(pv).filter(([, v]) => v)) as Record<string, string>);
       const nd = new Date(dayStart(x.now) + 28 * DAY + TZ_OFFSET_MS + 12 * 3600_000).toISOString().slice(0, 10);
       setNextDate(nd);
     }).catch((e) => setErr(e.message));
@@ -133,23 +149,25 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
   }
 
   return (
-    <main className="page">
-      <div className="page-head">
+    <main className="page consult" style={{ maxWidth: 1320 }}>
+      <div className="consult-head">
         <div>
-          <Link href={`/patients/${id}`}>← {d.patient.name}</Link>
-          <h1 style={{ marginTop: 4 }}>Visit {visitNo} · {fmtDate(d.now, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}</h1>
-          <div className="muted">{d.current ? "Pre-filled from the current care plan. Change what you need; the new plan reaches the patient’s WhatsApp as soon as you save." : d.baseline?.currentMeds.length ? "Medicines and intake vitals are pre-filled from the baseline. Confirm or change them; WhatsApp reminders start right after you save." : "Set up the care plan. WhatsApp reminders start right after you save."}</div>
+          <Link href={`/patients/${id}`} className="v2-sub" style={{ fontSize: 13 }}>← {d.patient.name}</Link>
+          <h1 style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>Visit {visitNo} · {fmtDate(d.now, { weekday: "short", day: "numeric", month: "short" })}</h1>
+          <div className="v2-sub" style={{ fontSize: 14 }}>
+            {d.prep?.readyAt ? `Prepared by ${d.prep.readyByName ?? "the assistant"} · ` : ""}
+            {d.current ? "Pre-filled from the current plan. Changes are highlighted." : d.baseline?.currentMeds.length ? "Medicines and intake vitals are pre-filled from the baseline." : "Set up the first care plan."}
+          </div>
         </div>
         <div className="row">
-          {plan.template !== "kidney" && <button className="btn" onClick={() => up(applyKidney)} title="Adds weight/fluid/lab monitoring, dry-weight band, kidney lab limits and diet advice">🫘 Apply kidney template</button>}
-          <Link className="btn" href={`/patients/${id}`}>Cancel</Link>
-          <button className="btn primary" disabled={busy} onClick={save}>{busy ? <span className="spin" /> : "💾"} Save visit & activate plan</button>
+          {plan.template !== "kidney" && <button className="v2-btn" onClick={() => up(applyKidney)} title="Adds weight, fluid and lab monitoring, a dry-weight band, kidney lab limits and diet advice">Apply kidney template</button>}
+          <Link className="v2-btn" href={`/patients/${id}`}>Cancel</Link>
         </div>
       </div>
       {err && <div className="alert bad" style={{ marginBottom: 12 }}>{err}</div>}
 
-      <div className="grid side">
-        <div className="stack gap16">
+      <div className="consult-grid">
+        <div className="stack gap16 consult-plan">
           <div className="card">
             <div className="card-head"><h3>Clinic vitals today</h3><small>{d.current ? `Last visit: BP ${d.current.vitals.sys ?? "—"}/${d.current.vitals.dia ?? "—"}, Wt ${d.current.vitals.weight ?? "—"}` : ""}</small></div>
             <div className="grid g5">
@@ -163,22 +181,23 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
           </div>
 
           <div className="card">
-            <div className="card-head"><h3>Diagnosis & notes</h3></div>
+            <div className="card-head"><h3>Diagnosis and clinical note</h3></div>
             <div className="stack">
               <label className="f">Diagnosis<textarea value={diagnosis} onChange={(e) => setDiagnosis(e.target.value)} style={{ minHeight: 50 }} /></label>
-              <label className="f">Consultation notes<textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Findings, counselling, changes made…" /></label>
+              <label className="f">Clinical note<textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Findings, counselling, changes made…" /></label>
             </div>
           </div>
 
           <div className="card">
-            <div className="card-head"><h3>💊 Medicines</h3><button className="btn sm" onClick={() => up((p) => p.medications.push({ key: "", name: "", dose: "", times: ["08:00"], prescriber: primaryName }))}>+ Add medicine</button></div>
+            <div className="card-head"><h3>Medicines</h3><button className="btn sm" onClick={() => up((p) => p.medications.push({ key: "", name: "", dose: "", times: ["08:00"], prescriber: primaryName }))}>+ Add medicine</button></div>
             <table className="t">
-              <thead><tr><th>Medicine</th><th>Dose(s)</th><th>Times (24h)</th><th>Schedule</th><th>Prescribed by</th><th>For / instructions</th><th /></tr></thead>
+              <thead><tr><th>Medicine</th><th>Dose(s)</th><th>Times (24h)</th><th>Schedule</th><th>Prescribed by</th><th>For / instructions</th><th>Change</th><th /></tr></thead>
               <tbody>
                 {plan.medications.map((m, i) => {
                   const sched = m.prn ? "prn" : m.courseDays ? "course" : m.everyNDays === 2 ? "alt" : m.everyNDays === 7 ? "weekly" : m.everyNDays && m.everyNDays > 1 ? "everyN" : "daily";
+                  const ch = medChange(m, d.current?.plan.medications ?? null);
                   return (
-                    <tr key={`${i}-${m.key}`}>
+                    <tr key={`${i}-${m.key}`} className={ch.kind === "new" ? "mc-new" : ch.kind === "changed" ? "mc-changed" : ""}>
                       <td><input value={m.name} placeholder="e.g. Lasix" onChange={(e) => up((p) => { p.medications[i].name = e.target.value; if (!d.current?.plan.medications.some((x) => x.key === p.medications[i].key)) p.medications[i].key = ""; })} /></td>
                       <td style={{ width: 130 }}>
                         <input defaultValue={m.doses && m.doses.length > 1 ? m.doses.join(", ") : m.dose} placeholder="40 mg, 20 mg" title="One dose, or one per time separated by commas (split dose)"
@@ -212,19 +231,27 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
                         <input value={m.purpose || ""} placeholder="for BP / fluid…" onChange={(e) => up((p) => { p.medications[i].purpose = e.target.value || undefined; })} />
                         <input value={m.instructions || ""} placeholder="after food" onChange={(e) => up((p) => { p.medications[i].instructions = e.target.value; })} style={{ marginTop: 4 }} />
                       </td>
-                      <td style={{ width: 40 }}><button className="btn sm ghost" title="Stop medicine" onClick={() => up((p) => { p.medications.splice(i, 1); })}>✕</button></td>
+                      <td style={{ width: 150 }}><span className={`v2-pill ${ch.kind === "same" ? "grey" : ch.kind === "new" ? "blue" : "green"}`} style={{ whiteSpace: "normal" }}>{ch.label}</span></td>
+                      <td style={{ width: 40 }}><button className="btn sm ghost" title="Stop medicine" aria-label={`Stop ${m.name || "medicine"}`} onClick={() => up((p) => { p.medications.splice(i, 1); })}>✕</button></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            {d.current && d.current.plan.medications.filter((c) => !plan.medications.some((m) => m.key === c.key)).map((c) => (
+              <div key={c.key} className="mc-stopped">
+                <span><s>{c.name} {c.dose}</s> <span className="v2-sub">{shorthand(c)}</span></span>
+                <span className="v2-pill red">Stopped</span>
+                <button className="tq-link" onClick={() => up((p) => { p.medications.push(JSON.parse(JSON.stringify(c))); })}>Undo</button>
+              </div>
+            ))}
             <datalist id="cc-team-visit">{d.careTeam.map((t) => <option key={t.id} value={t.name} />)}</datalist>
             <small className="muted">Split dose: enter one dose per time, e.g. “40 mg, 20 mg” with times “08:00, 16:00”. PRN medicines get no reminders.</small>
           </div>
 
           {(plan.fluid || plan.template === "kidney") && (
             <div className="card">
-              <div className="card-head"><h3>🫘 Kidney care</h3><small>Deviations alert the care circle, not the doctor</small></div>
+              <div className="card-head"><h3>Kidney care</h3><small>Deviations alert the care circle, not the doctor</small></div>
               <div className="grid g4">
                 <label className="f">Dry weight (kg)<input type="number" step="0.1" value={plan.thresholds.dryWeight ?? ""} onChange={(e) => up((p) => { p.thresholds.dryWeight = e.target.value ? Number(e.target.value) : undefined; })} /></label>
                 <label className="f">Allowed band ± kg<input type="number" step="0.1" value={plan.thresholds.weightBand ?? ""} onChange={(e) => up((p) => { p.thresholds.weightBand = Number(e.target.value); })} /></label>
@@ -246,7 +273,7 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
           )}
 
           <div className="card">
-            <div className="card-head"><h3>📏 Home readings via WhatsApp</h3></div>
+            <div className="card-head"><h3>Home readings on WhatsApp</h3></div>
             <div className="stack">
               {(Object.keys(VITAL_META) as VitalType[]).map((k) => {
                 const m = plan.monitoring.find((x) => x.key === k);
@@ -282,7 +309,7 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
 
           <div className="grid g2">
             <div className="card">
-              <div className="card-head"><h3>🏃 Physio / exercise</h3><button className="btn sm" onClick={() => up((p) => p.physio.push({ key: "", name: "", detail: "", times: ["17:00"] }))}>+ Add</button></div>
+              <div className="card-head"><h3>Physio and exercise</h3><button className="btn sm" onClick={() => up((p) => p.physio.push({ key: "", name: "", detail: "", times: ["17:00"] }))}>+ Add</button></div>
               <div className="stack">
                 {plan.physio.map((x, i) => (
                   <div key={i} className="row" style={{ alignItems: "flex-start" }}>
@@ -300,7 +327,7 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
               </div>
             </div>
             <div className="card">
-              <div className="card-head"><h3>🥗 Lifestyle advice</h3><button className="btn sm" onClick={() => up((p) => p.lifestyle.push({ key: "", text: "" }))}>+ Add</button></div>
+              <div className="card-head"><h3>Lifestyle advice</h3><button className="btn sm" onClick={() => up((p) => p.lifestyle.push({ key: "", text: "" }))}>+ Add</button></div>
               <div className="stack">
                 {plan.lifestyle.map((x, i) => (
                   <div key={i} className="row">
@@ -314,7 +341,7 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
           </div>
 
           <div className="card">
-            <div className="card-head"><h3>🚦 Deviation limits → alert the care circle</h3><small>The family is alerted. The doctor is not notified.</small></div>
+            <div className="card-head"><h3>Alert limits for the care circle</h3><small>The family is alerted. The doctor is not notified.</small></div>
             <div className="grid g5">
               {(
                 [
@@ -346,17 +373,24 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
             </div>
           </div>
 
-          <div className="card row between">
-            <label className="f" style={{ maxWidth: 220 }}>Next visit<input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} /></label>
-            <button className="btn primary" disabled={busy} onClick={save}>{busy ? <span className="spin" /> : "💾"} Save visit & activate plan</button>
-          </div>
+          <section className="card wa-preview">
+            <div className="card-head"><h3>{d.patient.name.split(" ")[0]} will receive on WhatsApp</h3><small>The care circle is told the plan changed</small></div>
+            <div className="wa-preview-bubble">{planMessage(plan, d.doctor?.name ?? "Your doctor", nextDate)}</div>
+          </section>
         </div>
 
-        <div>
-          <div className="stack gap16" style={{ position: "sticky", top: 70 }}>
+        <div className="consult-summary">
+          <div className="stack gap16">
+            {d.prep && (d.prep.flags.length > 0 || d.prep.questions) && (
+              <div className="card prep-flags">
+                <div className="card-head"><h3>Flagged by {d.prep.readyByName ?? "the assistant"}</h3></div>
+                {d.prep.flags.map((f) => <div key={f.id} className="prep-flag">{f.text}</div>)}
+                {d.prep.questions && <div className="prep-flag"><b>Question:</b> {d.prep.questions}</div>}
+              </div>
+            )}
             {reported.length > 0 && (
               <div className="card">
-                <div className="card-head"><h3>💊 Reconcile reported changes</h3><span className="badge warn">{reported.length}</span></div>
+                <div className="card-head"><h3>Reconcile reported changes</h3><span className="badge warn">{reported.length}</span></div>
                 <small className="muted">Reported by the family / other doctors since the last visit. Update the medicine list on the left if you agree, then mark it.</small>
                 {reported.map((m) => (
                   <div key={m.id} className="hl warn">
@@ -365,9 +399,9 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
                       <b>{m.med_name}</b> {m.change.replace("_", " ")}{m.detail ? ` — ${m.detail}` : ""}
                       <div className="muted">{m.prescriber ? `by ${m.prescriber} · ` : ""}{fmtDate(m.at, { day: "numeric", month: "short" })}{m.reported_by_name ? ` · reported by ${m.reported_by_name}` : ""}</div>
                       <div className="row" style={{ marginTop: 6 }}>
-                        <button className="btn sm" onClick={() => review(m.id, "CONFIRMED")}>✔ Confirmed</button>
+                        <button className="btn sm" onClick={() => review(m.id, "CONFIRMED")}>Confirmed</button>
                         <button className="btn sm ghost" onClick={() => review(m.id, "REVIEWED")}>Seen, no change</button>
-                        <button className="btn sm ghost" onClick={() => review(m.id, "REJECTED")}>✖ Not to follow</button>
+                        <button className="btn sm ghost" onClick={() => review(m.id, "REJECTED")}>Not to follow</button>
                       </div>
                     </div>
                   </div>
@@ -376,11 +410,58 @@ export default function RecordVisit({ params }: { params: Promise<{ id: string }
             )}
             <div className="card">
               <div className="card-head"><h3>Since last visit</h3>{d.current && <Link href={`/patients/${id}`} className="btn sm">Full brief</Link>}</div>
-              {d.summary ? <Highlights items={d.summary.highlights} /> : <div className="muted">First visit — no home data yet.</div>}
+              {d.summary ? <Highlights items={d.summary.highlights} /> : <div className="muted">First visit: no home data yet.</div>}
             </div>
+            {d.summary?.vitals.filter((v) => v.count > 1 && ["bp", "weight", "glucose", "spo2"].includes(v.type)).slice(0, 2).map((v) => {
+              const th = d.current?.plan.thresholds;
+              const band = v.type === "bp" && th ? [th.sysLow, th.sysHigh] : v.type === "glucose" && th ? [th.glucoseLow, th.glucoseHigh] : v.type === "spo2" && th ? [th.spo2Low, 100] : [null, null];
+              const last = v.series[v.series.length - 1];
+              return (
+                <div key={v.type} className="card num">
+                  <div className="row between"><h3 style={{ fontSize: 14 }}>{VITAL_META[v.type].label}</h3><span className="v2-sub">latest {last.v1}{last.v2 ? `/${last.v2}` : ""} {VITAL_META[v.type].unit}</span></div>
+                  <div style={{ marginTop: 8 }}><Spark points={v.series.slice(-24).map((x) => x.v1)} lo={band[0]} hi={band[1]} tone={last.flag ? "red" : "brand"} width={320} height={60} label={`${VITAL_META[v.type].label} since last visit`} /></div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
+      <div className="consult-bar num">
+        <label className="row" style={{ gap: 8, fontWeight: 600, fontSize: 14 }}>Next visit<input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} style={{ width: "auto" }} /></label>
+        <span className="v2-sub" style={{ flex: 1, fontSize: 13.5 }}>{changeSummary(plan, d.current?.plan ?? null)}</span>
+        <button className="v2-btn primary" style={{ minHeight: 40, padding: "0 18px", fontSize: 14 }} disabled={busy} onClick={save}>{busy ? <span className="spin" /> : null}{d.current ? "Save and send plan" : "Save visit and start plan"}</button>
+      </div>
     </main>
   );
+}
+
+type MedDiff = { kind: "new" | "changed" | "same"; label: string };
+function medChange(m: Medication, before: Medication[] | null): MedDiff {
+  if (!before) return { kind: "new", label: "New" };
+  const old = before.find((b) => (m.key && b.key === m.key) || b.name.trim().toLowerCase() === m.name.trim().toLowerCase());
+  if (!old) return { kind: "new", label: "New" };
+  const parts: string[] = [];
+  const dose = (x: Medication) => (x.doses && x.doses.length > 1 ? x.doses.join(", ") : x.dose);
+  if (dose(old) !== dose(m)) parts.push(`${dose(old)} → ${dose(m)}`);
+  if (old.times.join(",") !== m.times.join(",")) parts.push(`${shorthand(old)} → ${shorthand(m)}`);
+  if (!!old.prn !== !!m.prn || old.everyNDays !== m.everyNDays || old.courseDays !== m.courseDays) parts.push("schedule");
+  return parts.length ? { kind: "changed", label: parts.join(" · ") } : { kind: "same", label: "No change" };
+}
+
+function changeSummary(plan: CarePlan, before: CarePlan | null): string {
+  if (!before) return `${plan.medications.length} medicine${plan.medications.length === 1 ? "" : "s"} in the first plan`;
+  const changed = plan.medications.filter((m) => medChange(m, before.medications).kind === "changed").length;
+  const added = plan.medications.filter((m) => medChange(m, before.medications).kind === "new").length;
+  const stopped = before.medications.filter((b) => !plan.medications.some((m) => m.key === b.key)).length;
+  const th = Object.keys(plan.thresholds).filter((k) => (plan.thresholds as unknown as Record<string, unknown>)[k] !== (before.thresholds as unknown as Record<string, unknown>)[k]).length;
+  const parts = [changed && `${changed} changed`, added && `${added} added`, stopped && `${stopped} stopped`, th && `${th} limit${th > 1 ? "s" : ""} changed`].filter(Boolean);
+  return parts.length ? `Changes: ${parts.join(", ")}` : "No changes to the plan";
+}
+
+/** Mirrors the WhatsApp care-plan message the engine sends when the visit is saved. */
+function planMessage(plan: CarePlan, doctor: string, nextDate: string): string {
+  const meds = plan.medications.map((m) => `• ${m.name} ${m.dose} · ${shorthand(m)}${m.instructions ? ` (${m.instructions})` : ""}`).join("\n");
+  const mon = plan.monitoring.map((m) => VITAL_META[m.key].label).join(", ");
+  const next = nextDate ? `\nNext visit: ${new Date(`${nextDate}T12:00:00+05:30`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}` : "";
+  return `${doctor} has set your care plan:\n${meds || "• No medicines"}\n\nPlease send: ${mon || "—"}${plan.labs ? `\nBlood tests: ${plan.labs.panel} every ${plan.labs.everyDays} days` : ""}${next}`;
 }

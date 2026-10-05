@@ -361,24 +361,12 @@ export function Phone({
                           key={q}
                           disabled={sending}
                           onClick={() => send(q)}
-                          style={q.toLowerCase().includes("miss") ? { color: "#b45309", fontWeight: 700 } : undefined}
-                          title={q.toLowerCase().includes("miss") ? "Simulate caregiver missing this alert (triggers timeout escalation)" : undefined}
+                          style={/^(miss|pass)/i.test(q) ? { color: "#b45309", fontWeight: 700 } : undefined}
+                          title={/^(miss|pass)/i.test(q) ? "Pass this alert to the next person in the care circle" : undefined}
                         >
                           {q}
                         </button>
                       ))}
-                      {/* If the message had an ACK quick button but no Miss button yet, ensure Miss is shown next to it */}
-                      {m.quick.some((q) => q.toLowerCase().includes("ack")) && !m.quick.some((q) => q.toLowerCase().includes("miss")) && (
-                        <button
-                          key="miss-fallback"
-                          disabled={sending}
-                          onClick={() => send("Miss")}
-                          style={{ color: "#b45309", fontWeight: 700 }}
-                          title="Simulate caregiver missing this alert (triggers timeout escalation)"
-                        >
-                          Miss
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>

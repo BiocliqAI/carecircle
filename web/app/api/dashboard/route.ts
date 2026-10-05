@@ -4,6 +4,7 @@ import { dayFluid, getCaregivers, getUser, latestVisit, listPatients, type Escal
 import { intervalSummary } from "@/lib/summary";
 import { err, isClinician, json, ready, sessionUser } from "@/lib/server";
 import { DAY } from "@/lib/time";
+import { triage } from "@/lib/triage";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,13 @@ export async function GET() {
           consentsDeclined: get<{ n: number }>("SELECT COUNT(*) AS n FROM consents WHERE patient_id = ? AND status = 'DECLINED'", p.id)!.n,
         },
         doctorName: getUser(p.doctor_id)?.name ?? null,
+        triage: triage(p, visit, open, s?.overall.meds ?? null, t),
+        prep: (() => {
+          const r = get<{ data: string }>("SELECT data FROM visit_prep WHERE patient_id = ?", p.id);
+          if (!r) return null;
+          const d = JSON.parse(r.data) as { readyAt?: number | null; readyBy?: string | null };
+          return { readyAt: d.readyAt ?? null, readyBy: d.readyBy ?? null };
+        })(),
         open: open.map((e) => {
           const cg = cgs.find((c) => c.level === e.level);
           return { id: e.id, type: e.type, title: e.title, state: e.state, level: e.level, levelName: cg?.name ?? null, since: e.started_at, levelAt: e.level_at, ackBy: e.ack_by ? getUser(e.ack_by)?.name : null };

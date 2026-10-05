@@ -17,14 +17,14 @@ import type { Baseline } from "@/lib/types";
 
 interface Caregiver { id: string; name: string; relation: string | null; phone: string; level: number; user_id: string | null; dashboard?: number }
 type LabChip = { marker: string; value: number; flag: string | null };
-type TL =
+export type TL =
   | { kind: "log"; at: number; id: number; by: string; role: string; body: string; parser: string | null; obs: { type: string; v1: number | null; v2: number | null; text: string | null; flag: string | null; severity: string | null }[]; tasks: { label: string; status: string; late: number }[]; labs: LabChip[] }
   | { kind: "alert"; at: number; escalationId: number; title: string; type: string; event: string; level: number | null; actor: string | null; note: string | null }
   | { kind: "visit"; at: number; id: string; diagnosis: string; notes: string }
   | { kind: "missed"; at: number; label: string; taskKind: string }
   | { kind: "lab"; at: number; by: string | null; labs: LabChip[] }
   | { kind: "medchange"; at: number; change: MedChangeRow };
-interface Data {
+export interface Data {
   now: number;
   viewer: { id: string; role: string; name: string; isCaregiverHere: boolean };
   patient: { id: string; name: string; age: number; sex: string; phone: string; conditions: string; address: string; user_id?: string | null; doctor_id?: string };
@@ -44,6 +44,8 @@ interface Data {
   consents: ConsentView[];
   notes: NoteItem[];
   documents: DocItem[];
+  latestLabs?: { marker: string; value: number; at: number; flag: string | null; prev: number | null }[];
+  prep?: { readyAt: number | null; readyByName: string | null; flags: { id: string; text: string }[]; questions: string } | null;
 }
 
 /** Patient 360. `embedded` = shown beside the WhatsApp phone on the patient / caregiver page. */
@@ -344,7 +346,7 @@ const labChip = (l: LabChip, k: number) => (
   <span key={`l${k}`} className={`badge ${l.flag ? "bad" : "info"}`}>🧪 {LAB_META[l.marker]?.label ?? l.marker} {l.value}{l.flag ? ` (${l.flag})` : ""}</span>
 );
 
-function Timeline({ items }: { items: TL[] }) {
+export function Timeline({ items }: { items: TL[] }) {
   const [filter, setFilter] = useState("all");
   const match = (i: TL) =>
     filter === "all" || i.kind === filter ||
@@ -424,7 +426,7 @@ function Timeline({ items }: { items: TL[] }) {
   );
 }
 
-function PlanTab({ d, canEdit, onChange }: { d: Data; canEdit: boolean; onChange: () => void }) {
+export function PlanTab({ d, canEdit, onChange }: { d: Data; canEdit: boolean; onChange: () => void }) {
   const cur = d.current!;
   const p = cur.plan;
   const th = p.thresholds;
@@ -501,7 +503,7 @@ function PlanTab({ d, canEdit, onChange }: { d: Data; canEdit: boolean; onChange
   );
 }
 
-function OnboardingCard({ d }: { d: Data }) {
+export function OnboardingCard({ d }: { d: Data }) {
   const people = [
     { user_id: d.patient.user_id ?? null, label: `${d.patient.name} (patient)` },
     ...d.caregivers.map((c) => ({ user_id: c.user_id, label: `L${c.level} · ${c.name}` })),

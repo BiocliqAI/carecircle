@@ -28,7 +28,7 @@ export function ProfileTab({ patient, caregivers, consents, onChange, children }
   );
 }
 
-function DetailsCard({ p, onChange }: { p: ProfilePatient; onChange: () => void }) {
+export function DetailsCard({ p, onChange }: { p: ProfilePatient; onChange: () => void }) {
   const [edit, setEdit] = useState(false);
   const [f, setF] = useState({ name: p.name, age: p.age?.toString() ?? "", sex: p.sex || "F", phone: p.phone, address: p.address || "", conditions: p.conditions || "", doctorId: p.doctor_id ?? "" });
   const [doctors, setDoctors] = useState<{ id: string; name: string; role: string }[]>([]);
@@ -97,7 +97,7 @@ function DetailsCard({ p, onChange }: { p: ProfilePatient; onChange: () => void 
 
 interface CgDraft { id?: string; name: string; relation: string; phone: string; dashboard: boolean }
 
-function CareCircleCard({ pid, patient, caregivers, consents, onChange }: { pid: string; patient: ProfilePatient; caregivers: ProfileCaregiver[]; consents: ConsentView[]; onChange: () => void }) {
+export function CareCircleCard({ pid, patient, caregivers, consents, onChange }: { pid: string; patient: ProfilePatient; caregivers: ProfileCaregiver[]; consents: ConsentView[]; onChange: () => void }) {
   const [edit, setEdit] = useState(false);
   const [rows, setRows] = useState<CgDraft[]>([]);
   const [err, setErr] = useState<string | null>(null);

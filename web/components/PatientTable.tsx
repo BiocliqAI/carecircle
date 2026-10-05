@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ClinicalSummaryCard } from "./ClinicalSummaryCard";
 import { fmtDate, fmtDateTime, relDays } from "@/lib/time";
 import { VITAL_META, type VitalType } from "@/lib/types";
+import type { Triage } from "@/lib/triage";
 
 export interface PatientRow {
   id: string;
@@ -29,6 +30,8 @@ export interface PatientRow {
   } | null;
   onboarding: { hasVisit: boolean; hasBaseline: boolean; consentsPending: number; consentsDeclined: number };
   doctorName: string | null;
+  triage: Triage;
+  prep?: { readyAt: number | null; readyBy: string | null } | null;
   open: { id: number; type: string; title: string; state: string; level: number; levelName: string | null; since: number; levelAt: number; ackBy: string | null }[];
 }
 

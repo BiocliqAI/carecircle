@@ -1,5 +1,6 @@
 import { now } from "@/lib/clock";
 import { createVisit, getPatient } from "@/lib/engine";
+import { clearPrep } from "@/lib/prep";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 import type { CarePlan, ClinicVitals } from "@/lib/types";
 import { DEFAULT_THRESHOLDS, DEFAULT_TIMERS, VITAL_META } from "@/lib/types";
@@ -52,6 +53,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const vitals: ClinicVitals = {};
   for (const [k, v] of Object.entries(body.vitals || {})) if (v !== null && v !== undefined && String(v) !== "" && Number.isFinite(Number(v))) (vitals as Record<string, number>)[k] = Number(v);
   const doctorId = user!.role === "DOCTOR" ? user!.id : getPatient(id)!.doctor_id;
+  if (user!.role !== "DOCTOR") return err("Only the doctor can record the visit and change the care plan. Use Prepare to get it ready.", 403);
   const vid = createVisit(id, doctorId, { vitals, diagnosis: body.diagnosis || "", notes: body.notes || "", plan, next_visit_at: body.next_visit_at || null }, now());
+  clearPrep(id);
   return json({ id: vid });
 }

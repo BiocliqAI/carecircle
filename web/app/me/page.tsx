@@ -2,7 +2,7 @@
 // The patient's or caregiver's own page: their WhatsApp phone beside their record.
 import { useEffect, useState } from "react";
 import { useSession } from "@/components/client";
-import { PatientView } from "@/components/PatientView";
+import { CaregiverHome, PatientHome } from "@/components/family/FamilyHome";
 import { Phone } from "@/components/WhatsAppPhone";
 import { shortName } from "@/lib/types";
 
@@ -22,7 +22,7 @@ export default function Me() {
         <aside className="me-phone">
           <div className="me-hint">
             <b>{user.role === "PATIENT" ? "Your WhatsApp" : `${shortName(user.name)}’s WhatsApp`}</b>
-            <small>{user.role === "PATIENT" ? "Send readings in your own words, tap the buttons, attach reports, record a voice note, or press 🆘 in an emergency." : "Alerts about your family member arrive here. Reply ACK to take ownership, or Miss to pass it on (demo)."}</small>
+            <small>{user.role === "PATIENT" ? "Reply in your own words, tap a button, send a photo of a report or a voice note. Press SOS in an emergency." : "Alerts arrive on WhatsApp first. You can also act on them here, or log a reading."}</small>
           </div>
           <Phone userId={user.id} role={user.role} slotLabel={user.role === "PATIENT" ? "👤 Patient" : "👪 Caregiver"} tagColor={user.role === "PATIENT" ? "#0f766e" : "#4d7c0f"} contact={{ id: user.id, name: user.name, role: user.role, title: user.title, phone: user.phone, last_at: null, last_body: null, n: 0, peer_user_id: null }} bump={bump} onSent={notifyChange} />
         </aside>
@@ -30,10 +30,10 @@ export default function Me() {
           {patientIds.length > 1 && (
             <div className="row" style={{ marginBottom: 10, gap: 6 }}>
               <small className="muted">Viewing:</small>
-              {patientIds.map((id) => <button key={id} className={`chip-btn ${id === pid ? "on" : ""}`} onClick={() => setPid(id)}>{id.replace(/^p_/, "").split("_")[0]}</button>)}
+              {patientIds.map((id) => <button key={id} className={`chip-btn ${id === pid ? "on" : ""}`} onClick={() => setPid(id)}>{id.replace(/^p_/, "").split("_")[0].replace(/^./, (c) => c.toUpperCase())}</button>)}
             </div>
           )}
-          {pid ? <PatientView id={pid} embedded /> : <div className="card muted">You’re not linked to a patient’s dashboard yet. The clinic can turn on dashboard access for you.</div>}
+          {pid ? (user.role === "PATIENT" ? <PatientHome pid={pid} /> : <CaregiverHome pid={pid} />) : <div className="fh-card fh-sub">You’re not linked to a patient’s dashboard yet. The clinic can turn on dashboard access for you.</div>}
         </section>
       </div>
     </main>

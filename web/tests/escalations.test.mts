@@ -246,7 +246,7 @@ describe("Escalation Engine - Comprehensive Tests", () => {
   });
 
   describe("Caregiver Miss / Timeout Escalation Flow", () => {
-    it("offers Miss next to ACK and escalates from Level 1 Mom to Level 2 Durai when Miss is selected", async () => {
+    it("offers 'Pass to <backup>' next to 'I'll handle it' and escalates from Level 1 Mom to Level 2 Durai when passed", async () => {
       const t = now() + 20_000;
       // Gopal logs significant weight spike
       await engine.ingestMessage("u_gopal", "weight 60.8 kg", { allowAi: false, at: t });
@@ -259,18 +259,18 @@ describe("Escalation Engine - Comprehensive Tests", () => {
       assert.ok(esc, "Escalation should be created for Gopal's weight spike");
       assert.equal(esc.level, 1, "Should start at Level 1");
 
-      // Verify Mom (Level 1) received WhatsApp with both ACK and Miss in quick replies
+      // Verify Mom (Level 1) received WhatsApp with "I'll handle it" and "Pass to Durai" quick replies
       const momMsg = get<{ body: string; quick: string }>(
         "SELECT body, quick FROM messages WHERE user_id = 'u_mom' AND kind = 'escalation' AND created_at >= ? ORDER BY id DESC LIMIT 1",
         t
       )!;
       assert.ok(momMsg, "Mom should receive escalation message");
       const quickButtons = JSON.parse(momMsg.quick);
-      assert.ok(quickButtons.includes("ACK – I'll handle it"), "Quick buttons should have ACK");
-      assert.ok(quickButtons.includes("Miss"), "Quick buttons should have Miss next to ACK");
+      assert.ok(quickButtons.includes("I'll handle it"), "Quick buttons should offer to take ownership");
+      assert.ok(quickButtons.includes("Pass to Durai"), "Quick buttons should offer to pass it to the backup");
 
-      // Mom misses the alert (clicks or sends 'Miss')
-      await engine.ingestMessage("u_mom", "Miss", { allowAi: false, at: t + 1000 });
+      // Mom passes the alert on
+      await engine.ingestMessage("u_mom", "Pass to Durai", { allowAi: false, at: t + 1000 });
 
       // Verify escalation moved to Level 2 (Durai)
       const escAfterMiss = get<{ id: number; level: number; state: string }>(
@@ -286,10 +286,10 @@ describe("Escalation Engine - Comprehensive Tests", () => {
         t + 1000
       )!;
       assert.ok(duraiMsg, "Durai should receive escalated WhatsApp");
-      assert.match(duraiMsg.body, /Mom \(Level 1\) hasn't responded/i);
+      assert.match(duraiMsg.body, /Mom couldn't take this and passed it to you/i);
       const duraiQuick = JSON.parse(duraiMsg.quick);
-      assert.ok(duraiQuick.includes("ACK – I'll handle it"));
-      assert.ok(duraiQuick.includes("Miss"));
+      assert.ok(duraiQuick.includes("I'll handle it"));
+      assert.ok(!duraiQuick.some((q: string) => q.startsWith("Pass to")), "the last person in the circle has no one to pass to");
 
       // Durai also misses the alert
       await engine.ingestMessage("u_durai", "Miss", { allowAi: false, at: t + 2000 });

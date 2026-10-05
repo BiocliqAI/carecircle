@@ -166,6 +166,7 @@ export const MAX_DOC_BYTES = 5 * 1024 * 1024;
 
 export interface DocumentRow {
   id: number;
+  filed_at: number | null;
   patient_id: string;
   title: string;
   category: string;
@@ -180,7 +181,7 @@ export interface DocumentRow {
 
 export const listDocuments = (pid: string) =>
   all<DocumentRow>(
-    "SELECT d.id, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
+    "SELECT d.id, d.filed_at, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
     pid,
   );
 
@@ -199,6 +200,7 @@ export function addDocument(pid: string, d: { title: string; category: string; m
     "INSERT INTO patient_documents(patient_id, title, category, mime, size, data, notes, source, uploaded_by, uploaded_at, message_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
     pid, title, category, (d.mime || "application/octet-stream").slice(0, 100), bytes.length, new Uint8Array(bytes), d.notes?.trim() || null, d.source || "clinic", actor, t, d.messageId ?? null,
   ).lastInsertRowid;
+  if ((d.source || "clinic") === "clinic") run("UPDATE patient_documents SET filed_at = ? WHERE id = ?", t, id);
   audit(t, actor, "DOCUMENT_ADDED", "patient", pid, { document: id, category, source: d.source || "clinic" });
   return id;
 }
@@ -207,7 +209,7 @@ export function updateDocument(id: number, e: { title?: string; category?: strin
   const d = get<{ patient_id: string; title: string; category: string; notes: string | null }>("SELECT patient_id, title, category, notes FROM patient_documents WHERE id = ?", id);
   if (!d) throw new Error("Document not found");
   const category = e.category && (DOC_CATEGORIES as readonly string[]).includes(e.category) ? e.category : d.category;
-  run("UPDATE patient_documents SET title = ?, category = ?, notes = ? WHERE id = ?", e.title?.trim().slice(0, 120) || d.title, category, e.notes !== undefined ? e.notes.trim() || null : d.notes, id);
+  run("UPDATE patient_documents SET title = ?, category = ?, notes = ?, filed_at = COALESCE(filed_at, ?) WHERE id = ?", e.title?.trim().slice(0, 120) || d.title, category, e.notes !== undefined ? e.notes.trim() || null : d.notes, t, id);
   audit(t, actor, "DOCUMENT_UPDATED", "patient", d.patient_id, { document: id });
 }
 
@@ -249,4 +251,24 @@ export function raiseSos(userId: string, t: number): { patientName: string; call
   });
   audit(t, userId, "SOS_RAISED", "patient", p.id, { message: msgId });
   return { patientName: p.name, calling: first ? first.name : null };
+}
+
+// ---------------------------------------------------------------- consent reminders
+export function resendConsent(pid: string, onlyUser: string | null, t: number, actor: string): number {
+  const p = getPatient(pid);
+  if (!p) throw new Error("Patient not found");
+  const pending = all<{ user_id: string; role: string }>("SELECT user_id, role FROM consents WHERE patient_id = ? AND status = 'PENDING'", pid).filter((c) => !onlyUser || c.user_id === onlyUser);
+  const clinic = clinicLabel();
+  for (const c of pending) {
+    const u = getUser(c.user_id);
+    if (!u) continue;
+    sendWhatsApp({
+      userId: c.user_id, patientId: pid, at: t, kind: "info", quick: ["YES", "NO"],
+      body: c.role === "PATIENT"
+        ? `🔔 Reminder from ${clinic ?? "your clinic"}: please reply *YES* so your readings can be shared with your care team, or *NO* to decline.`
+        : `🔔 Reminder: ${p.name} has asked you to be in their CareCircle${clinic ? ` at ${clinic}` : ""}. Reply *YES* to join, or *NO* to decline.`,
+    });
+  }
+  if (pending.length) audit(t, actor, "CONSENT_RESENT", "patient", pid, { n: pending.length });
+  return pending.length;
 }
