@@ -5,6 +5,7 @@ import { intervalSummary } from "@/lib/summary";
 import { err, isClinician, json, ready, sessionUser } from "@/lib/server";
 import { DAY } from "@/lib/time";
 import { triage } from "@/lib/triage";
+import { careActivity } from "@/lib/activity";
 
 export const dynamic = "force-dynamic";
 
@@ -82,5 +83,5 @@ export async function GET() {
     });
   const rank = { urgent: 0, attention: 1, stable: 2 } as Record<string, number>;
   patients.sort((a, b) => rank[a.status] - rank[b.status] || (a.nextVisitAt ?? Infinity) - (b.nextVisitAt ?? Infinity));
-  return json({ now: t, patients });
+  return json({ now: t, patients, activity: careActivity(patients.map((p) => p.id), t) });
 }

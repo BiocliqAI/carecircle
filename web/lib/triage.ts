@@ -3,9 +3,9 @@
 import { all, audit, get, run } from "./db";
 import { OUTCOMES, getCaregivers, getUser, type EscalationRow, type PatientRow } from "./engine";
 import { DAY, fmtTime, fmtDate } from "./time";
-import type { Visit, VitalType } from "./types";
+import { VITAL_META, type Visit, type VitalType } from "./types";
 
-export interface Trend { type: VitalType; label: string; points: number[]; lo: number | null; hi: number | null; bad: boolean }
+export interface Trend { type: VitalType; label: string; points: number[]; lo: number | null; hi: number | null; bad: boolean; latest: string; unit: string; latestAt: number }
 export interface CircleStatus { tone: "green" | "amber" | "red" | "grey"; label: string; detail: string }
 export interface Triage {
   reason: { title: string; detail: string };
@@ -17,7 +17,7 @@ export interface Triage {
 }
 
 const SEV: Record<string, number> = { URGENT: 0, DEVIATION: 1, COMPLIANCE: 2 };
-const LABEL: Partial<Record<VitalType, string>> = { bp: "Systolic BP", weight: "Weight", spo2: "SpO₂", glucose: "Sugar", hr: "Pulse", pain: "Pain" };
+const LABEL: Partial<Record<VitalType, string>> = { bp: "Blood pressure", weight: "Weight", spo2: "SpO₂", glucose: "Sugar", hr: "Pulse", pain: "Pain" };
 const when = (at: number, t: number) => (t - at < DAY && fmtDate(at) === fmtDate(t) ? fmtTime(at) : fmtDate(at, { day: "numeric", month: "short" }) + " " + fmtTime(at));
 const clip = (s: string, n: number) => (s.length <= n ? s : s.slice(0, s.lastIndexOf(" ", n - 1) > n * 0.6 ? s.lastIndexOf(" ", n - 1) : n - 1).replace(/[,;:\s]+$/, "") + "…");
 /** One short line from an alert's detail: drop doses/times in brackets and the "X hasn't confirmed:" lead-in. */
@@ -27,7 +27,7 @@ function shortDetail(e: { type: string; detail: string | null }): string {
     const list = d.replace(/^[^:]*:\s*/, "").split(/,\s*/).map((x) => x.trim().split(/\s+\d/)[0]).filter(Boolean);
     return list.length ? `Not confirmed: ${clip(list.join(", "), 60)}` : clip(d, 80);
   }
-  d = d.split(/(?<=[.!?])\s/)[0];
+  d = d.split(/(?<=[.!?])\s/)[0].replace(/[.\s]+$/, "");
   return clip(d, 90);
 }
 
@@ -45,8 +45,8 @@ function trendFor(pid: string, visit: Visit | undefined, prefer: VitalType | nul
   const monitored = visit?.plan.monitoring.map((m) => m.key) ?? [];
   const type: VitalType | undefined = prefer ?? (monitored.includes("bp") ? "bp" : monitored[0]);
   if (!type) return null;
-  const rows = all<{ v1: number; flag: string | null }>("SELECT v1, flag FROM observations WHERE patient_id = ? AND type = ? AND observed_at > ? ORDER BY observed_at", pid, type, t - 14 * DAY);
-  if (rows.length < 2) return null;
+  const rows = all<{ v1: number; v2: number | null; flag: string | null; observed_at: number }>("SELECT v1, v2, flag, observed_at FROM observations WHERE patient_id = ? AND type = ? AND observed_at > ? ORDER BY observed_at", pid, type, t - 14 * DAY);
+  if (rows.length < 1) return null;
   const th = visit?.plan.thresholds;
   let lo: number | null = null, hi: number | null = null;
   if (th) {
@@ -58,7 +58,8 @@ function trendFor(pid: string, visit: Visit | undefined, prefer: VitalType | nul
     else if (type === "pain") { lo = 0; hi = th.painHigh; }
   }
   const pts = rows.slice(-20).map((r) => r.v1);
-  return { type, label: LABEL[type] ?? type, points: pts, lo, hi, bad: rows.slice(-3).some((r) => !!r.flag) };
+  const last = rows[rows.length - 1];
+  return { type, label: LABEL[type] ?? type, points: pts, lo, hi, bad: !!last.flag || rows.slice(-3).some((r) => !!r.flag), latest: `${last.v1}${last.v2 ? `/${last.v2}` : ""}`, unit: VITAL_META[type]?.unit ?? "", latestAt: last.observed_at };
 }
 
 function circleStatus(pid: string, open: EscalationRow[], t: number): CircleStatus {
