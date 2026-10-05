@@ -745,8 +745,10 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
     return void reply(`Understood, ${first(p.name)}. Nothing will be shared. If you change your mind, reply *YES* anytime or speak to the clinic.`);
   }
 
-  const visit = latestVisit(p.id, t);
-  if (!visit) return void reply(`Thanks! ${first(p.name)} isn't on an active care plan yet — the clinic will set it up at the visit.`);
+  // Before Visit 1 there are no doctor's limits yet, but readings and symptoms are still recorded and the
+  // fixed emergency rules (BP ≥180/110, SpO₂ <88, sugar <54, chest pain, fainting…) still alert the care circle.
+  const visit = latestVisit(p.id, t) ?? safetyOnlyVisit(p, t);
+  const prePlan = visit.id === "__preplan";
   const plan = visit.plan;
 
   const { parsed, parser } = await parseMessage(body, plan.medications, opts.allowAi !== false);
@@ -864,6 +866,7 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
     if (a.type === "URGENT") text += `\n\n🚨 ${a.detail.replace(/^.*?reported: /, "")}\n${a.advice}${id ? `\nAlerting your care circle now (${cgs[0]?.name ?? "caregiver"}).` : ""}`;
     else text += `\n\n⚠️ ${a.title} — ${a.detail}\n${a.advice}${id ? `\nI've let ${cgs[0]?.name ?? "your caregiver"} in your care circle know.` : ""}`;
   }
+  if (prePlan) text += `\n\nℹ️ ${first(p.name)}'s care plan starts after the first visit with ${doctorName(p)}. Until then, the care circle is alerted only in an emergency.`;
   sendWhatsApp({ userId, patientId: p.id, body: text, kind: "reply", at: t + 1000 });
   // If a caregiver logged it, keep the patient informed of alerts.
   if (user.role === "CAREGIVER" && created.some((c) => c.id)) {
@@ -1006,4 +1009,17 @@ export function onboardPatient(input: OnboardInput, t: number, actor: string): s
     audit(t, actor, "PATIENT_ONBOARDED", "patient", pid, { name: input.name });
   });
   return pid;
+}
+
+/** A stand-in "visit" used before the first consultation: no medicines or tasks, and limits so wide that
+ *  only the fixed emergency rules can fire. */
+function safetyOnlyVisit(p: PatientRow, t: number): Visit {
+  return {
+    id: "__preplan", patient_id: p.id, doctor_id: p.doctor_id, visit_at: t, vitals: {}, diagnosis: "", notes: "", next_visit_at: null, created_at: t,
+    plan: {
+      medications: [], monitoring: [], physio: [], lifestyle: [], checkinTime: "", watchSymptoms: [],
+      thresholds: { sysHigh: 999, diaHigh: 999, sysLow: 0, weightGainKg: 99, glucoseHigh: 9999, glucoseLow: 0, hrHigh: 999, hrLow: 0, spo2Low: 0, painHigh: 99 },
+      escalation: { complianceMin: 120, deviationMin: 60, urgentMin: 15 },
+    },
+  };
 }

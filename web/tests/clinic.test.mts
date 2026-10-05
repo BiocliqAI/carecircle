@@ -237,6 +237,23 @@ describe("Live clinic onboarding", () => {
     assert.equal(records.listDocuments(pid).length, 0);
   });
 
+  it("before Visit 1: logs readings and alerts the care circle only for emergencies", async () => {
+    const p = engine.getPatient(pid)!;
+    assert.equal(engine.latestVisit(pid, now()), undefined, "no visit yet");
+    const t = now() + 2000;
+    await engine.ingestMessage(p.user_id!, "BP 152/96", { allowAi: false, at: t });
+    assert.ok(get("SELECT 1 FROM observations WHERE patient_id = ? AND type = 'bp' AND v1 = 152", pid), "reading recorded");
+    assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM escalations WHERE patient_id = ? AND started_at >= ?", pid, t)!.n, 0, "no doctor's limits yet, so no deviation alert");
+    const reply = get<{ body: string }>("SELECT body FROM messages WHERE user_id = ? AND direction = 'OUT' ORDER BY id DESC LIMIT 1", p.user_id!)!.body;
+    assert.match(reply, /Logged/);
+    assert.match(reply, /care plan starts after the first visit/);
+    await engine.ingestMessage(p.user_id!, "BP 186/114, chest pain since morning", { allowAi: false, at: t + 60_000 });
+    const urgent = get<{ type: string; level: number }>("SELECT type, level FROM escalations WHERE patient_id = ? AND started_at >= ? AND type = 'URGENT'", pid, t + 60_000);
+    assert.ok(urgent, "emergency rules still alert the care circle");
+    const primary = engine.getCaregivers(pid)[0];
+    assert.ok(get("SELECT 1 FROM messages WHERE user_id = ? AND kind = 'escalation' AND created_at >= ?", primary.user_id!, t + 60_000), "primary caregiver alerted");
+  });
+
   it("SOS raises an urgent alert to the primary caregiver", () => {
     const p = engine.getPatient(pid)!;
     const t = now() + 5000;
