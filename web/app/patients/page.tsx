@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, useSession } from "@/components/client";
 import { PatientTable, type PatientRow } from "@/components/PatientTable";
+import { DraftList, useDrafts } from "@/components/Drafts";
 
 const FILTERS: [string, string, (p: PatientRow) => boolean][] = [
   ["all", "All", () => true],
@@ -19,6 +20,7 @@ export default function Patients() {
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [f, setF] = useState("all");
+  const { drafts, reload } = useDrafts();
 
   useEffect(() => {
     if (loading) return;
@@ -46,6 +48,12 @@ export default function Patients() {
           <Link href="/patients/new" className="btn primary">+ Onboard patient</Link>
         </div>
       </div>
+      {drafts && drafts.length > 0 && (
+        <section className="stack" style={{ marginBottom: 18 }}>
+          <div className="section-head"><h2>Drafts</h2><small>Onboarding started but not finished. Nothing has been sent on WhatsApp yet.</small></div>
+          <DraftList drafts={drafts} onChange={reload} />
+        </section>
+      )}
       <div className="row" style={{ marginBottom: 14, gap: 6 }}>
         {FILTERS.map(([k, label, fn]) => (
           <button key={k} className={`chip-btn ${f === k ? "on" : ""}`} onClick={() => setF(k)}>

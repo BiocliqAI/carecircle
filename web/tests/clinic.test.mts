@@ -149,12 +149,33 @@ describe("Live clinic onboarding", () => {
     assert.equal(n, 0);
   });
 
+  it("saves, updates, lists and deletes onboarding drafts", () => {
+    const t = now();
+    const id = clinic.saveDraft(null, 1, { f: { name: "Ravi Shankar" }, cgs: [] }, t, paId);
+    assert.equal(clinic.listDrafts().length, 1);
+    assert.equal(clinic.listDrafts()[0].created_by_name, "Rahul Verma");
+    const same = clinic.saveDraft(id, 2, { f: { name: "Ravi S." }, cgs: [{ name: "Asha" }] }, t + 1000, drId);
+    assert.equal(same, id, "re-saving keeps the same draft");
+    const d = clinic.getDraft(id)!;
+    assert.equal(d.step, 2);
+    assert.equal(d.name, "Ravi S.");
+    assert.equal(d.updated_by, drId);
+    assert.deepEqual((d.data as { cgs: { name: string }[] }).cgs[0].name, "Asha");
+    const clamped = clinic.saveDraft(null, 99, {}, t, paId);
+    assert.equal(clinic.getDraft(clamped)!.step, 3, "step is clamped to the last wizard step");
+    assert.equal(clinic.getDraft(clamped)!.name, "Unnamed patient");
+    for (const x of clinic.listDrafts()) clinic.deleteDraft(x.id);
+    assert.equal(clinic.listDrafts().length, 0);
+    assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM messages WHERE created_at >= ? AND direction = 'OUT' AND body LIKE '%Ravi%'", t)!.n, 0, "drafts never message anyone");
+  });
+
   it("reset erases the clinic but keeps Gemini settings", async () => {
     const { setSetting, getSetting } = await import("../lib/db");
     setSetting("gemini_model", "gemini-test");
     clinic.resetClinic();
     assert.equal(clinic.getClinic(), null);
     assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM users")!.n, 0);
+    assert.equal(clinic.listDrafts().length, 0);
     assert.equal(getSetting("gemini_model"), "gemini-test");
   });
 });

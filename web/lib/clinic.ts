@@ -199,3 +199,49 @@ export function checklist() {
     escalations: n("SELECT COUNT(*) AS n FROM escalations"),
   };
 }
+
+// ---------------------------------------------------------------- onboarding drafts
+// Saved on every "Continue" in the onboarding wizard so any clinician can resume later.
+// Nothing is sent on WhatsApp until the patient is actually created.
+export interface DraftRow {
+  id: string;
+  name: string;
+  step: number;
+  created_by: string | null;
+  created_at: number;
+  updated_by: string | null;
+  updated_at: number;
+}
+
+export function saveDraft(id: string | null, step: number, data: unknown, t: number, actor: string): string {
+  const d = (data ?? {}) as { f?: { name?: string } };
+  const name = d.f?.name?.trim() || "Unnamed patient";
+  const json = JSON.stringify(data ?? {});
+  if (json.length > 200_000) throw new Error("Draft is too large");
+  const s = Math.max(0, Math.min(3, Math.floor(Number(step) || 0)));
+  if (id && get("SELECT 1 FROM onboarding_drafts WHERE id = ?", id)) {
+    run("UPDATE onboarding_drafts SET name = ?, step = ?, data = ?, updated_by = ?, updated_at = ? WHERE id = ?", name, s, json, actor, t, id);
+    return id;
+  }
+  const nid = `d_${t.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  run("INSERT INTO onboarding_drafts(id, name, step, data, created_by, created_at, updated_by, updated_at) VALUES(?,?,?,?,?,?,?,?)", nid, name, s, json, actor, t, actor, t);
+  audit(t, actor, "ONBOARDING_DRAFT_STARTED", "draft", nid, { name });
+  return nid;
+}
+
+export function getDraft(id: string): (DraftRow & { data: unknown }) | null {
+  const r = get<DraftRow & { data: string }>("SELECT * FROM onboarding_drafts WHERE id = ?", id);
+  return r ? { ...r, data: JSON.parse(r.data) } : null;
+}
+
+export function listDrafts(): (DraftRow & { updated_by_name: string | null; created_by_name: string | null })[] {
+  return all<DraftRow>("SELECT id, name, step, created_by, created_at, updated_by, updated_at FROM onboarding_drafts ORDER BY updated_at DESC").map((d) => ({
+    ...d,
+    updated_by_name: d.updated_by ? getUser(d.updated_by)?.name ?? null : null,
+    created_by_name: d.created_by ? getUser(d.created_by)?.name ?? null : null,
+  }));
+}
+
+export function deleteDraft(id: string) {
+  run("DELETE FROM onboarding_drafts WHERE id = ?", id);
+}

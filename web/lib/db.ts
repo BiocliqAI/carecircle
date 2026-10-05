@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS patient_baseline (
   patient_id TEXT PRIMARY KEY REFERENCES patients(id), data TEXT NOT NULL, captured_at INTEGER NOT NULL, captured_by TEXT,
   updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS onboarding_drafts (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, step INTEGER NOT NULL, data TEXT NOT NULL,
+  created_by TEXT, created_at INTEGER NOT NULL, updated_by TEXT, updated_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS consents (
   id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL REFERENCES patients(id), user_id TEXT NOT NULL REFERENCES users(id),
   role TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', requested_at INTEGER NOT NULL, responded_at INTEGER, message_id INTEGER,
@@ -105,14 +109,22 @@ function migrate(db: DatabaseSyncT) {
   }
 }
 
-const g = globalThis as unknown as { __ccDb?: DatabaseSyncT };
+const g = globalThis as unknown as { __ccDb?: DatabaseSyncT; __ccSchema?: string };
 
 export function dbPath(): string {
   return process.env.CARECIRCLE_DB || path.join(process.cwd(), "data", LIVE ? "clinic.db" : "carecircle.db");
 }
 
 export function getDb(): DatabaseSyncT {
-  if (g.__ccDb) return g.__ccDb;
+  if (g.__ccDb) {
+    // Hot reload (dev) can bring a newer schema to an already-open connection: apply it once.
+    if (g.__ccSchema !== SCHEMA) {
+      g.__ccDb.exec(SCHEMA);
+      migrate(g.__ccDb);
+      g.__ccSchema = SCHEMA;
+    }
+    return g.__ccDb;
+  }
   // getBuiltinModule avoids bundlers trying to resolve node:sqlite.
   const sqlite = process.getBuiltinModule("node:sqlite") as SqliteModule;
   const file = dbPath();
@@ -122,13 +134,14 @@ export function getDb(): DatabaseSyncT {
   db.exec(SCHEMA);
   migrate(db);
   g.__ccDb = db;
+  g.__ccSchema = SCHEMA;
   return db;
 }
 
 export function resetDb(): void {
   const db = getDb();
   db.exec(`
-    DROP TABLE IF EXISTS patient_baseline; DROP TABLE IF EXISTS consents;
+    DROP TABLE IF EXISTS patient_baseline; DROP TABLE IF EXISTS consents; DROP TABLE IF EXISTS onboarding_drafts;
     DROP TABLE IF EXISTS escalation_events; DROP TABLE IF EXISTS escalations; DROP TABLE IF EXISTS observations;
     DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS visits;
     DROP TABLE IF EXISTS caregivers; DROP TABLE IF EXISTS patients; DROP TABLE IF EXISTS convo_state;

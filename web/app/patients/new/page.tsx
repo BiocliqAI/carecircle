@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api, useSession } from "@/components/client";
 import { BaselineForm, baselineForSubmit } from "@/components/baseline";
 import { EMPTY_BASELINE, LAB_META, ageFromDob, bmi, type Baseline } from "@/lib/types";
+import { fmtDateTime } from "@/lib/time";
 
 interface Cg { name: string; relation: string; phone: string; dashboard: boolean }
 interface Doctor { id: string; name: string; role: string; title: string | null }
@@ -23,6 +24,28 @@ export default function NewPatient() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [loadingDraft, setLoadingDraft] = useState(false);
+
+  // Resume a saved draft: /patients/new?draft=<id>
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("draft");
+    if (!id) return;
+    setLoadingDraft(true);
+    api<{ draft: { id: string; step: number; updated_at: number; data: { f?: typeof f; cgs?: Cg[]; baseline?: Baseline } } }>(`/api/drafts?id=${encodeURIComponent(id)}`)
+      .then(({ draft }) => {
+        if (draft.data.f) setF((x) => ({ ...x, ...draft.data.f }));
+        if (draft.data.cgs?.length) setCgs(draft.data.cgs);
+        if (draft.data.baseline) setBaseline({ ...EMPTY_BASELINE, ...draft.data.baseline, labs: (draft.data.baseline.labs ?? []).map((l) => ({ ...l, value: l.value ?? NaN })) });
+        setDraftId(draft.id);
+        setSavedAt(draft.updated_at);
+        setStep(draft.step);
+      })
+      .catch((e) => { setErr((e as Error).message); window.history.replaceState(null, "", "/patients/new"); })
+      .finally(() => setLoadingDraft(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     api<{ staff: Doctor[] }>("/api/clinic").then((r) => {
@@ -32,6 +55,7 @@ export default function NewPatient() {
     }).catch(() => undefined);
   }, []);
 
+  if (loadingDraft) return <main className="page"><div className="empty"><span className="spin" /> Loading draft…</div></main>;
   if (user && user.role !== "DOCTOR" && user.role !== "PA") return <main className="page"><div className="alert bad">Only the doctor or PA can onboard patients.</div></main>;
 
   const setCg = (i: number, patch: Partial<Cg>) => setCgs((c) => c.map((x, j) => (j === i ? { ...x, ...patch } : x)));
@@ -58,10 +82,40 @@ export default function NewPatient() {
     if (s === 2 && baseline.labs.some((l) => !Number.isFinite(l.value))) return "Enter a value for every lab test, or remove the empty rows";
     return null;
   }
-  function next() {
+  /** Saves the wizard as a draft (server-side) so anyone in the clinic can resume it. */
+  async function saveDraft(atStep: number): Promise<boolean> {
+    try {
+      const r = await api<{ id: string; savedAt: number }>("/api/drafts", { body: { action: "save", id: draftId, step: atStep, data: { f, cgs, baseline } } });
+      setDraftId(r.id);
+      setSavedAt(r.savedAt);
+      window.history.replaceState(null, "", `/patients/new?draft=${r.id}`);
+      return true;
+    } catch (x) {
+      setErr(`Couldn't save the draft: ${(x as Error).message}`);
+      return false;
+    }
+  }
+  async function next() {
     const e = validate(step);
     setErr(e);
-    if (!e) { setStep(step + 1); window.scrollTo({ top: 0 }); }
+    if (e) return;
+    setBusy("next");
+    const ok = await saveDraft(step + 1);
+    setBusy(null);
+    if (ok) { setStep(step + 1); window.scrollTo({ top: 0 }); }
+  }
+  async function saveAndExit() {
+    if (!f.name.trim()) return setErr("Enter at least the patient's name to save a draft");
+    setBusy("exit");
+    const ok = await saveDraft(step);
+    setBusy(null);
+    if (ok) { notifyChange(); router.push("/patients"); }
+  }
+  async function discard() {
+    if (!draftId || !window.confirm("Discard this onboarding draft? Nothing has been sent to the patient yet.")) return;
+    await api("/api/drafts", { body: { action: "discard", id: draftId } }).catch(() => undefined);
+    notifyChange();
+    router.push("/patients");
   }
 
   async function submit(then: "visit" | "patient") {
@@ -79,6 +133,7 @@ export default function NewPatient() {
           conditions: baseline.conditions.join(", "),
           caregivers: cgs.filter((c) => c.name.trim()),
           baseline: hasBaseline(baseline) ? baselineForSubmit(baseline) : undefined,
+          draftId,
         },
       });
       notifyChange();
@@ -100,6 +155,12 @@ export default function NewPatient() {
           <h1>Onboard a patient</h1>
           <div className="muted">About 5 minutes. The patient and each caregiver get a WhatsApp consent message. Nobody installs an app.</div>
         </div>
+        {draftId && (
+          <div className="draft-pill">
+            <span>💾 Draft saved{savedAt ? ` · ${fmtDateTime(savedAt)}` : ""}</span>
+            <button type="button" className="btn sm ghost" onClick={discard}>Discard</button>
+          </div>
+        )}
       </div>
 
       <ol className="stepper" aria-label="Onboarding steps">
@@ -210,7 +271,8 @@ export default function NewPatient() {
         {step < 3 ? (
           <div className="row">
             {step === 2 && <button type="button" className="btn ghost" onClick={() => { setBaseline(baselineForSubmit(baseline)); setErr(null); setStep(3); }} title="Capture it later from the patient page">Skip for now</button>}
-            <button type="button" className="btn primary" onClick={next}>Continue →</button>
+            <button type="button" className="btn" disabled={!!busy} onClick={saveAndExit} title="Save a draft and resume later from Patients or Today">{busy === "exit" ? <span className="spin" /> : null} Save & finish later</button>
+            <button type="button" className="btn primary" disabled={!!busy} onClick={next}>{busy === "next" ? <span className="spin" /> : null} Continue →</button>
           </div>
         ) : (
           <div className="row">

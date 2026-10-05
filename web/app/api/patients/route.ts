@@ -1,5 +1,5 @@
 import { now } from "@/lib/clock";
-import { cleanBaseline, saveBaseline } from "@/lib/clinic";
+import { cleanBaseline, deleteDraft, saveBaseline } from "@/lib/clinic";
 import { getUser, onboardPatient, type OnboardInput } from "@/lib/engine";
 import { get } from "@/lib/db";
 import { err, isClinician, json, ready, sessionUser } from "@/lib/server";
@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   await ready();
   const user = await sessionUser();
   if (!isClinician(user)) return err("Doctor / PA only", 403);
-  const body = (await req.json()) as Partial<OnboardInput> & { baseline?: Partial<Baseline> };
+  const body = (await req.json()) as Partial<OnboardInput> & { baseline?: Partial<Baseline>; draftId?: string };
   if (!body.name?.trim()) return err("Name is required");
   if (!body.phone || !/^\+?[\d\s-]{8,}$/.test(body.phone)) return err("A valid WhatsApp number is required");
   const cgs = (body.caregivers || []).filter((c) => c.name?.trim() && c.phone?.trim());
@@ -40,6 +40,7 @@ export async function POST(req: Request) {
       user!.id,
     );
     if (baseline) saveBaseline(id, baseline, t, user!.id);
+    if (body.draftId) deleteDraft(body.draftId);
     return json({ id });
   } catch (e) {
     return err((e as Error).message, 409);

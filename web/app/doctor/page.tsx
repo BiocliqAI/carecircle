@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { api, useSession } from "@/components/client";
 import { GettingStarted } from "@/components/GettingStarted";
 import { PatientTable, type PatientRow } from "@/components/PatientTable";
+import { DraftList, useDrafts } from "@/components/Drafts";
 import { fmtDate, relDays } from "@/lib/time";
 import { shortName } from "@/lib/types";
 
@@ -12,6 +13,7 @@ export default function Today() {
   const { user, bump, loading } = useSession();
   const [data, setData] = useState<{ now: number; patients: PatientRow[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { drafts, reload } = useDrafts();
 
   useEffect(() => {
     if (loading) return;
@@ -44,8 +46,15 @@ export default function Today() {
           <Stat label="Patients under monitoring" value={ps.length} href="/patients" />
           <Stat label="Visits today / tomorrow" value={dueSoon.length} detail={dueSoon.map((p) => shortName(p.name)).join(", ")} />
           <Stat label="Open alerts (family handling)" value={openAlerts.length} tone={openAlerts.length ? "warn" : "good"} detail={openAlerts.map((o) => `${shortName(o.patient.name)}: ${o.title}`).join(" · ")} />
-          <Stat label="Onboarding in progress" value={onboarding.length} tone={onboarding.length ? "warn" : undefined} detail={onboarding.map((p) => shortName(p.name)).join(", ")} />
+          <Stat label="Onboarding in progress" value={onboarding.length + (drafts?.length ?? 0)} tone={onboarding.length + (drafts?.length ?? 0) ? "warn" : undefined} detail={[...(drafts ?? []).map((d) => `${shortName(d.name)} (draft)`), ...onboarding.map((p) => shortName(p.name))].join(", ")} />
         </div>
+
+        {drafts && drafts.length > 0 && (
+          <section className="stack">
+            <div className="section-head"><h2>Unfinished onboarding</h2><small>Saved drafts. Pick up where you or a colleague left off.</small></div>
+            <DraftList drafts={drafts} onChange={reload} />
+          </section>
+        )}
 
         {ps.length === 0 ? (
           <div className="card empty-state">
