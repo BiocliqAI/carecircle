@@ -31,6 +31,16 @@ export async function POST(req: Request) {
       (await cookies()).set("cc_user", id, { httpOnly: true, sameSite: "lax", path: "/" });
       return json({ ok: true, userId: id });
     }
+    if (body.action === "reset") {
+      // Allowed from the home page without a persona: the typed clinic name is the safeguard
+      // (and APP_PASSWORD gates the whole site when hosted).
+      if (!LIVE) return err("Reset clinic is only available in live mode");
+      const clinic = getClinic();
+      if (!clinic || body.confirm?.trim() !== clinic.name) return err("Type the clinic name exactly to confirm");
+      resetClinic();
+      (await cookies()).delete("cc_user");
+      return json({ ok: true });
+    }
     const user = await sessionUser();
     if (!isClinician(user)) return err("Sign in as a doctor or PA to manage the clinic", 403);
     if (body.action === "update") {
@@ -40,14 +50,6 @@ export async function POST(req: Request) {
     if (body.action === "addStaff") {
       if (!body.staff) return err("Staff details are required");
       return json({ ok: true, id: addStaff(body.staff, t, user!.id) });
-    }
-    if (body.action === "reset") {
-      if (!LIVE) return err("Reset clinic is only available in live mode");
-      const clinic = getClinic();
-      if (!clinic || body.confirm?.trim() !== clinic.name) return err("Type the clinic name exactly to confirm");
-      resetClinic();
-      (await cookies()).delete("cc_user");
-      return json({ ok: true });
     }
     return err("Unknown action");
   } catch (e) {

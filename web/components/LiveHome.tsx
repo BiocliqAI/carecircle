@@ -1,6 +1,5 @@
 "use client";
 // Home page in live-clinic mode: first-run clinic setup, then the onboarding checklist and sign-in.
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, avatarColor, homeFor, initials, ROLE_LABEL, useSession } from "./client";
@@ -191,10 +190,50 @@ function ClinicHome() {
               <li>Send a high BP reading. Level 1 is alerted, then <b>+1h</b> moves it to Level 2.</li>
               <li>Use <b>Simulate 7 days</b>, then open the pre-visit brief and record Visit 2.</li>
             </ol>
-            <small className="muted">Between customers: <Link href="/clinic">Clinic</Link> → Reset clinic.</small>
           </div>
+          <EraseCard clinicName={clinic!.name} />
         </div>
       </div>
     </main>
+  );
+}
+
+function EraseCard({ clinicName }: { clinicName: string }) {
+  const { switchTo } = useSession();
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function erase() {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api("/api/clinic", { body: { action: "reset", confirm } });
+      await switchTo(null);
+      window.location.href = "/";
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card danger-zone">
+      <div className="card-head"><h3>Start afresh</h3></div>
+      <p className="muted" style={{ marginTop: 0 }}>Erases the clinic, staff, patients, caregivers, messages and alerts, and returns to the setup screen. This can’t be undone.</p>
+      {!open ? (
+        <button className="btn danger" onClick={() => setOpen(true)}>Erase all records…</button>
+      ) : (
+        <div className="stack">
+          <label className="f">Type <b>{clinicName}</b> to confirm<input autoFocus value={confirm} onChange={(e) => setConfirm(e.target.value)} /></label>
+          {err && <div className="alert bad">{err}</div>}
+          <div className="row">
+            <button className="btn danger" disabled={confirm.trim() !== clinicName || busy} onClick={erase}>{busy ? <span className="spin" /> : null} Erase everything</button>
+            <button className="btn" onClick={() => { setOpen(false); setConfirm(""); setErr(null); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
