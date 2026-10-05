@@ -1,0 +1,33 @@
+{
+  "name": "carecircle-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CareCircle MVP \u2014 WhatsApp-first between-visit care platform (demo)",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "clinic": "CARECIRCLE_MODE=live next dev -p 3100 -H 0.0.0.0",
+    "clinic:build": "CARECIRCLE_MODE=live next build",
+    "clinic:start": "CARECIRCLE_MODE=live next start -p ${PORT:-3100} -H 0.0.0.0",
+    "clinic:backup": "node scripts/backup.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.mts && tsx scripts/smoke.mts"
+  },
+  "dependencies": {
+    "@google/genai": "^2.27.0",
+    "next": "^16.3.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22.5"
+  }
+}

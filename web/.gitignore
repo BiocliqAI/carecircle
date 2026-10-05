@@ -1,0 +1,9 @@
+node_modules
+.next
+data/*.db
+data/*.db-*
+.env*.local
+next-env.d.ts
+*.tsbuildinfo
+.next-clinic
+backups

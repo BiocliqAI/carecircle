@@ -1,0 +1,6 @@
+.DS_Store
+# Raw source spreadsheet for the demo seed: not needed at runtime
+*.xlsx
+# Local test databases
+*.db
+*.db-*
