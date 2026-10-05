@@ -17,7 +17,8 @@ export function describeMed(m: Medication): string {
   const parts = [times];
   if (m.everyNDays && m.everyNDays > 1) parts.push(m.everyNDays === 2 ? "alternate days" : m.everyNDays === 7 ? "once a week" : `every ${m.everyNDays} days`);
   if (m.days && m.days.length && m.days.length < 7) parts.push(m.days.map((d) => DOW[d]).join("/"));
-  if (m.courseDays) parts.push(`${m.courseDays}-day course`);
+  if (m.startDay) parts.push(`from day ${m.startDay + 1}`);
+  if (m.courseDays) parts.push(m.startDay ? `until day ${m.courseDays}` : `${m.courseDays}-day course`);
   return parts.join(" · ");
 }
 
@@ -25,6 +26,7 @@ export function describeMed(m: Medication): string {
 export function medDueOn(m: Medication, dayIdx: number, dow: number): boolean {
   if (m.prn) return false;
   if (m.courseDays && dayIdx >= m.courseDays) return false;
+  if (m.startDay && dayIdx < m.startDay) return false;
   if (m.everyNDays && m.everyNDays > 1 && dayIdx % m.everyNDays !== 0) return false;
   if (m.days && m.days.length && !m.days.includes(dow)) return false;
   return true;

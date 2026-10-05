@@ -21,6 +21,8 @@ export interface Medication {
   everyNDays?: number;
   /** Course length in days from the visit (e.g. antibiotic for 7 days). */
   courseDays?: number;
+  /** Starts this many days after the visit (the second step of a taper, e.g. 20 mg from day 15). */
+  startDay?: number;
   /** Only if required — never scheduled or counted for adherence. */
   prn?: boolean;
   /** Care-team member who prescribed it (name). */

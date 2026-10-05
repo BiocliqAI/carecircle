@@ -112,6 +112,13 @@ function DoctorConsult({ id }: { id: string }) {
           if (b.allergies || b.notes) setNotes([b.allergies && `Allergies: ${b.allergies}`, b.notes && `Intake: ${b.notes}`].filter(Boolean).join("\n"));
         }
       }
+      if (new URLSearchParams(window.location.search).get("fromDraft") === "1") {
+        api<{ plan?: CarePlan; draft: { built: { note: string; diagnosis: string } | null } }>(`/api/patients/${id}/plan-draft?asPlan=1`).then((r) => {
+          if (r.plan) setPlan(r.plan);
+          if (r.draft.built?.note) setNotes(r.draft.built.note);
+          if (r.draft.built?.diagnosis) setDiagnosis(r.draft.built.diagnosis);
+        }).catch(() => undefined);
+      }
       const pv = x.prep?.vitals;
       if (pv && Object.values(pv).some(Boolean)) setVitals(Object.fromEntries(Object.entries(pv).filter(([, v]) => v)) as Record<string, string>);
       const nd = new Date(dayStart(x.now) + 28 * DAY + TZ_OFFSET_MS + 12 * 3600_000).toISOString().slice(0, 10);
@@ -161,6 +168,7 @@ function DoctorConsult({ id }: { id: string }) {
           </div>
         </div>
         <div className="row">
+          <Link className="v2-btn primary" href={`/patients/${id}/plan`}><Icon name="mic" size={16} />Build from prescription and consultation</Link>
           {plan.template !== "kidney" && <button className="v2-btn" onClick={() => up(applyKidney)} title="Adds weight, fluid and lab monitoring, a dry-weight band, kidney lab limits and diet advice">Apply kidney template</button>}
           <Link className="v2-btn" href={`/patients/${id}`}>Cancel</Link>
         </div>

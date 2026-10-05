@@ -947,7 +947,7 @@ export function runScheduler(target = now()) {
 }
 
 // ---------------------------------------------------------------- visits & onboarding
-export function createVisit(pid: string, doctorId: string, data: { vitals: ClinicVitals; diagnosis: string; notes: string; plan: CarePlan; next_visit_at: number | null }, t: number): string {
+export function createVisit(pid: string, doctorId: string, data: { vitals: ClinicVitals; diagnosis: string; notes: string; plan: CarePlan; next_visit_at: number | null; answers?: { question: string; answer: string }[] }, t: number): string {
   const p = getPatient(pid);
   if (!p) throw new Error("Patient not found");
   const id = `v_${pid}_${t}`;
@@ -966,7 +966,8 @@ export function createVisit(pid: string, doctorId: string, data: { vitals: Clini
     const fl = data.plan.fluid ? `\n💧 Fluid limit: ${data.plan.fluid.limitMl} ml/day (all drinks). Tell me whenever you drink — e.g. “2 glasses water” — and I'll keep the running total. Send urine total in the evening.` : "";
     const lb = data.plan.labs ? `\n🧪 Blood tests: ${data.plan.labs.panel} every ${data.plan.labs.everyDays} days — just type the values from the report.` : "";
     const next = data.next_visit_at ? `\n📅 Next visit: ${fmtDate(data.next_visit_at, { weekday: "short", day: "numeric", month: "short" })}` : "";
-    sendWhatsApp({ userId: p.user_id!, patientId: pid, body: `👩‍⚕️ ${doc} has set your care plan after today's visit:\n\n${meds}\n\n📏 Please send: ${mon || "—"}${fl}${lb}\n${physio}\n${life}${next}\n\nI'll remind you at the right times. Just reply here in your own words. 💙`, kind: "info", at: t });
+    const qa = data.answers?.length ? `\n\n❓ Your questions:\n${data.answers.map((a) => `• ${a.question.replace(/^doctor,?\s*/i, "")}\n  ${a.answer}`).join("\n")}` : "";
+    sendWhatsApp({ userId: p.user_id!, patientId: pid, body: `👩‍⚕️ ${doc} has set your care plan after today's visit:\n\n${meds}\n\n📏 Please send: ${mon || "—"}${fl}${lb}\n${physio}\n${life}${next}${qa}\n\nI'll remind you at the right times. Just reply here in your own words. 💙`, kind: "info", at: t });
     for (const c of getCaregivers(pid)) if (c.user_id) sendWhatsApp({ userId: c.user_id, patientId: pid, body: `👩‍⚕️ ${first(p.name)}'s care plan was updated by ${doc} today. You're Level ${c.level} in the care circle — I'll message you only if something needs attention.${next}`, kind: "info", at: t });
   });
   return id;

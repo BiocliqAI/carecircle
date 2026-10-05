@@ -551,3 +551,82 @@ export async function transcribeDictation(base64: string, mimeType: string, ctx:
     return null;
   }
 }
+
+async function geminiCall(system: string, input: unknown[], json = false): Promise<string | null> {
+  lastTranscribeError = null;
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) { lastTranscribeError = "Gemini is not configured"; return null; }
+  try {
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey });
+    const resp = (await ai.interactions.create({
+      model: getGeminiModel(), store: false, system_instruction: system, input,
+      ...(json ? { response_format: { type: "text", mime_type: "application/json" } } : {}),
+    } as never)) as { output_text?: string | null };
+    return resp.output_text?.trim() || null;
+  } catch (e) {
+    lastTranscribeError = (e as Error).message?.slice(0, 300) ?? "unknown error";
+    console.error("[gemini]", lastTranscribeError);
+    return null;
+  }
+}
+
+/** Reads a printed (or handwritten) prescription photo into plain text, line by line. */
+export async function readPrescriptionAI(base64: string, mime: string): Promise<string | null> {
+  return geminiCall(
+    "You read a photo of an Indian clinic's prescription. Transcribe every line faithfully as plain text: patient line, diagnosis, each medicine with strength, dose pattern (e.g. 1-0-1), timing (before/after food), duration, investigations ordered, advice lines and the review/next visit date. Keep the original order. Do not add anything that isn't on the paper. Output only the text.",
+    [{ type: "text", text: "Transcribe this prescription." }, { type: "image", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: (mime || "image/jpeg").split(";")[0] }],
+  );
+}
+
+/** Transcribes a doctor–patient consultation with speaker labels (Doctor / Patient / Family). */
+export async function transcribeConversationAI(base64: string, mime: string, ctx: { meds?: string[]; conditions?: string } = {}): Promise<string | null> {
+  return geminiCall(
+    [
+      "You transcribe a consultation in an Indian clinic between a doctor and a patient, sometimes with a family member. Speech may mix English with Hindi, Tamil or other Indian languages: translate to English.",
+      "Label each turn as 'Doctor:', 'Patient:' or 'Family:'. Use correct clinical spelling for drugs and doses; numbers as digits; BP as 150/95.",
+      ctx.meds?.length ? `Current medicines: ${ctx.meds.join(", ")}.` : "",
+      ctx.conditions ? `Known conditions: ${ctx.conditions}.` : "",
+      "Output only the transcript.",
+    ].filter(Boolean).join("\n"),
+    [{ type: "text", text: "Transcribe this consultation." }, { type: "audio", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: (mime || "audio/webm").split(";")[0] }],
+  );
+}
+
+/** Merges the visit's sources into a structured draft care plan (JSON). Returns null on failure. */
+export async function buildPlanDraftAI(context: unknown, sources: { kind: string; text: string }[]): Promise<Record<string, unknown> | null> {
+  const system = `You draft a patient's care plan from today's consultation for the doctor to review. You never decide clinical content yourself: you only organise what the sources say.
+
+Sources: "rx" = the printed prescription (authoritative for medicines unless the doctor clearly said otherwise), "dictation" = the doctor's dictated advice, "conversation" = the consultation transcript (only the DOCTOR's statements are advice; patient/family lines give questions and context). Also given: the current plan, assistant flags, family questions, and allowed keys.
+
+Return JSON with exactly these keys:
+{
+ "medications": [{"name","dose","schedule":"1-0-1 style or SOS","durationDays":number|null,"startDay":number|null,"instructions","purpose","change":"new|changed|same|stopped","was":"previous dose/schedule if changed, else null","sources":["rx"|"talk"|"keep"|"pa"],"quote":"the exact sentence from the conversation/dictation that supports it, if any","confidence":"high|low"}],
+ "monitoring": [{"key": one of vitalKeys,"times":["HH:MM"],"alert":"plain words e.g. alert above 140/90","limits": {threshold keys such as sysHigh, diaHigh, sysLow, glucoseHigh, glucoseLow, spo2Low, weightGainKg, hrHigh, hrLow, painHigh, dryWeight, weightBand with numbers},"sources":[...],"quote","confidence"}],
+ "advice": [{"text":"short instruction for the patient","sources":[...],"quote","confidence"}],
+ "warningSigns": {"keys": [symptomKeys that should alert the family], "text":"plain words", "sources":[...]},
+ "answers": [{"question":"what the patient/family asked","answer":"what the doctor answered","askedBy":"Patient|Family|name","quote","sources":["talk"]}],
+ "labs": {"panel":"tests ordered","everyDays":number|null,"sources":[...]} | null,
+ "nextVisit": {"date":"YYYY-MM-DD"|null,"sources":[...]} | null,
+ "diagnosis": "short",
+ "note": "a concise clinical note of today's decisions in the doctor's voice",
+ "conflicts": [{"field":"what disagrees","medName":"if a medicine","options":[{"label":"e.g. 20 mg once daily","value":{"dose","schedule","durationDays"},"source":"rx|talk|keep","quote"}]}]
+}
+
+Rules:
+- Include every current-plan medicine: mark "same" if unchanged, "stopped" if the doctor stopped/held it (put the reason in instructions), "changed" with "was" if dose or timing changed. Use "keep" as the source for medicines carried over without mention.
+- If the prescription and the doctor's spoken words disagree on a medicine, add a conflict with both options and put the prescription's version in medications.
+- A taper or step change ("40 mg for 2 weeks, then 20 mg") is TWO medication entries: the first with durationDays 14, the second with the new dose and startDay 14 (days after today) and durationDays null.
+- Every question in familyQuestions, and every question the patient or family asked in the conversation, that the doctor answered goes in "answers" (question + the doctor's answer). Do not fold answers into advice.
+- confidence "low" when a number or name was unclear or inferred.
+- Do not invent medicines, doses, limits or tests. Leave things out rather than guess.
+- Quotes must be verbatim from the conversation/dictation.`;
+  const text = await geminiCall(system, [{ type: "text", text: JSON.stringify({ context, sources }) }], true);
+  if (!text) return null;
+  try {
+    return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;
+  } catch {
+    lastTranscribeError = "The AI returned an unreadable draft";
+    return null;
+  }
+}

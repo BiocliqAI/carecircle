@@ -75,7 +75,7 @@ export function PatientChart({ id }: { id: string }) {
             </div>
             <div className="row" style={{ gap: 8 }}>
               <Link href={waHref} className="v2-btn"><Icon name="chat" size={16} />WhatsApp thread</Link>
-              <Link href={`/patients/${id}/visit`} className="v2-btn primary">{visitLabel}</Link>
+              <Link href={isDoctor ? `/patients/${id}/plan` : `/patients/${id}/visit`} className="v2-btn primary">{visitLabel}</Link>
             </div>
           </div>
           <div className="pc-facts num">
