@@ -83,7 +83,8 @@ function Setup() {
 }
 
 function ClinicHome() {
-  const { clinic, personas, switchTo, notifyChange, bump, user } = useSession();
+  const { clinic, personas, switchTo, notifyChange, bump, user, refresh } = useSession();
+  const [stale, setStale] = useState(false);
   const router = useRouter();
   const [cl, setCl] = useState<Checklist | null>(null);
 
@@ -92,10 +93,17 @@ function ClinicHome() {
   }, [bump]);
 
   async function go(id: string, to?: string) {
-    const r = await switchTo(id);
-    const u = personas.find((p) => p.id === id) ?? null;
-    notifyChange();
-    router.push(to ?? homeFor(u, r?.patientIds ?? []));
+    try {
+      const r = await switchTo(id);
+      const u = personas.find((p) => p.id === id) ?? null;
+      notifyChange();
+      router.push(to ?? homeFor(u, r?.patientIds ?? []));
+    } catch {
+      // The persona list is stale (e.g. the database was reset or replaced since this page loaded).
+      await refresh().catch(() => undefined);
+      notifyChange();
+      setStale(true);
+    }
   }
   const staff = personas.filter((p) => p.role === "DOCTOR" || p.role === "PA");
   const clinicianId = user && (user.role === "DOCTOR" || user.role === "PA") ? user.id : staff[0]?.id;
@@ -129,6 +137,11 @@ function ClinicHome() {
         </div>
       </section>
 
+      {stale && (
+        <div className="alert warn" style={{ marginBottom: 16 }}>
+          <div>That person no longer exists. The clinic data changed since this page loaded (it may have been reset). The page has been refreshed; pick a persona again{clinic ? "" : " or set up the clinic"}.</div>
+        </div>
+      )}
       <div className="grid side">
         <div className="stack gap16">
           {(
