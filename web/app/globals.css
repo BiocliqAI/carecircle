@@ -505,3 +505,18 @@ main.page { padding-bottom: 88px; }
 .pp-continue b { color: #fff; }
 .pp-continue button { all: unset; cursor: pointer; padding: 6px 14px; border-radius: 999px; background: #5eead4; color: #062a2a; font-weight: 700; font-size: 13px; }
 .pp-continue button:hover, .pp-continue button:focus-visible { background: #99f6e4; }
+/* equal-height persona cards; the people chooser overlays the card instead of growing it */
+.pp-grid { align-items: stretch; }
+.pp-card { display: flex; flex-direction: column; }
+.pp-hit { flex: 1; min-height: 380px; }
+.pp-people { position: absolute; left: 10px; right: 10px; bottom: 10px; max-height: calc(100% - 20px); overflow-y: auto; padding: 10px; border-radius: 16px; background: #0c2329; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); box-shadow: 0 -12px 30px rgba(0,0,0,0.35); z-index: 2; }
+.pp-people::before { content: "Who are you?"; display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--c); margin: 2px 4px 6px; }
+@media (max-width: 760px) { .pp-hit { min-height: 0; } .pp-people { position: static; margin: 0 10px 10px; max-height: none; } }
+.pp-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp { overflow: clip; }
+/* 3 + 2 layout: centre the second row */
+@media (max-width: 1200px) and (min-width: 761px) {
+  .pp-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .pp-card { grid-column: span 2; }
+  .pp-card:nth-child(4) { grid-column: 2 / span 2; }
+}

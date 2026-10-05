@@ -9,7 +9,7 @@ type PersonaKey = "ADMIN" | "DOCTOR" | "PA" | "PATIENT" | "CAREGIVER";
 const PERSONAS: { key: PersonaKey; n: string; title: string; tag: string; can: string[]; empty: string }[] = [
   { key: "ADMIN", n: "01", title: "Clinic admin", tag: "Sets up the clinic and its people", can: ["Create the clinic", "Add doctors", "Add assistants", "Edit them any time"], empty: "" },
   { key: "DOCTOR", n: "02", title: "Doctor", tag: "Sees the whole story between visits", can: ["All patients at a glance", "Deep-dive patient dashboard", "Clinical notes & visits", "Onboard & edit patients", "Manage assistants"], empty: "The admin adds doctors" },
-  { key: "PA", n: "03", title: "Physician assistant", tag: "Runs onboarding and records", can: ["Onboard patients", "Edit details & care circles", "Documents & notes", "Every patient's dashboard"], empty: "The admin adds assistants" },
+  { key: "PA", n: "03", title: "Assistant", tag: "Physician assistant (PA) who runs onboarding and records", can: ["Onboard patients", "Edit details & care circles", "Documents & notes", "Every patient's dashboard"], empty: "The admin adds assistants" },
   { key: "PATIENT", n: "04", title: "Patient", tag: "Just uses WhatsApp", can: ["Text readings in any words", "Tap reply buttons", "Send reports & voice notes", "🆘 Call for help", "See my dashboard"], empty: "Onboard a patient first" },
   { key: "CAREGIVER", n: "05", title: "Caregiver", tag: "Family who act on alerts", can: ["Get alerts on WhatsApp", "ACK and record the outcome", "Log readings for them", "See their dashboard"], empty: "Added when a patient is onboarded" },
 ];
