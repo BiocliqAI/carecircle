@@ -61,7 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const { mode } = useSession();
   const clinician = !!user && (user.role === "DOCTOR" || user.role === "PA");
-  const bare = !user && path === "/" && mode === "live"; // the persona picker is full-bleed
+  const bare = path === "/" && mode === "live"; // the persona picker is full-bleed
   const withSidebar = !!user && !!NAV[user.role] && path !== "/" && path !== "/whatsapp";
 
   return (

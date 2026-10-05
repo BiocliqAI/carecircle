@@ -1,7 +1,7 @@
 "use client";
 // Live clinic landing: the persona picker. Everyone enters here and lands on their own page.
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { avatarColor, homeFor, initials, useSession, type SessionUser } from "./client";
 
 type PersonaKey = "ADMIN" | "DOCTOR" | "PA" | "PATIENT" | "CAREGIVER";
@@ -15,18 +15,12 @@ const PERSONAS: { key: PersonaKey; n: string; title: string; tag: string; can: s
 ];
 
 export function LiveHome() {
-  const { user, patientIds } = useSession();
-  const router = useRouter();
-  // Already signed in: go to their page. "Switch persona" signs out and comes back here.
-  useEffect(() => {
-    if (user) router.replace(homeFor(user, patientIds));
-  }, [user, patientIds, router]);
-  if (user) return <main className="page"><div className="empty"><span className="spin" /></div></main>;
+  // The app's link always opens the persona picker; a signed-in user gets a "Continue as" shortcut.
   return <PersonaPicker />;
 }
 
 function PersonaPicker() {
-  const { personas, clinic, switchTo, notifyChange, refresh } = useSession();
+  const { user, personas, clinic, switchTo, notifyChange, refresh } = useSession();
   const router = useRouter();
   const [open, setOpen] = useState<PersonaKey | null>(null);
   const [stale, setStale] = useState(false);
@@ -58,6 +52,13 @@ function PersonaPicker() {
         <p className="pp-sub">Between-visit care that runs on WhatsApp. Pick a role to see the product through their eyes. Each one lands on its own page.</p>
       </header>
 
+      {user && (
+        <div className="pp-continue">
+          <span className="avatar" style={{ background: avatarColor(user.name) }}>{initials(user.name)}</span>
+          <span>Signed in as <b>{user.name}</b></span>
+          <button onClick={() => router.push(homeFor(user))}>Continue →</button>
+        </div>
+      )}
       {stale && <div className="pp-note">That person no longer exists. The clinic changed since this page loaded, so the list has been refreshed.</div>}
 
       <section className="pp-grid">
