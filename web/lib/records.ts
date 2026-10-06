@@ -3,6 +3,7 @@
 import { all, audit, get, run, tx } from "./db";
 import { clinicLabel, createEscalation, getCaregivers, getPatient, getUser, requestConsent, type CaregiverRow } from "./engine";
 import { sendWhatsApp } from "./whatsapp";
+import { consentReminderBody } from "./consenttext";
 import { MAX_CAREGIVERS, shortName } from "./types";
 
 const PHONE_RE = /^\+?[\d\s-]{8,}$/;
@@ -264,9 +265,7 @@ export function resendConsent(pid: string, onlyUser: string | null, t: number, a
     if (!u) continue;
     sendWhatsApp({
       userId: c.user_id, patientId: pid, at: t, kind: "info", quick: ["YES", "NO"],
-      body: c.role === "PATIENT"
-        ? `🔔 Reminder from ${clinic ?? "your clinic"}: please reply *YES* so your readings can be shared with your care team, or *NO* to decline.`
-        : `🔔 Reminder: ${p.name} has asked you to be in their CareCircle${clinic ? ` at ${clinic}` : ""}. Reply *YES* to join, or *NO* to decline.`,
+      body: consentReminderBody(c.role, p.name, clinic),
     });
   }
   if (pending.length) audit(t, actor, "CONSENT_RESENT", "patient", pid, { n: pending.length });

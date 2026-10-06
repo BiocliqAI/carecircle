@@ -5,7 +5,10 @@ import { all, audit, get, getSetting, run, setSetting, tx } from "./db";
 import { now, setSimNow } from "./clock";
 import { parseMessage } from "./parser";
 import { sendWhatsApp } from "./whatsapp";
-import { DAY, HOUR, MIN, atLocal, dayStart, fmtDate, fmtTime, localDow, localHHMM } from "./time";
+import { DAY, HOUR, MIN, atLocal, dayKey, dayStart, fmtDate, fmtTime, localDow, localHHMM } from "./time";
+import { clarify, pickOption, type ClarifyOption } from "./clarify";
+import { buildDigest } from "./digest";
+import { consentReminderBody } from "./consenttext";
 import type { CarePlan, ClinicVitals, EscalationType, ParsedMessage, Visit, VitalType } from "./types";
 import { LAB_META, MAX_CAREGIVERS, SYMPTOMS, VITAL_META, shortName } from "./types";
 import { dayIndex, describeMed, doseAt, medDueOn } from "./meds";
@@ -345,11 +348,12 @@ export function createEscalation(p: PatientRow, e: NewEsc, t: number): number | 
 function escalationText(p: PatientRow, esc: EscalationRow, prev: CaregiverRow | null, timer: number, passed = false): string {
   const pre = prev ? (passed ? `${prev.name} couldn't take this and passed it to you.\n\n` : `${prev.name} hasn't responded in ${timer} min, so this is now with you.\n\n`) : "";
   const doc = doctorName(p);
+  const call = `📞 ${first(p.name)}: ${p.phone}`;
   if (esc.type === "URGENT")
-    return `🚨 URGENT — ${p.name}\n${pre}${esc.detail}\n\n${esc.advice}\nPlease call ${first(p.name)} right now. If unwell, call 108 / go to the nearest emergency, and inform ${doc}.\n\nReply *ACK* to take ownership.`;
+    return `🚨 URGENT — ${p.name}\n${pre}${esc.detail}\n\n${esc.advice}\nPlease call ${first(p.name)} right now. If unwell, call 108 / go to the nearest emergency, and inform ${doc}.\n${call}\n\nReply *ACK* to take ownership.`;
   if (esc.type === "DEVIATION")
-    return `⚠️ Care Circle alert — ${p.name}\n${pre}${esc.title}: ${esc.detail}\n\nAdvice set by ${doc}: ${esc.advice}\nIf it persists or ${first(p.name)} feels unwell, please contact ${doc}'s clinic or seek medical attention.\n\nReply *ACK* to take ownership.`;
-  return `📋 Care Circle — ${p.name}\n${pre}${esc.detail}\n${esc.advice}\n\nReply *ACK* to take ownership.`;
+    return `⚠️ Care Circle alert — ${p.name}\n${pre}${esc.title}: ${esc.detail}\n\nAdvice set by ${doc}: ${esc.advice}\nIf it persists or ${first(p.name)} feels unwell, please contact ${doc}'s clinic or seek medical attention.\n${call}\n\nReply *ACK* to take ownership.`;
+  return `📋 Care Circle — ${p.name}\n${pre}${esc.detail}\n${esc.advice}\n${call}\n\nReply *ACK* to take ownership.`;
 }
 
 function notifyLevel(p: PatientRow, esc: EscalationRow, level: number, t: number, prev: CaregiverRow | null, passed = false) {
@@ -660,6 +664,27 @@ function kidneyMorningCheck(p: PatientRow, t: number) {
 const ACK_RE = /^\s*(ack\b|acknowledged?|ok(ay)?\b|on it|i'?ll handle|will handle|handling|yes\b|👍)/i;
 const YES_RE = /^\s*(yes|y|i agree|agree|ok|okay|haan|ha)\W*$/i;
 const NO_RE = /^\s*(no|n|stop|i do not agree|disagree)\W*$/i;
+/** The reply to a message we couldn't read: a guess to confirm when we can make one, else what we're waiting for. */
+function clarifyFor(p: PatientRow, plan: CarePlan, user: UserRow, body: string, t: number): { text: string; quick: string[] } {
+  const waiting = all<TaskRow>(
+    `SELECT * FROM tasks WHERE patient_id = ? AND ((status = 'PENDING' AND due_at >= ? AND due_at <= ?) OR (status = 'MISSED' AND due_at >= ?)) ORDER BY due_at`,
+    p.id, dayStart(t), t + 2 * HOUR, t - 6 * HOUR,
+  );
+  const pendingVitals = [...new Set(waiting.filter((x) => x.kind === "vital").map((x) => x.item_key.slice(6) as VitalType))];
+  const c = clarify({
+    body,
+    firstName: first(p.name),
+    forCaregiver: user.role === "CAREGIVER",
+    pendingVitals,
+    planVitals: plan.monitoring.map((m) => m.key),
+    pendingMeds: [...new Set(waiting.filter((x) => x.kind === "med").map((x) => `${x.label} (${fmtTime(x.due_at)})`))],
+    pendingOther: [...new Set(waiting.filter((x) => x.kind === "checkin" || x.kind === "fluid" || x.kind === "physio").map((x) => x.label))],
+  })!;
+  // Only keep the choice if nothing else is mid-conversation with this person (e.g. an alert follow-up).
+  if (c.options && !get("SELECT 1 FROM convo_state WHERE user_id = ?", user.id)) run("INSERT INTO convo_state(user_id, state, data) VALUES(?, 'clarify', ?)", user.id, JSON.stringify(c.options));
+  return { text: c.text, quick: c.quick };
+}
+
 const MISS_RE = /^\s*(miss(ed)?|timeout|simulate\s*timeout|skip|unresponsive|pass(\s+(it\s+)?to\b.*)?|can'?t\s+now)\b/i;
 
 export async function ingestMessage(userId: string, body: string, opts: { allowAi?: boolean; at?: number } = {}): Promise<void> {
@@ -671,6 +696,15 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   const msgId = run("INSERT INTO messages(patient_id, user_id, direction, body, created_at, kind) VALUES(?,?,?,?,?,?)", p?.id ?? null, userId, "IN", body, t, "inbound").lastInsertRowid;
   const reply = (text: string, quick?: string[]) => sendWhatsApp({ userId, patientId: p?.id ?? null, body: text, quick, kind: "reply", at: t + 1000 });
   if (!p) return void reply("Hi! This number isn't linked to a patient yet. Please contact your clinic.");
+
+  // An answer to "which one is it?" (see clarifyFor): act on the chosen reading as if it had been typed in full.
+  const asked = get<{ state: string; data: string | null }>("SELECT state, data FROM convo_state WHERE user_id = ? AND state = 'clarify'", userId);
+  if (asked) {
+    run("DELETE FROM convo_state WHERE user_id = ?", userId);
+    const pick = pickOption(JSON.parse(asked.data || "[]") as ClarifyOption[], body);
+    if (pick === null) return void reply("No problem. Send it again whenever you like, for example “weight 72.8”.");
+    if (pick !== "unclear") body = pick.text;
+  }
 
   // --- caregiver conversational flows: ACK / outcome / note
   if (user.role === "CAREGIVER") {
@@ -856,9 +890,14 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
 
   // --- reply to sender
   const forWhom = user.role === "CAREGIVER" ? ` for ${first(p.name)}` : "";
-  let text = lines.length
-    ? `✅ Logged${forWhom}:\n${lines.join("\n")}`
-    : `🤔 Sorry, I couldn't pick up any readings from that. You can write naturally, e.g.:\n“BP 130/80, weight 76.5, sugar 120, took all tablets, walked 20 min, no swelling”`;
+  let quick: string[] | undefined;
+  let text = "";
+  if (lines.length) text = `✅ Logged${forWhom}:\n${lines.join("\n")}`;
+  else if (!alerts.length) {
+    const c = clarifyFor(p, plan, user, body, t);
+    text = c.text;
+    quick = c.quick;
+  }
   const created: { a: Alert; id: number | null }[] = [];
   for (const a of alerts) created.push({ a, id: createEscalation(p, { ...a, messageId: msgId }, t + 500) });
   const cgs = getCaregivers(p.id);
@@ -867,7 +906,7 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
     else text += `\n\n⚠️ ${a.title} — ${a.detail}\n${a.advice}${id ? `\nI've let ${cgs[0]?.name ?? "your caregiver"} in your care circle know.` : ""}`;
   }
   if (prePlan) text += `\n\nℹ️ ${first(p.name)}'s care plan starts after the first visit with ${doctorName(p)}. Until then, the care circle is alerted only in an emergency.`;
-  sendWhatsApp({ userId, patientId: p.id, body: text, kind: "reply", at: t + 1000 });
+  sendWhatsApp({ userId, patientId: p.id, body: text.trim(), quick, kind: "reply", at: t + 1000 });
   // If a caregiver logged it, keep the patient informed of alerts.
   if (user.role === "CAREGIVER" && created.some((c) => c.id)) {
     sendWhatsApp({ userId: p.user_id!, patientId: p.id, body: `ℹ️ ${user.name} logged a reading for you that needs attention: ${created.map((c) => c.a.title).join(", ")}. Please follow ${doctorName(p)}'s advice and rest.`, kind: "info", at: t + 1000 });
@@ -915,13 +954,58 @@ function autoResolveCompliance(p: PatientRow, userId: string, t: number) {
 }
 
 // ---------------------------------------------------------------- scheduler
+// ---------------------------------------------------------------- evening digest for the care circle
+const DIGEST_AT = "20:30";
+const READING_LABEL: Record<string, string> = { bp: "BP", weight: "Weight", glucose: "Sugar", hr: "Pulse", spo2: "SpO₂" };
+
+function tickDigest(p: PatientRow, t: number) {
+  const hhmm = localHHMM(t);
+  if (hhmm < DIGEST_AT || hhmm > "23:30") return;
+  const key = `digest:${p.id}`;
+  if (getSetting(key) === dayKey(t)) return;
+  const visit = latestVisit(p.id, t);
+  if (!visit) return; // care plan not started yet
+  setSetting(key, dayKey(t));
+  const circle = getCaregivers(p.id).filter((c) => c.user_id && !get("SELECT 1 FROM consents WHERE patient_id = ? AND user_id = ? AND status != 'GIVEN'", p.id, c.user_id));
+  if (!circle.length) return;
+  const tasks = all<TaskRow>("SELECT * FROM tasks WHERE patient_id = ? AND due_at >= ? AND due_at <= ? AND status != 'CANCELLED'", p.id, dayStart(t), t);
+  const meds = tasks.filter((x) => x.kind === "med");
+  const missed = tasks.filter((x) => x.status === "MISSED" || x.status === "NOT_DONE").map((x) => `${x.label} (${fmtTime(x.due_at)})`);
+  const readings: string[] = [];
+  for (const type of ["bp", "weight", "glucose", "hr", "spo2"]) {
+    const o = get<{ v1: number; v2: number | null }>("SELECT v1, v2 FROM observations WHERE patient_id = ? AND type = ? AND observed_at >= ? AND observed_at <= ? ORDER BY observed_at DESC LIMIT 1", p.id, type, dayStart(t), t);
+    if (o) readings.push(`${READING_LABEL[type]} ${type === "bp" ? `${o.v1}/${o.v2}` : o.v1}`);
+  }
+  const openAlerts = get<{ n: number }>(`SELECT COUNT(*) AS n FROM escalations WHERE patient_id = ? AND state IN ${OPEN}`, p.id)!.n;
+  const body = buildDigest({ patientFirst: first(p.name), medsDue: meds.length, medsTaken: meds.filter((x) => x.status === "DONE").length, missed, readings, openAlerts, nextVisit: visit.next_visit_at ? fmtDate(visit.next_visit_at, { weekday: "short", day: "numeric", month: "short" }) : null });
+  for (const c of circle) sendWhatsApp({ userId: c.user_id!, patientId: p.id, body, kind: "info", at: t });
+}
+
+// ---------------------------------------------------------------- automatic consent follow-up
+/** Nudges whoever hasn't replied YES: once after a day, once more after three. The PA's queue shows how many went out. */
+export const consentNudges = (pid: string, uid: string): number => Number(getSetting(`nudge:${pid}:${uid}`) || 0);
+function chaseConsents(t: number) {
+  const pending = all<{ patient_id: string; user_id: string; role: string; requested_at: number }>("SELECT patient_id, user_id, role, requested_at FROM consents WHERE status = 'PENDING' AND requested_at <= ?", t - DAY);
+  for (const c of pending) {
+    const n = consentNudges(c.patient_id, c.user_id);
+    if (n >= 2 || t - c.requested_at < (n === 0 ? DAY : 3 * DAY)) continue;
+    const p = getPatient(c.patient_id);
+    if (!p) continue;
+    sendWhatsApp({ userId: c.user_id, patientId: p.id, body: consentReminderBody(c.role, p.name, clinicLabel()), quick: ["YES", "NO"], kind: "info", at: t });
+    setSetting(`nudge:${c.patient_id}:${c.user_id}`, String(n + 1));
+    audit(t, "system", "CONSENT_AUTO_REMINDER", "patient", p.id, { user: c.user_id, n: n + 1 });
+  }
+}
+
 export function tick(t: number) {
+  chaseConsents(t);
   for (const p of listPatients()) {
     if (!p.user_id) continue;
     ensureTasks(p.id, t);
     tickTasks(p, t);
     kidneyMorningCheck(p, t);
     tickEscalations(p, t);
+    tickDigest(p, t);
   }
 }
 

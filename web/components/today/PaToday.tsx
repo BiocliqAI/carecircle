@@ -26,6 +26,7 @@ const KIND: Record<TaskKind, { icon: string; color: string; bg: string }> = {
   document: { icon: "clip", color: "#3D4B48", bg: "#EEF1F0" },
   medchange: { icon: "pill", color: "#6B3FA0", bg: "#F3EDFA" },
   circle: { icon: "userx", color: "#A01D14", bg: "#FDE8E7" },
+  baseline: { icon: "draft", color: "#0F5C55", bg: "#E1EFEC" },
 };
 type Tab = "todo" | "onboarding" | "visits" | "done";
 

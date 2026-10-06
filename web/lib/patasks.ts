@@ -1,12 +1,12 @@
 // The assistant's work queue: everything that needs a person to act, derived from live records.
 import { all, get } from "./db";
-import { getCaregivers, getPatient, getUser, latestVisit, listPatients } from "./engine";
+import { consentNudges, getCaregivers, getPatient, getUser, latestVisit, listPatients } from "./engine";
 import { getPrep } from "./prep";
-import { listDrafts } from "./clinic";
+import { getBaseline, listDrafts } from "./clinic";
 import { DAY, HOUR, dayStart, fmtDate, fmtTime, relDays } from "./time";
 import { shortName } from "./types";
 
-export type TaskKind = "onboarding" | "consent" | "visit" | "document" | "medchange" | "circle";
+export type TaskKind = "onboarding" | "consent" | "visit" | "document" | "medchange" | "circle" | "baseline";
 export interface PaTask {
   id: string;
   kind: TaskKind;
@@ -37,11 +37,26 @@ export function paToday(t: number, userId: string) {
     const who = cs.map((c) => (c.role === "PATIENT" ? `${shortName(p.name)} (patient)` : (() => { const cg = cgs.find((x) => x.user_id === c.user_id); return cg ? `${shortName(cg.name)} (${cg.level === 1 ? "primary" : "backup"})` : getUser(c.user_id)?.name ?? "Someone"; })()));
     const oldest = cs[0];
     const phone = oldest.role === "PATIENT" ? p.phone : cgs.find((x) => x.user_id === oldest.user_id)?.phone;
+    const auto = Math.max(...cs.map((c) => consentNudges(pid, c.user_id)));
     tasks.push({
       id: `consent:${pid}`, kind: "consent", label: `Consent pending · ${ago(oldest.requested_at, t)}`, patient: p.name, patientId: pid, at: oldest.requested_at,
-      detail: `${who.join(" and ")} ${cs.length > 1 ? "haven’t" : "hasn’t"} replied YES on WhatsApp yet.`,
+      detail: `${who.join(" and ")} ${cs.length > 1 ? "haven’t" : "hasn’t"} replied YES on WhatsApp yet.${auto ? ` Already reminded automatically ${auto === 1 ? "once" : `${auto} times`}${auto >= 2 ? "; a phone call is the next step." : "."}` : ""}`,
       actions: [...(phone ? [{ label: "Call", href: `tel:${phone.replace(/\s/g, "")}` }] : []), { label: "Resend", api: { path: `/api/patients/${pid}/consent`, body: { action: "resend" } }, primary: true }],
     });
+  }
+
+  // Someone said NO to joining the care circle: the circle has a gap until the family picks another person.
+  for (const c of all<{ patient_id: string; user_id: string; role: string; responded_at: number | null }>("SELECT patient_id, user_id, role, responded_at FROM consents WHERE status = 'DECLINED' AND role = 'CAREGIVER' ORDER BY responded_at")) {
+    const p = getPatient(c.patient_id);
+    const cg = p && getCaregivers(c.patient_id).find((x) => x.user_id === c.user_id);
+    if (!p || !cg) continue; // already replaced or removed
+    tasks.push({ id: `declined:${p.id}:${c.user_id}`, kind: "circle", label: "Caregiver declined", patient: p.name, patientId: p.id, at: c.responded_at ?? t, detail: `${shortName(cg.name)} (${cg.level === 1 ? "primary" : "backup"}) replied NO. Ask the family who else should be in the circle.`, actions: [{ label: "Manage circle", href: `/patients/${p.id}?tab=profile`, primary: true }] });
+  }
+
+  // Registered but no baseline yet: the doctor would start Visit 1 from an empty page.
+  for (const p of listPatients()) {
+    if (latestVisit(p.id, t) || getBaseline(p.id)) continue;
+    tasks.push({ id: `baseline:${p.id}`, kind: "baseline", label: "Baseline missing", patient: p.name, patientId: p.id, at: p.created_at, detail: "No baseline yet. Add old prescriptions or reports and the form fills itself in; you just check it.", actions: [{ label: "Capture baseline", href: `/patients/${p.id}/baseline`, primary: true }] });
   }
 
   const visits: { id: string; name: string; at: number; ready: boolean; doctor: string | null }[] = [];
