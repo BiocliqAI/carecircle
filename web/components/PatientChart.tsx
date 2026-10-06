@@ -8,6 +8,7 @@ import { AdherenceHeatmap, EscalationCard, VitalCharts, visitDayKeys } from "./i
 import { KidneyTab } from "./kidney";
 import { ClinicalSummaryCard } from "./ClinicalSummaryCard";
 import { DocumentOcrModal } from "./DocumentOcrModal";
+import { ClinicOutsideVisits } from "./OutsideVisits";
 import { BaselineCard } from "./baseline";
 import { CareCircleCard, DetailsCard, DocumentsTab, NotesTab } from "./PatientRecordTabs";
 import { PlanTab, Timeline, type Data, type TL } from "./PatientView";
@@ -90,6 +91,7 @@ export function PatientChart({ id }: { id: string }) {
                 {l}
                 {k === "alerts" && d.open.length > 0 && <span className="v2-count red">{d.open.length}</span>}
                 {k === "documents" && d.documents.length > 0 && <span className="v2-count">{d.documents.length}</span>}
+                {k === "visits" && d.outsideVisits.some((v) => v.changes.some((c) => c.status === "REPORTED")) && <span className="v2-count brand">{d.outsideVisits.reduce((n, v) => n + v.changes.filter((c) => c.status === "REPORTED").length, 0)}</span>}
               </button>
             ))}
           </nav>
@@ -110,6 +112,19 @@ export function PatientChart({ id }: { id: string }) {
               <button className="tq-link" onClick={() => setSec("alerts")}>View alert</button>
             </div>
           ))}
+
+          {/* outside-doctor visits waiting for the clinic */}
+          {d.outsideVisits.filter((v) => v.changes.some((c) => c.status === "REPORTED") || (!v.reviewed_at && v.status === "COMPLETE" && v.created_at > d.now - 14 * 86400_000)).slice(0, 3).map((v) => {
+            const n = v.changes.filter((c) => c.status === "REPORTED").length;
+            return (
+              <div key={`ov${v.id}`} className="pc-alert blue">
+                <span className="pc-alert-k">Other doctor</span>
+                <b className="num">{v.doctor_name ?? "Visit"}{v.specialty ? ` (${v.specialty})` : ""} · {fmtDate(v.visit_at, { day: "numeric", month: "short" })}</b>
+                <span className="v2-sub" style={{ flex: 1, minWidth: 220, fontSize: 13 }}>{n ? `${n} medicine change${n > 1 ? "s" : ""} to review: ${v.changes.filter((c) => c.status === "REPORTED").map((c) => c.med_name.split(" (")[0]).join(", ")}.` : "New visit reported by the family."} Reported by {v.reported_by_name ?? "the family"}.</span>
+                <button className="tq-link" onClick={() => { setSec("visits"); setTimeout(() => document.getElementById("outside-visits")?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }}>Review</button>
+              </div>
+            );
+          })}
 
           {sec === "overview" && <Overview d={d} s={s} onSec={setSec} showAi={showAi} setShowAi={setShowAi} />}
 
@@ -154,6 +169,7 @@ export function PatientChart({ id }: { id: string }) {
           {sec === "visits" && (
             <div className="stack gap16">
               {cur ? <PlanTab d={d} canEdit onChange={load} /> : <Empty text="No visits recorded yet." />}
+              <ClinicOutsideVisits pid={id} visits={d.outsideVisits} onChange={changed} />
               <NotesTab pid={id} notes={d.notes} viewerId={d.viewer.id} viewerRole={d.viewer.role} onChange={load} />
               <section className="v2-card pad"><h2 style={{ marginBottom: 8 }}>Full timeline</h2><Timeline items={d.timeline} /></section>
             </div>

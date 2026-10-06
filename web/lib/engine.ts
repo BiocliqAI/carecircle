@@ -12,6 +12,7 @@ import { consentReminderBody } from "./consenttext";
 import type { CarePlan, ClinicVitals, EscalationType, ParsedMessage, Visit, VitalType } from "./types";
 import { LAB_META, MAX_CAREGIVERS, SYMPTOMS, VITAL_META, shortName } from "./types";
 import { dayIndex, describeMed, doseAt, medDueOn } from "./meds";
+import { activeFlow, looksLikeOutsideVisit, outsideVisitTurn, tickOutsideVisits, type TurnResult } from "./outside";
 
 // ---------------------------------------------------------------- loaders
 export interface UserRow {
@@ -685,6 +686,7 @@ function clarifyFor(p: PatientRow, plan: CarePlan, user: UserRow, body: string, 
   return { text: c.text, quick: c.quick };
 }
 
+const HELP_RE = /\b(sos|help|emergency|chest pain|can'?t breathe|unconscious|fainted|collapsed)\b/i;
 const MISS_RE = /^\s*(miss(ed)?|timeout|simulate\s*timeout|skip|unresponsive|pass(\s+(it\s+)?to\b.*)?|can'?t\s+now)\b/i;
 
 export async function ingestMessage(userId: string, body: string, opts: { allowAi?: boolean; at?: number } = {}): Promise<void> {
@@ -704,6 +706,19 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
     const pick = pickOption(JSON.parse(asked.data || "[]") as ClarifyOption[], body);
     if (pick === null) return void reply("No problem. Send it again whenever you like, for example “weight 72.8”.");
     if (pick !== "unclear") body = pick.text;
+  }
+
+  // A conversation about a visit to another doctor takes the reply, unless the reply is clearly for an alert or consent.
+  const alertWaiting = !!get("SELECT 1 FROM escalations WHERE patient_id = ? AND state = 'NOTIFIED'", p.id);
+  const otherFlow = !!get("SELECT 1 FROM convo_state WHERE user_id = ? AND state IN ('awaiting_outcome','awaiting_note')", userId);
+  const busy = otherFlow || (alertWaiting && (ACK_RE.test(body) || MISS_RE.test(body))) || (pendingConsent(p.id, userId) && (YES_RE.test(body) || NO_RE.test(body)));
+  const flowOpen = !busy && !!activeFlow(userId, t);
+  if (flowOpen) {
+    const r = await outsideVisitTurn(user, p, body, t, { msgId, allowAi: opts.allowAi });
+    if (r.handled) {
+      run("UPDATE messages SET parser = ? WHERE id = ?", r.via ?? null, msgId);
+      return void reply(r.reply ?? "Noted.", r.quick);
+    }
   }
 
   // --- caregiver conversational flows: ACK / outcome / note
@@ -785,8 +800,19 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   const prePlan = visit.id === "__preplan";
   const plan = visit.plan;
 
-  const { parsed, parser } = await parseMessage(body, plan.medications, opts.allowAi !== false);
-  run("UPDATE messages SET parsed = ?, parser = ? WHERE id = ?", JSON.stringify(parsed), parser, msgId);
+  // "We took Appa to the cardiologist and he reduced Lasix…": start a conversation to record that visit.
+  // Its medicine changes are recorded with the visit; readings and urgent symptoms in the same message are still logged below.
+  // When the words already say so, skip the general AI parse (one AI call instead of two) and read the rest with the rules.
+  let ov: TurnResult | null = null;
+  const canStart = !busy && !flowOpen && !HELP_RE.test(body);
+  if (canStart && looksLikeOutsideVisit(body)) ov = await outsideVisitTurn(user, p, body, t, { start: true, msgId, allowAi: opts.allowAi });
+  const { parsed, parser } = await parseMessage(body, plan.medications, opts.allowAi !== false && !ov?.handled);
+  if (canStart && !ov && !parsed.help && (parsed.outsideVisit || parsed.medChanges.length > 0)) ov = await outsideVisitTurn(user, p, body, t, { start: true, msgId, allowAi: opts.allowAi });
+  if (ov?.handled) {
+    parsed.medChanges = [];
+    parsed.meds = { allTaken: false, allMissed: false, taken: [], missed: [] }; // "reduce Lasix" is not "took Lasix"
+  }
+  run("UPDATE messages SET parsed = ?, parser = ? WHERE id = ?", JSON.stringify(parsed), ov?.handled ? (ov.via ?? parser) : parser, msgId);
 
   const alerts: Alert[] = [];
   const lines: string[] = [];
@@ -893,7 +919,10 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   let quick: string[] | undefined;
   let text = "";
   if (lines.length) text = `✅ Logged${forWhom}:\n${lines.join("\n")}`;
-  else if (!alerts.length) {
+  if (ov?.handled) {
+    text = text ? `${text}\n\n${ov.reply ?? ""}` : ov.reply ?? "";
+    quick = ov.quick?.length ? ov.quick : undefined;
+  } else if (!lines.length && !alerts.length) {
     const c = clarifyFor(p, plan, user, body, t);
     text = c.text;
     quick = c.quick;
@@ -1007,6 +1036,7 @@ export function tick(t: number) {
     tickEscalations(p, t);
     tickDigest(p, t);
   }
+  tickOutsideVisits(t);
 }
 
 /** Catch the scheduler up to `target` in 15-minute steps so timestamps stay realistic. */

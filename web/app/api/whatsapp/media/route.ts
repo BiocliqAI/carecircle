@@ -1,9 +1,10 @@
 import { now } from "@/lib/clock";
 import { get, run } from "@/lib/db";
-import { getUser, ingestMessage, latestVisit, runScheduler } from "@/lib/engine";
+import { getPatient, getUser, ingestMessage, latestVisit, runScheduler } from "@/lib/engine";
 import { lastTranscribeError, transcribeAudio } from "@/lib/gemini";
 import { fixHealthWords } from "@/lib/speechfix";
 import { addDocument } from "@/lib/records";
+import { FROM_VISIT_BUTTON, outsideVisitDocument } from "@/lib/outside";
 import { err, json, ready } from "@/lib/server";
 import { sendWhatsApp } from "@/lib/whatsapp";
 
@@ -54,7 +55,10 @@ export async function POST(req: Request) {
     const msgId = run("INSERT INTO messages(patient_id, user_id, direction, body, created_at, kind) VALUES(?,?,?,?,?,?)", pid, user.id, "IN", `📎 ${name}`, t, "document").lastInsertRowid;
     const category = /lab|report|test/i.test(name) ? "lab" : /rx|prescri/i.test(name) ? "prescription" : /discharge/i.test(name) ? "discharge" : "other";
     const docId = addDocument(pid, { title: name, category, mime: b.mime || "application/octet-stream", base64: b.base64, source: "whatsapp", messageId: msgId }, t, user.id);
-    sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: `📄 Received “${name}”. It's been added to the record for your care team to review.` });
+    // Mid-conversation about another doctor's visit, the file joins that visit and is read for its details.
+    const ov = await outsideVisitDocument(user, getPatient(pid)!, { id: docId, base64: b.base64, mime: b.mime || "application/octet-stream", title: name }, t);
+    if (ov.handled) sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: ov.reply ?? "📄 Added to the visit.", quick: ov.quick });
+    else sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: `📄 Received “${name}”. It's been added to the record for your care team to review.${category === "lab" ? "" : "\nIf it's from a visit to another doctor, tap below and I'll note the visit too."}`, quick: category === "lab" ? undefined : [FROM_VISIT_BUTTON] });
     return json({ ok: true, document: docId });
   } catch (e) {
     return err((e as Error).message, 400);

@@ -174,6 +174,8 @@ export interface ParsedMessage {
   fluids: ParsedFluid[];
   labs: ParsedLab[];
   medChanges: ParsedMedChange[];
+  /** The sender is telling us about a visit to / advice from another doctor (Gemini only). */
+  outsideVisit?: boolean;
 }
 
 export const VITAL_META: Record<VitalType, { label: string; unit: string }> = {

@@ -1,6 +1,7 @@
 import { all } from "@/lib/db";
 import { now } from "@/lib/clock";
 import { dayFluid, getConsents, getCaregivers, getPatient, getUser, getVisits, latestVisit, type EscalationRow } from "@/lib/engine";
+import { outsideVisits } from "@/lib/outside";
 import { intervalSummary, longRange, medChanges, type EscalationView } from "@/lib/summary";
 import { canView, err, json, ready, sessionUser } from "@/lib/server";
 import { getBaseline } from "@/lib/clinic";
@@ -83,6 +84,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     timeline,
     careTeam,
     medChanges: allChanges,
+    outsideVisits: outsideVisits(id),
     labDue: labTask ? { ...labTask, overdue: labTask.due_at < t } : null,
     fluidToday: current?.plan.fluid ? { ...dayFluid(id, t), limit: current.plan.fluid.limitMl } : null,
     kidney: hasKidney ? longRange(id) : null,

@@ -114,7 +114,7 @@ function parseLabs(text: string): { labs: ParsedLab[]; text: string } {
 }
 
 // ---------- reported medicine changes (from other doctors) ----------
-const CHANGE_VERBS = "stopped|discontinued|stop|started|added|introduced|restarted|reintroduced|increased|reduced|decreased|changed|halved|doubled|tapered";
+const CHANGE_VERBS = "stopped|discontinued|stop|started|start|added|add|introduced|restarted|reintroduced|increased|increase|reduced|reduce|decreased|decrease|changed|change|halved|halve|doubled|tapered";
 function verbToChange(v: string): ParsedMedChange["change"] {
   if (/stop|discontinu/.test(v)) return "stopped";
   if (/start|add|introduc/.test(v)) return "started";
@@ -130,9 +130,10 @@ function parseMedChanges(text: string, meds: MedRef[]): ParsedMedChange[] {
   const known = (w: string) => meds.find((m) => m.name.toLowerCase().split(/[\s/]+/)[0] === w || m.name.toLowerCase().includes(w));
   const re1 = new RegExp(`\\b(${CHANGE_VERBS})\\s+(?:the\\s+|his\\s+|her\\s+)?(?:tab(?:let)?s?\\.?\\s+|t\\.\\s*|cap\\.?\\s+)?([a-z][a-z0-9-]{2,})([^.,;\\n]{0,40})`, "g");
   const re2 = new RegExp(`\\b(?:tab(?:let)?\\.?\\s+|t\\.\\s*)?([a-z][a-z0-9-]{2,})\\s+(?:is\\s+|was\\s+|has been\\s+)?(${CHANGE_VERBS})\\b([^.,;\\n]{0,40})`, "g");
-  const STOP = new Set(["the", "his", "her", "my", "all", "walking", "walk", "exercise", "exercises", "eating", "it", "taking", "from", "to", "dose", "tablet", "tablets", "medicine", "medicines", "today"]);
+  const STOP = new Set(["the", "his", "her", "my", "all", "walking", "walk", "exercise", "exercises", "eating", "it", "taking", "from", "to", "dose", "dosage", "tablet", "tablets", "medicine", "medicines", "today", "and", "also", "then", "has", "have", "was", "were", "had", "new", "one", "another", "some"]);
   const push = (verb: string, word: string, rest: string) => {
     if (STOP.has(word)) return;
+    rest = rest.split(/\s+(?:and|also|then|but)\s+/)[0];
     if (dr && dr[1].split(/\s+/).includes(word)) return;
     const k = known(word);
     if (!k && !prescriber && !/\bmg\b|tab/.test(text)) return;
@@ -141,8 +142,9 @@ function parseMedChanges(text: string, meds: MedRef[]): ParsedMedChange[] {
     out.push({ medName: name, change: verbToChange(verb), detail: `${verb} ${word}${rest}`.trim().slice(0, 120), prescriber });
   };
   let m: RegExpExecArray | null;
-  while ((m = re1.exec(text))) push(m[1], m[2], m[3]);
-  while ((m = re2.exec(text))) push(m[2], m[1], m[3]);
+  // Resume after the medicine word so "reduced lasix … and added nifedipine" finds both.
+  while ((m = re1.exec(text))) { push(m[1], m[2], m[3]); re1.lastIndex = m.index + m[0].length - m[3].length; }
+  while ((m = re2.exec(text))) { push(m[2], m[1], m[3]); re2.lastIndex = m.index + m[0].length - m[3].length; }
   return out;
 }
 
@@ -391,6 +393,7 @@ export function normaliseParsed(raw: unknown, meds: MedRef[]): ParsedMessage {
     fluids,
     labs,
     medChanges,
+    outsideVisit: r.outsideVisit === true,
   };
 }
 
@@ -471,8 +474,9 @@ const SCHEMA = {
         required: ["medName", "change", "detail", "prescriber"],
       },
     },
+    outsideVisit: { type: "boolean", description: "true if the sender is telling about a visit to, or advice from, a doctor other than the clinic (specialist, hospital, GP)." },
   },
-  required: ["vitals", "meds", "physio", "lifestyle", "symptoms", "noSymptoms", "help", "fluids", "labs", "medChanges"],
+  required: ["vitals", "meds", "physio", "lifestyle", "symptoms", "noSymptoms", "help", "fluids", "labs", "medChanges", "outsideVisit"],
 };
 
 async function parseGemini(text: string, meds: MedRef[]): Promise<ParsedMessage | null> {

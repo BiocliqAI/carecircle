@@ -78,7 +78,18 @@ export function paToday(t: number, userId: string) {
     tasks.push({ id: `doc:${d.id}`, kind: "document", label: "Document to file", patient: p.name, patientId: p.id, at: d.uploaded_at, detail: `“${d.title}” sent on WhatsApp${d.uploaded_by ? ` by ${shortName(getUser(d.uploaded_by)?.name ?? "")}` : ""}, ${fmtDate(d.uploaded_at, { day: "numeric", month: "short" })} · not yet filed`, actions: [{ label: "Review & file", href: `/patients/${p.id}?tab=documents`, primary: true }] });
   }
 
-  for (const m of all<{ id: number; patient_id: string; med_name: string; change: string; detail: string | null; prescriber: string | null; at: number }>("SELECT id, patient_id, med_name, change, detail, prescriber, at FROM med_changes WHERE status = 'REPORTED' ORDER BY at")) {
+  // Visits to other doctors with medicine changes the family reported: one item per visit.
+  for (const v of all<{ id: number; patient_id: string; doctor_name: string | null; specialty: string | null; visit_at: number; created_at: number; meds: string; reported_by: string | null }>(
+    `SELECT o.id, o.patient_id, o.doctor_name, o.specialty, o.visit_at, o.created_at, o.reported_by, GROUP_CONCAT(c.med_name, ', ') AS meds
+       FROM outside_visits o JOIN med_changes c ON c.outside_visit_id = o.id AND c.status = 'REPORTED'
+     WHERE o.status = 'COMPLETE' GROUP BY o.id ORDER BY o.created_at`,
+  )) {
+    const p = getPatient(v.patient_id);
+    if (!p) continue;
+    tasks.push({ id: `ov:${v.id}`, kind: "medchange", label: "Other doctor's changes to review", patient: p.name, patientId: p.id, at: v.created_at, detail: `${v.doctor_name ?? "Another doctor"}${v.specialty ? ` (${v.specialty})` : ""}, ${fmtDate(v.visit_at, { day: "numeric", month: "short" })}: ${v.meds}. Reported${v.reported_by ? ` by ${shortName(getUser(v.reported_by)?.name ?? "")}` : ""}; reminders stay as they are until the plan is updated.`, actions: [{ label: "Review & apply", href: `/patients/${p.id}?tab=notes`, primary: true }] });
+  }
+
+  for (const m of all<{ id: number; patient_id: string; med_name: string; change: string; detail: string | null; prescriber: string | null; at: number }>("SELECT id, patient_id, med_name, change, detail, prescriber, at FROM med_changes WHERE status = 'REPORTED' AND outside_visit_id IS NULL ORDER BY at")) {
     const p = getPatient(m.patient_id);
     if (!p) continue;
     if (getPrep(p.id).flags.some((f) => f.medChangeId === m.id)) continue;

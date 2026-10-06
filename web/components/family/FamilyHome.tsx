@@ -6,6 +6,7 @@ import { Icon } from "../Icon";
 import { Spark } from "../Spark";
 import { fmtDate, fmtTime, relDays } from "@/lib/time";
 import type { familyToday } from "@/lib/family";
+import { FamilyOutsideVisits } from "../OutsideVisits";
 
 type Today = ReturnType<typeof familyToday>;
 
@@ -116,6 +117,7 @@ export function PatientHome({ pid }: { pid: string }) {
           ))}
         </section>
       </div>
+      <FamilyOutsideVisits pid={pid} patientFirst={d.patient.first} you />
       <section className="fh-card fh-sos">
         <span className="fh-sos-badge">SOS</span>
         <div style={{ flex: 1, minWidth: 220 }}>
@@ -231,6 +233,7 @@ export function CaregiverHome({ pid }: { pid: string }) {
         <ReadingCard d={d} you={false} />
       </div>
       <NextVisitCard d={d} you={false} />
+      <FamilyOutsideVisits pid={pid} patientFirst={d.patient.first} you={false} />
     </div>
   );
 }

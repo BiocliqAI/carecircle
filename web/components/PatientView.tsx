@@ -5,6 +5,7 @@ import { api, avatarColor, initials, useSession } from "./client";
 import { AdherenceHeatmap, EscalationCard, Highlights, KpiRow, SymptomTable, VitalCharts, visitDayKeys } from "./interval";
 import { CareTeamChips, CareTeamPanel, KidneyBadges, KidneyBrief, KidneyTab, type CareTeamRow, type FluidToday, type LabDue } from "./kidney";
 import type { EscalationView, IntervalSummary, LongRange, MedChangeRow } from "@/lib/summary";
+import type { OutsideVisitView } from "@/lib/outside";
 import type { Visit } from "@/lib/types";
 import { LAB_META, SYMPTOMS, VITAL_META, shortName, type VitalType } from "@/lib/types";
 import { describeMed } from "@/lib/meds";
@@ -37,6 +38,7 @@ export interface Data {
   timeline: TL[];
   careTeam: CareTeamRow[];
   medChanges: MedChangeRow[];
+  outsideVisits: OutsideVisitView[];
   labDue: LabDue | null;
   fluidToday: FluidToday | null;
   kidney: LongRange | null;

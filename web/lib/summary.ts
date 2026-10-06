@@ -76,6 +76,11 @@ export interface MedChangeRow {
   status: string;
   reviewed_by_name: string | null;
   reviewed_at: number | null;
+  outside_visit_id?: number | null;
+  med_key?: string | null;
+  new_dose?: string | null;
+  new_times?: string | null; // JSON ["HH:MM"]
+  applied_at?: number | null;
 }
 
 export interface KidneySummary {
