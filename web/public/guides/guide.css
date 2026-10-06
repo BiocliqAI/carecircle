@@ -173,3 +173,8 @@ figcaption b { color: var(--accent); white-space: nowrap; }
   section.sec { break-inside: auto; margin-top: 30px; } figure, .card, .note, .phone, .screen, ol.steps > li, table.t { break-inside: avoid; }
   .screen, .phone { box-shadow: none; } a { color: inherit; }
 }
+
+/* extra bits used by the feature figures */
+.ov-warn { margin-top: 5px; padding: 5px 9px; border-radius: 8px; background: #FEF0E1; color: #9A4A06; font-size: 12px; line-height: 1.35; font-weight: 700; }
+.chart-mock { width: 100%; height: auto; display: block; background: #fff; border: 1px solid #E3E8E6; border-radius: 10px; }
+.txt { width: 100%; border: 1px solid #CFD8D5; border-radius: 8px; padding: 8px 10px; background: #fff; font-size: 13px; line-height: 1.45; white-space: pre-line; }

@@ -20,10 +20,7 @@
   <div class="eyebrow">Guide for clinic admins</div>
   <h1>Set up the clinic once, then step back</h1>
   <p class="lede">The admin creates the clinic, adds doctors and assistants, and decides whether AI assistance is on. You do not see patient information, and you never need to.</p>
-  <ul class="toc">
-    <li><a href="#clinic"><b>1</b>Create the clinic</a></li><li><a href="#staff"><b>2</b>Add your team</a></li><li><a href="#ai"><b>3</b>AI assistance</a></li>
-    <li><a href="#golive"><b>4</b>Go live</a></li><li><a href="#afresh"><b>5</b>Start afresh</a></li><li><a href="#care"><b>6</b>Keeping it safe</a></li>
-  </ul>
+  <ul class="toc"><li><a href="#clinic"><b>1</b>Create the clinic</a></li><li><a href="#staff"><b>2</b>Add doctors and assistants</a></li><li><a href="#ai"><b>3</b>AI assistance (Gemini)</a></li><li><a href="#auto"><b>4</b>What runs by itself</a></li><li><a href="#golive"><b>5</b>Go live: who does what</a></li><li><a href="#afresh"><b>6</b>Start afresh</a></li><li><a href="#care"><b>7</b>Keeping it safe</a></li></ul>
 </div>
 
 <div class="note tip" style="margin-top:36px"><span class="ic">🔐</span><p>The admin page holds <b>no patient data</b>. It manages the clinic and its staff only.</p></div>
@@ -63,17 +60,36 @@
 
 <section class="sec" id="ai">
   <h2><span class="n">3</span>AI assistance (Gemini)</h2>
-  <p class="sub">Press <b>✨ Configure Gemini</b> and paste your API key. The page shows <b>On</b> with the model name, or <b>Off · rule-based</b>.</p>
+  <p class="sub">Press <b>✨ Configure Gemini</b> and paste your API key. The page shows <b>On</b> with the model name, or <b>Off · rule-based</b>. Most of the smart features below need it; the clinic keeps working without it.</p>
   <div class="tw"><table class="t">
-    <tr><th>With AI on</th><th>With AI off</th></tr>
-    <tr><td>Understands free-text, voice notes and other Indian languages. Reads prescription and lab photos. Drafts the pre-visit brief and care-plan draft. Has natural conversations about other doctors' visits.</td><td>Still works. Messages are read with fixed rules, and the assistant asks fixed questions in order. Photos are filed but not read.</td></tr>
+    <tr><th>What it does</th><th>With AI off</th></tr>
+    <tr><td><b>Reads messages</b> in free text, voice notes and Indian languages</td><td>Fixed rules read the usual English messages; the assistant asks fixed questions</td></tr>
+    <tr><td><b>Reads photos</b>: BP machines, sugar meters and scales (confirmed by the sender), prescriptions and lab reports</td><td>Photos are filed but not read; the sender is asked to type device numbers</td></tr>
+    <tr><td><b>Replies in the person's language</b> (Hindi, Tamil, Telugu, Kannada, Malayalam, Bengali, Gujarati, Punjabi)</td><td>Everything is sent in English</td></tr>
+    <tr><td><b>Doctors' tools:</b> the pre-visit brief (prepared automatically before a visit), the care-plan draft and the “In short” for the family, and Ask the record</td><td>Rules-based summary; manual plan form; Ask the record charts what you name, with statistics</td></tr>
+    <tr><td><b>Has natural conversations</b> about visits to other doctors</td><td>A fixed list of questions, in order</td></tr>
   </table></div>
   <div class="note tip"><span class="ic">📏</span><p><b>Alerts never depend on AI.</b> Rules and the doctor's limits decide every alert. AI only reads and drafts. A person checks anything it drafts before it reaches a patient or the record.</p></div>
   <p>Get a key from Google AI Studio. The key is stored in the clinic's database. Do not share it in chat or email.</p>
 </section>
 
+<section class="sec" id="auto">
+  <h2><span class="n">4</span>What runs by itself</h2>
+  <p class="sub">Nobody on your team has to start these. They run in the background and show up where people already look.</p>
+  <div class="tw"><table class="t">
+    <tr><th>When</th><th>What happens</th><th>Who sees it</th></tr>
+    <tr><td>As messages arrive</td><td>Impossible numbers are queried, corrections applied, a borderline high BP or pulse rechecked before alerting, symptom follow-up questions asked, photos of machines and documents read</td><td>Patient and caregivers on WhatsApp; the assistant's queue</td></tr>
+    <tr><td>After a caregiver closes an alert</td><td>The patient is asked to measure again a couple of hours later; the caregiver is told whether it settled</td><td>Patient, caregiver</td></tr>
+    <tr><td>Each morning and after readings</td><td>Slow drifts under the limits are looked for (weight, BP, fluid signs, adherence). Advisory only</td><td>A gentle heads-up to the family; a Pattern line for the doctor</td></tr>
+    <tr><td>Each evening (8:30 pm)</td><td>The care-circle digest, now saying what changed</td><td>Caregivers</td></tr>
+    <tr><td>Sunday evening</td><td>A week-in-review</td><td>Caregivers and the patient</td></tr>
+    <tr><td>1–2 days before a visit</td><td>The AI brief is prepared and waits on the chart and the assistant's Prepare visit page</td><td>Doctor and assistant</td></tr>
+  </table></div>
+  <div class="note tip"><span class="ic">🔒</span><p>None of these pages the clinic or changes a care plan. Rules and the doctor's limits still decide every alert; people confirm anything clinical.</p></div>
+</section>
+
 <section class="sec" id="golive">
-  <h2><span class="n">4</span>Go live: who does what</h2>
+  <h2><span class="n">5</span>Go live: who does what</h2>
   <p class="sub">The first time, Today shows a “Getting started” checklist to your team. It ticks itself off.</p>
   <div class="ladder">
     <div class="rung"><div class="who">You<small>admin</small></div><div class="what"><b>1 · Create the clinic and add the team</b></div></div>
@@ -85,12 +101,12 @@
 </section>
 
 <section class="sec" id="afresh">
-  <h2><span class="n">5</span>Start afresh</h2>
+  <h2><span class="n">6</span>Start afresh</h2>
   <div class="note sos"><span class="ic">🧨</span><div><p><b class="big">This erases everything.</b></p><p>The clinic, staff, patients, messages and records are all removed. It cannot be undone. To confirm you must type the clinic's exact name. It is meant for demos and fresh starts, never for a clinic in use.</p></div></div>
 </section>
 
 <section class="sec" id="care">
-  <h2><span class="n">6</span>Keeping it safe</h2>
+  <h2><span class="n">7</span>Keeping it safe</h2>
   <div class="grid2">
     <div class="card"><span class="em">💾</span><h4>Back up regularly</h4><p>Whoever runs the server should take backups and test a restore. See the README: <code>npm run clinic:backup</code>.</p></div>
     <div class="card"><span class="em">🔑</span><h4>Protect the site</h4><p>Ask your technical contact to set a site password (<code>APP_PASSWORD</code>) before sharing the link outside the clinic.</p></div>

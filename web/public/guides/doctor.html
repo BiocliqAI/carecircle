@@ -20,11 +20,7 @@
   <div class="eyebrow">Guide for doctors</div>
   <h1>See what changed, not every message</h1>
   <p class="lede">CareCircle watches the weeks between visits so you do not have to. Families handle the alerts. You review a short list, and at each visit you start from what actually happened at home.</p>
-  <ul class="toc">
-    <li><a href="#model"><b>1</b>How it works</a></li><li><a href="#today"><b>2</b>Your Today</a></li><li><a href="#chart"><b>3</b>The patient chart</a></li>
-    <li><a href="#visit"><b>4</b>Record a visit</a></li><li><a href="#limits"><b>5</b>Alert limits</a></li><li><a href="#other"><b>6</b>Other doctors</a></li>
-    <li><a href="#more"><b>7</b>Notes &amp; documents</a></li><li><a href="#faq"><b>8</b>Good to know</a></li>
-  </ul>
+  <ul class="toc"><li><a href="#model"><b>1</b>How it works</a></li><li><a href="#today"><b>2</b>Your Today</a></li><li><a href="#chart"><b>3</b>The patient chart</a></li><li><a href="#visit"><b>4</b>Record a visit</a></li><li><a href="#inshort"><b>5</b>“In short” for the…</a></li><li><a href="#limits"><b>6</b>Alert limits and timers</a></li><li><a href="#smart"><b>7</b>Smarter alerts:…</a></li><li><a href="#askrecord"><b>8</b>Ask the record, and see…</a></li><li><a href="#other"><b>9</b>When the patient sees…</a></li><li><a href="#more"><b>10</b>Notes, documents and…</a></li><li><a href="#faq"><b>11</b>Good to know</a></li></ul>
 </div>
 
 <section class="sec" id="model" style="margin-top:36px">
@@ -123,10 +119,32 @@
   <p>The first visit is pre-filled from the baseline your assistant collected: current medicines, intake vitals and allergies. A simpler manual form is also available, where you type the plan field by field.</p>
 </section>
 
-<div class="note tip"><span class="ic">✨</span><p><b>Step 3 also drafts an “In short” for the family</b>: a few plain lines on what changed, why (only if your note says so), what to watch and when to come back. It is built from your reviewed plan only. Edit it freely; what you leave in the box goes to the patient with the plan and to the care circle in the update notice. Next to <i>Next visit</i> you will see a suggested date and the reason (later when things have been stable, sooner after several changes or alerts); press <i>use</i> or pick your own. One to two days before a visit, the AI brief is also prepared automatically and waits on the chart and on the assistant's Prepare visit page.</p></div>
+<section class="sec" id="inshort">
+  <h2><span class="n">5</span>“In short” for the family, and the next visit</h2>
+  <p class="sub">Step 3 of the visit builder also drafts a few plain lines for the family. You check them before anything is sent.</p>
+  <figure>
+    <div class="screen"><div class="chrome"><i></i><i></i><i></i><span>carecircle · Send</span></div><div class="body">
+      <div class="m-card" style="margin-top:0"><span class="pin" style="left:-8px;top:-8px">1</span><h6>Tests and next visit</h6>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span>Next visit</span><span class="mbtn">dd/mm/yyyy</span><span style="color:#24478F;font-weight:700;font-size:13px">Suggested 21 Oct (in 15 days) · use</span></div>
+        <div class="v2-sub" style="margin-top:4px">Sooner: 3 medicine changes today, 7 alerts since the last visit.</div></div>
+      <div class="m-card"><span class="pin" style="left:-8px;top:-8px">2</span><h6>“In short” for the family <span style="font-weight:400;color:#5B6B68;float:right">✨ AI draft from your plan. Edit freely.</span></h6>
+        <div class="txt">Furosemide is now 20 mg, once a day in the morning.
+New medicine Nifedipine 10 mg, 3 times a day.
+Zincovit is stopped as it is not needed now.
+Please watch for more swelling, breathlessness or dizziness.</div>
+        <div style="margin-top:8px"><span class="mbtn">✨ Redraft</span> <span class="mbtn p" style="float:right">Send plan</span></div></div>
+    </div></div>
+    <ol class="legend">
+      <li><b>A suggested date with its reason.</b> Later when things have been stable with good adherence, sooner after several changes or alerts, otherwise about the usual gap. Press <i>use</i> or choose your own.</li>
+      <li><b>An editable summary.</b> It is built from your reviewed plan only (never adds advice, doses or reasons you did not give) with schedules in plain words. What is in the box goes to the patient with the plan and to the care circle in the update notice. Leave it empty to send none.</li>
+    </ol>
+    <figcaption><b>Figure 4</b>The step-3 preview shows exactly what the patient will read, including the summary.</figcaption>
+  </figure>
+  <p>One to two days before a visit, the <b>AI brief</b> is also prepared automatically. It waits on the chart (marked “prepared automatically”) and on your assistant's Prepare visit page.</p>
+</section>
 
 <section class="sec" id="limits">
-  <h2><span class="n">5</span>Alert limits and timers</h2>
+  <h2><span class="n">6</span>Alert limits and timers</h2>
   <p class="sub">Part of each plan. When a reading crosses a limit, the care circle is alerted, not you. Defaults below; change them per patient in the visit.</p>
   <div class="tw"><table class="t">
     <tr><th>Reading</th><th>Default alert</th></tr>
@@ -142,14 +160,70 @@
     <div class="card"><h4>⏱ Deviation</h4><p><b>60 min</b> for a reading outside limits.</p></div>
     <div class="card"><h4>⏱ Missed task</h4><p><b>120 min</b> for medicines or readings not reported.</p></div>
   </div>
-  <div class="note tip"><span class="ic">⏳</span><p><b>Recheck first.</b> A borderline high BP (up to 20 mmHg systolic and 10 diastolic above your limit) or pulse (up to 20 bpm above) is not alerted at once. The sender is asked to rest 10 minutes and measure again, and the family is alerted if it is still high or no recheck arrives within 30 minutes. Emergency rules and readings further above the limit alert immediately. Impossible values are not logged, and corrections ("that was 128, not 182") replace the reading with the old value kept in the audit trail.</p></div>
   <div class="note sos"><span class="ic">🛟</span><p><b>Emergency rules always apply</b>, even before Visit 1: BP 180/110 or higher, oxygen below 88%, sugar below 54, chest pain, fainting, or a help request. They alert the care circle straight away.</p></div>
 </section>
 
-<div class="note tip" style="margin-top:22px"><span class="ic">👀</span><p><b>Patterns.</b> Slow drifts that stay under every limit (weight up three days in a row, BP creeping up, weight up with swelling or a missed water tablet, medicines slipping) appear as a blue <b>Pattern</b> strip on the chart and as the reason on Today. They are advisory: the family has had a gentle heads-up. <b>Dismiss</b> hides one for 3 days; <b>Turn off for this patient</b> stops that pattern. All four can be switched on or off under <i>Alerts &amp; care circle → Pattern watch</i>, where <i>Symptom details</i> (the answers to the follow-up questions, for example “breathless: walking or stairs, 2 pillows”) are also listed. When a caregiver closes a reading-based alert, the patient is asked for a recheck and the result comes back to the caregiver.</p></div>
+<section class="sec" id="smart">
+  <h2><span class="n">7</span>Smarter alerts: rechecks, patterns, symptom answers</h2>
+  <p class="sub">Your limits still decide every alert. These features make sure the family is alerted for real problems and early drift, not typos.</p>
+  <div class="grid2">
+    <div class="card"><span class="em">⏳</span><h4>Recheck first</h4><p>A borderline high BP (up to 20 mmHg systolic and 10 diastolic over your limit) or pulse (up to 20 bpm over) is not alerted at once. The sender is asked to rest 10 minutes and measure again. The family is alerted if it is still high or no recheck comes in 30 minutes. Emergency rules and larger deviations alert immediately.</p></div>
+    <div class="card"><span class="em">🔁</span><h4>Closing the loop</h4><p>When a caregiver closes a reading-based alert, the patient is asked to measure again about two hours later (weight: next morning) and the caregiver hears whether it settled. Still high alerts again, with no delay.</p></div>
+    <div class="card"><span class="em">✏️</span><h4>Typos and corrections</h4><p>Impossible values (weight 592, BP 1400/80) are not saved; the sender is asked “did you mean…?”. “Sorry, that was 128, not 182” replaces the earlier reading, re-runs the rules and closes an alert the typo caused. The old value stays in the audit trail.</p></div>
+    <div class="card"><span class="em">📷</span><h4>Photos of machines</h4><p>A photo of a BP monitor, sugar meter, scale, oximeter or thermometer is read and logged once the sender confirms. These never reach your assistant's queue.</p></div>
+  </div>
+  <h3>Patterns: slow drift under your limits</h3>
+  <p>Four patterns are watched each morning and after each reading: weight up three days in a row (by at least 0.9 kg in all), the average top BP number up 10 or more on the week before while still under your limit, weight up 1 kg in two days together with swelling, breathlessness or a missed water tablet, and medicines confirmed on under 70% of doses after a good week. They are advisory: the patient and first caregiver get one gentle “heads-up, not an alarm”, and you see a blue <b>Pattern</b> strip and the reason on Today.</p>
+  <figure>
+    <div class="screen"><div class="chrome"><i></i><i></i><i></i><span>carecircle · /patients/p_gopal</span></div><div class="body">
+      <div class="m-card" style="background:#F5F8FF;border-color:#D4DEFA;margin-top:0;position:relative"><span class="pin" style="left:-8px;top:-8px">1</span><span style="font-size:11.5px;font-weight:700;color:#1D4ED8">PATTERN</span> <b>Weight creeping up</b> <span style="color:#5B6B68">Weight 59.2 → 60.1 → 60.9 kg over 3 days (up 1.7 kg). Still inside the limits. Advisory only: the family has had a gentle heads-up.</span>
+        <div style="margin-top:6px"><span style="color:#24478F;font-weight:700">Dismiss</span> &nbsp; <span style="color:#5B6B68;font-weight:700">Turn off for Gopal</span></div></div>
+      <div class="m-card"><span class="pin" style="left:-8px;top:-8px">2</span><h6>Pattern watch</h6><div class="v2-sub" style="margin-bottom:4px">Slow drifts that stay under your limits. Advisory only.</div>
+        <div class="m-row">Weight creeping up<span class="s" style="color:#24478F">On · turn off</span></div><div class="m-row">Blood pressure drifting up<span class="s" style="color:#24478F">On · turn off</span></div><div class="m-row">Possible fluid build-up<span class="s" style="color:#24478F">On · turn off</span></div><div class="m-row">Medicines missed more often<span class="s" style="color:#5B6B68">Off · turn on</span></div></div>
+      <div class="m-card"><span class="pin" style="left:-8px;top:-8px">3</span><h6>Symptom details</h6><div class="v2-sub">6 Oct</div><div><b>breathlessness</b>: Walking or stairs · Yes (more pillows)</div></div>
+    </div></div>
+    <ol class="legend">
+      <li><b>The strip under the banner.</b> <i>Dismiss</i> hides it (it does not return for 3 days). <i>Turn off for this patient</i> stops that pattern.</li>
+      <li><b>Pattern watch</b> under <i>Alerts &amp; care circle</i> lists the four patterns with an on/off switch each.</li>
+      <li><b>Symptom details.</b> When a symptom is reported, two short questions follow (when, where, how much). Answers appear here. Breathless <i>at rest</i>, <i>lying flat</i>, or a fall or near-faint with dizziness raise the same alerts they always would.</li>
+    </ol>
+    <figcaption><b>Figure 5</b>Patterns never page anyone and never change a plan. They only point.</figcaption>
+  </figure>
+</section>
+
+<section class="sec" id="askrecord">
+  <h2><span class="n">8</span>Ask the record, and see what changed</h2>
+  <p class="sub">At the top of the Overview tab, ask a question about this patient in your own words.</p>
+  <figure>
+    <div class="screen"><div class="chrome"><i></i><i></i><i></i><span>carecircle · Overview</span></div><div class="body">
+      <div class="m-card" style="margin-top:0"><h6>Ask Gopal's record <span style="font-weight:400;color:#5B6B68;float:right">Answers come only from this record</span></h6>
+        <div style="display:flex;gap:8px;position:relative"><span class="pin" style="left:-10px;top:-10px">1</span><div style="flex:1;border:1px solid #CFD8D5;border-radius:10px;padding:8px 12px;background:#fff">When did creatinine start rising?</div><span class="mbtn p">Ask</span></div>
+        <div style="margin-top:10px;font-size:12px;font-weight:600;color:#5B6B68">“When did creatinine start rising?”</div>
+        <p style="margin:6px 0;font-size:14.5px;position:relative"><span class="pin" style="left:-21px;top:-2px">2</span>Creatinine was stable between 1.72 and 1.80 mg/dL from 20 to 22 August 2026 before rising to 2.59 on 2 September and reaching 3.01 on 10 September. No labs were drawn between 22 August and 2 September, so the exact start cannot be dated more precisely.</p>
+        <div style="background:#F5F8F7;border-radius:8px;padding:6px 10px;font-size:12.5px;color:#3D4B48;position:relative"><span class="pin" style="left:-21px;top:-2px">3</span>• Creatinine 1.80 on 22 Aug · 2.59 on 2 Sep · 3.01 on 10 Sep<br>• Aldactone 25 mg started on 22 Aug</div>
+        <div style="font-size:13px;font-weight:700;margin:10px 0 2px">Creatinine <span class="v2-sub">mg/dL</span></div>
+        <svg class="chart-mock" viewBox="0 0 560 150" role="img" aria-label="Creatinine rising after a medicine change"><g stroke="#EDF1EF"><line x1="40" y1="20" x2="548" y2="20"/><line x1="40" y1="62" x2="548" y2="62"/><line x1="40" y1="104" x2="548" y2="104"/></g>
+          <g font-size="10" fill="#7a8899"><text x="6" y="24">3.5</text><text x="6" y="66">2.5</text><text x="6" y="108">1.5</text><text x="70" y="140">7 Aug</text><text x="250" y="140">21 Aug</text><text x="400" y="140">4 Sep</text><text x="510" y="140">2 Oct</text></g>
+          <line x1="226" y1="10" x2="226" y2="124" stroke="#b45309" stroke-dasharray="2 3"/><text x="230" y="20" font-size="10" fill="#b45309">+Aldactone +2</text>
+          <line x1="470" y1="10" x2="470" y2="124" stroke="#b45309" stroke-dasharray="2 3"/><text x="474" y="31" font-size="10" fill="#b45309">−Aldactone</text>
+          <polyline fill="none" stroke="#0F5C55" stroke-width="2.2" points="190,98 215,100 232,98 330,66 380,40 470,46 540,40"/>
+          <g fill="#0F5C55"><circle cx="190" cy="98" r="3"/><circle cx="215" cy="100" r="3"/><circle cx="232" cy="98" r="3"/><circle cx="330" cy="66" r="3"/><circle cx="380" cy="40" r="3"/><circle cx="470" cy="46" r="3"/><circle cx="540" cy="40" r="3"/></g></svg>
+        <div class="v2-sub" style="font-size:11.5px;margin-top:4px;position:relative"><span class="pin" style="left:-21px;top:-2px">4</span>Amber lines are medicine changes, including other doctors'. Hover a line for the list. ✨ Read by AI from the record. It shows what the record says, not advice.</div>
+      </div>
+    </div></div>
+    <ol class="legend">
+      <li><b>Ask in words</b>, or tap a suggestion (“Weight against the water tablet dose”, “Which medicines changed since the last visit?”, “How has adherence been?”). It takes about 15 to 30 seconds.</li>
+      <li><b>A short answer</b> in plain sentences that quotes dates and values exactly. If the record cannot answer, it says what is missing. It never guesses a date or value.</li>
+      <li><b>The facts it rests on</b>, with dates, so you can check them.</li>
+      <li><b>The chart.</b> The AI only chooses what to show; every plotted point is read from the database. It describes what the record shows and never recommends treatment. Without AI, naming a reading (“creatinine”, “weight”, “BP”) still gives its numbers and chart.</li>
+    </ol>
+    <figcaption><b>Figure 6</b>Ask the record, simplified. Check anything important against the chart.</figcaption>
+  </figure>
+  <p><b>The same markers are on the vitals and lab charts.</b> Under <i>Vitals &amp; labs</i> every medicine change, including changes by other doctors, is an amber line. Several changes on one day are one line with all of them in its tooltip. You can see at a glance what happened to BP, weight or creatinine after each change.</p>
+</section>
 
 <section class="sec" id="other">
-  <h2><span class="n">6</span>When the patient sees another doctor</h2>
+  <h2><span class="n">9</span>When the patient sees another doctor</h2>
   <p class="sub">Specialists change medicines between your visits. Families can record these visits on WhatsApp or on their page. You see them as a strip on the chart and as a panel under <b>Visits &amp; notes</b>.</p>
   <figure>
     <div class="screen"><div class="chrome"><i></i><i></i><i></i><span>carecircle · Visits &amp; notes</span></div><div class="body">
@@ -158,35 +232,44 @@
         <div style="margin:6px 0;color:#3D4B48;font-size:13px">ADVICE Low salt. Daily weight check. · TESTS ECHO, Serum K+, Creatinine · 📄 prescription_apollo.jpg</div>
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <tr style="color:#5B6B68;text-align:left"><th>Medicine</th><th>Reported</th><th>Dose</th><th>Times</th><th></th></tr>
-          <tr style="border-top:1px solid #EDF1EF"><td style="padding:7px 4px"><b>Lasix</b><br><span style="color:#5B6B68">dose changed</span></td><td>Morning 40 → 20 mg</td><td><span class="mbtn" style="padding:3px 8px;position:relative">20 mg<span class="pin" style="right:-12px;top:-14px">2</span></span></td><td><span class="mbtn" style="padding:3px 8px">08:00, 16:00</span></td><td><span class="mbtn p" style="position:relative">Apply to plan<span class="pin" style="right:-10px;top:-14px">3</span></span> Note only · Reject</td></tr>
-          <tr style="border-top:1px solid #EDF1EF"><td style="padding:7px 4px"><b>Nifedipine</b><br><span style="color:#5B6B68">started · not in plan</span></td><td>10 mg three times a day</td><td><span class="mbtn" style="padding:3px 8px">10 mg</span></td><td><span class="mbtn" style="padding:3px 8px">08:00, 14:00, 20:00</span></td><td><span class="mbtn p">Apply to plan</span> Note only · Reject</td></tr>
+          <tr style="border-top:1px solid #EDF1EF"><td style="padding:7px 4px"><b>Lasix</b><br><span style="color:#5B6B68">dose changed</span></td><td>Morning 40 → 20 mg<div class="ov-warn">⚠ Dose changes from 40 mg to 20 mg (less than half). Please check it was not a slip.</div></td><td><span class="mbtn" style="padding:3px 8px;position:relative">20 mg<span class="pin" style="right:-12px;top:-14px">2</span></span></td><td><span class="mbtn" style="padding:3px 8px">08:00, 16:00</span></td><td><span class="mbtn p" style="position:relative">Apply to plan<span class="pin" style="right:-10px;top:-14px">3</span></span> Note only · Reject</td></tr>
+          <tr style="border-top:1px solid #EDF1EF"><td style="padding:7px 4px"><b>Nifedipine</b><br><span style="color:#5B6B68">started · not in plan</span></td><td>10 mg three times a day<div class="ov-warn">⚠ Recent BP readings have been low (lowest top number 104 in the last 3 days).</div></td><td><span class="mbtn" style="padding:3px 8px">10 mg</span></td><td><span class="mbtn" style="padding:3px 8px">08:00, 14:00, 20:00</span></td><td><span class="mbtn p">Apply to plan</span> Note only · Reject</td></tr>
         </table></div>
     </div></div>
     <ol class="legend">
-      <li><b>Each reported change</b>, in the family's words, with the prescription photo alongside.</li>
+      <li><b>Each reported change</b>, in the family's words, with the prescription photo alongside, and amber <b>checks</b> where something deserves a second look (see below).</li>
       <li><b>Edit dose and times</b> before applying. Type “40 mg / 20 mg” for different doses at two times.</li>
       <li><b>Apply to plan</b> amends the current plan (no new visit number), rebuilds future reminders and tells the patient and family. <b>Note only</b> keeps it on record without changing reminders. <b>Reject</b> says it will not be used.</li>
     </ol>
-    <figcaption><b>Figure 4</b>Until you apply a change, reminders stay exactly as you set them. The family sees “Waiting for Dr. Dileep”.</figcaption>
+    <figcaption><b>Figure 7</b>Until you apply a change, reminders stay exactly as you set them. The family sees “Waiting for Dr. Dileep”.</figcaption>
   </figure>
-  <div class="note tip"><span class="ic">⚠️</span><p><b>Checks appear beside each change.</b> Amber lines flag things worth a second look: the same type of medicine already in the plan, an allergy, recent potassium or kidney results, recent low BP, a dose that more than doubles or halves, or stopping a blood thinner. They are prompts, not blocks.</p></div>
+    <h3>Amber checks beside each change</h3>
+  <p>Fixed rules, not AI, flag what is worth a second look before you or your assistant press Apply. Nothing is blocked.</p>
+  <ul>
+    <li>The <b>same type</b> of medicine is already in the plan (for example two beta blockers), or the <b>same drug under another brand</b>.</li>
+    <li>An <b>allergy</b> on file names the drug, a brand of it, or another drug of the same type.</li>
+    <li><b>Potassium of 5.0 or more</b> with an ACE inhibitor, ARB, ARNI or potassium-sparing water tablet.</li>
+    <li><b>Reduced kidney function</b> (eGFR under 30 or creatinine 2.5 or more) with metformin, an anti-inflammatory painkiller or a potassium-sparing water tablet.</li>
+    <li>An <b>anti-inflammatory painkiller</b> with a blood thinner, or in heart failure or kidney disease.</li>
+    <li><b>Recent low BP</b> before another BP-lowering medicine.</li>
+    <li>A <b>dose that more than doubles or halves</b>.</li>
+    <li><b>Stopping a blood thinner</b> in atrial fibrillation, or an antiplatelet in heart disease.</li>
+  </ul>
   <div class="note care"><span class="ic">👀</span><p>If a change looks unsafe, do not apply it. Reach the family yourself. When several changes arrive in one visit, <b>Apply all</b> handles them together. Stopping a medicine that is not in the plan will say so.</p></div>
 </section>
 
-<div class="note tip" style="margin-top:22px"><span class="ic">💬</span><p><b>Ask the record.</b> At the top of the Overview tab, type a question about this patient (“when did creatinine start rising?”, “weight against the water tablet dose”, “how has adherence been?”) or tap a suggestion. You get a short answer, the dated facts it rests on, any gap in the data, and the chart, in about 15 to 30 seconds. It reads only this patient's record, describes what is there and never advises treatment. Without AI, naming a reading gives its numbers and chart. <b>Medicine changes also appear on the vitals and lab charts</b> as amber markers (several on one day are merged; hover for the list), so you can see what happened after each change, including other doctors' changes. The family gets its updates in its own language when the patient or caregiver writes in one.</p></div>
-
 <section class="sec" id="more">
-  <h2><span class="n">7</span>Notes, documents and summaries</h2>
+  <h2><span class="n">10</span>Notes, documents and summaries</h2>
   <div class="grid2">
     <div class="card"><span class="em">📝</span><h4>Clinical notes</h4><p>Under <b>Visits &amp; notes</b>. Visible to the care team only, never to the patient or family. Type or press <b>Dictate</b>; dictated text is added to the box so you can check it before saving. You can only edit notes you wrote; every change is audited.</p></div>
     <div class="card"><span class="em">📄</span><h4>Documents</h4><p>Photos, PDFs and scans up to 5 MB, by category (prescription, lab, discharge, imaging, voice, other). “Read a prescription or report with AI” pulls out values for you to confirm.</p></div>
-    <div class="card"><span class="em">✨</span><h4>AI summary</h4><p>One screen on Overview that explains what changed since the last visit, in plain sentences, with points to discuss. It is a draft for you, built from the record.</p></div>
+    <div class="card"><span class="em">✨</span><h4>AI summary</h4><p>One screen on Overview that explains what changed since the last visit, in plain sentences, with points to discuss. It is prepared automatically 1 to 2 days before a visit, and Refresh makes a new one. A draft for you, built from the record.</p></div>
     <div class="card"><span class="em">⇄</span><h4>Compare visits</h4><p>Side-by-side view of two visits: plan, vitals and what changed, so you can see what worked.</p></div>
   </div>
 </section>
 
 <section class="sec" id="faq">
-  <h2><span class="n">8</span>Good to know</h2>
+  <h2><span class="n">11</span>Good to know</h2>
   <div class="card"><h4>I am not getting WhatsApp alerts.</h4><p>That is by design. Alerts go to the family. You see the same events on Today, under the patient's alerts, and in the activity feed.</p></div>
   <div class="card" style="margin-top:12px"><h4>Can my assistant do things for me?</h4><p>Your assistants onboard patients, collect the baseline, prepare visits, file documents and chase consent. They can also apply or note other doctors' changes. You are still the one who records visits and sets limits. See <a href="assistant.html">the assistant's guide</a>.</p></div>
   <div class="card" style="margin-top:12px"><h4>A caregiver declined or stopped answering.</h4><p>Your assistant gets a “Care circle not responding” task and can update the care circle (maximum two people: a primary and a backup).</p></div>
