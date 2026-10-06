@@ -843,3 +843,15 @@ body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; backg
 .ov-detail { max-width: 260px; color: var(--c-ink2); }
 .ov-acts { white-space: nowrap; text-align: right; }
 @media (max-width: 900px) { .ov-ctext, .ov-table { margin-left: 0; width: 100%; } .ov-table thead { display: none; } .ov-table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--c-line2); } .ov-table td { border: 0; padding: 2px 0; } .ov-acts { grid-column: 1 / -1; text-align: left; white-space: normal; } }
+
+/* ---------- Help link: in the top bar of every page, opens the user guide for the signed-in role ---------- */
+.help-link { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 14px 0 6px; border-radius: 999px; border: 1px solid #CFD8D5; background: #fff; color: var(--c-ink) !important; font-size: 13.5px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.help-link > span[aria-hidden] { width: 22px; height: 22px; border-radius: 50%; background: var(--c-brand); color: #fff; display: grid; place-items: center; font-size: 13px; }
+.help-link:hover { border-color: var(--c-brand); text-decoration: none; }
+.help-link:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.help-link.on-dark { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); color: #fff !important; }
+.help-link.on-dark > span[aria-hidden] { background: var(--c-accent); color: #06221F; }
+.help-link.on-dark:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.4); }
+.helpbar { position: sticky; top: 0; z-index: 15; display: flex; justify-content: flex-end; padding: 8px 20px; background: rgba(244,246,245,0.92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--c-line); }
+.helpbar.float { position: fixed; top: 0; right: 0; left: auto; background: transparent; border: 0; backdrop-filter: none; z-index: 30; padding: 14px 20px; }
+@media (max-width: 900px) { .helpbar { position: static; padding: 6px 12px; } }

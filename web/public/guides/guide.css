@@ -26,6 +26,9 @@ a { color: var(--accent); text-underline-offset: 3px; }
 
 @media (max-width: 640px) { .bar { position: static; } .bar nav { margin-left: 0; } }
 
+.bar .back { font-size: 14px; font-weight: 700; color: var(--ink2); text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; background: #fff; }
+.bar .back:hover { border-color: var(--accent); color: var(--accent); }
+
 /* hero */
 .hero { padding: 54px 0 26px; }
 .eyebrow { font: 700 13px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: 10px; }

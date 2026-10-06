@@ -36,7 +36,7 @@ Flow: everyone starts at the **persona picker** (`/`) and lands on their own pag
 | **Patient** | `/me` | Their WhatsApp phone beside their dashboard: text, reply buttons, photos/PDFs, voice notes (mic, or a typed transcript), 🆘 call for help. |
 | **Caregiver** | `/me` | Their phone beside the patient's record: alerts, ACK / Miss, outcomes, logging on the patient's behalf. |
 
-- **User guides** for each persona, with figures: [`docs/user-guides/index.html`](../docs/user-guides/index.html).
+- **User guides** for each persona, with figures: [`public/guides/`](public/guides/index.html). Served at `/guides/`; the **Help** link in the top bar of every page opens the guide for the signed-in role.
 - **Getting started:** the Admin creates the clinic and staff. A doctor or PA then onboards a patient (details → care circle → baseline → review), the patient and caregivers reply **YES**, and the doctor records Visit 1.
 - **Visit 1** is pre-filled from the baseline: current medicines with reminder times from OD/BD/TDS, intake vitals, and the allergy note. Saving it activates the care plan.
 - **Switch persona** (sidebar or top bar) returns to the picker.

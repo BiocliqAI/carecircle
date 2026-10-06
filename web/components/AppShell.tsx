@@ -74,10 +74,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {withSidebar ? (
         <div className="shell">
           <Sidebar path={path} />
-          <div className="shell-main">{children}</div>
+          <div className="shell-main">
+            <div className="helpbar"><HelpLink /></div>
+            {children}
+          </div>
         </div>
       ) : bare ? (
-        children
+        <>
+          <div className="helpbar float"><HelpLink /></div>
+          {children}
+        </>
       ) : (
         <>
           <SimpleBar path={path} clinician={clinician} />
@@ -89,6 +95,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       )}
       <DemoPanel open={panel} onClose={() => setPanel(false)} onHide={hide} />
     </DemoCtx.Provider>
+  );
+}
+
+/** Opens the user guide for the signed-in role in a new tab, so nobody loses their place. */
+const GUIDE: Record<string, string> = { ADMIN: "admin", DOCTOR: "doctor", PA: "assistant", PATIENT: "patient", CAREGIVER: "caregiver" };
+function HelpLink({ className = "" }: { className?: string }) {
+  const { user } = useSession();
+  const page = user ? GUIDE[user.role] : null;
+  return (
+    <a className={`help-link ${className}`} href={`/guides/${page ? `${page}.html` : "index.html"}`} target="_blank" rel="noopener" title="Open the user guide in a new tab">
+      <span aria-hidden>?</span>Help<span className="sr-only"> (opens the user guide in a new tab)</span>
+    </a>
   );
 }
 
@@ -156,6 +174,7 @@ function SimpleBar({ path, clinician }: { path: string; clinician: boolean }) {
         {!clinician && user && path !== "/me" && <Link href="/me">My page</Link>}
       </nav>
       <div className="spacer" />
+      <HelpLink className="on-dark" />
       {user ? (
         <div className="row" style={{ gap: 8 }}>
           <div className="who-chip">
