@@ -4,6 +4,7 @@ import { all, audit, get, run } from "./db";
 import { OUTCOMES, getCaregivers, getUser, type EscalationRow, type PatientRow } from "./engine";
 import { DAY, fmtTime, fmtDate } from "./time";
 import { VITAL_META, type Visit, type VitalType } from "./types";
+import { openWatches } from "./watch";
 
 export interface Trend { type: VitalType; label: string; points: number[]; lo: number | null; hi: number | null; bad: boolean; latest: string; unit: string; latestAt: number }
 export interface CircleStatus { tone: "green" | "amber" | "red" | "grey"; label: string; detail: string }
@@ -88,18 +89,20 @@ export function triage(p: PatientRow, visit: Visit | undefined, open: Escalation
   const recent = get<EscalationRow>("SELECT * FROM escalations WHERE patient_id = ? AND type != 'COMPLIANCE' AND started_at > ? ORDER BY started_at DESC LIMIT 1", p.id, t - 7 * DAY);
   const flagged = get<{ type: string; v1: number; v2: number | null; observed_at: number }>("SELECT type, v1, v2, observed_at FROM observations WHERE patient_id = ? AND flag IS NOT NULL AND observed_at > ? ORDER BY observed_at DESC LIMIT 1", p.id, t - 3 * DAY);
 
+  const watches = openWatches(p.id);
   let reason: Triage["reason"];
   if (top) reason = { title: top.title, detail: `${shortDetail(top)}${top.started_at ? ` · ${when(top.started_at, t)}` : ""}` };
   else if (recent) reason = { title: recent.title, detail: `Closed · ${shortDetail(recent)}` };
+  else if (watches.length && visit) reason = { title: `Pattern: ${watches[0].title}`, detail: `${clip(watches[0].detail, 90)}${watches.length > 1 ? ` (+${watches.length - 1} more)` : ""}` };
   else if (!visit) reason = { title: "Awaiting Visit 1", detail: "No care plan yet" };
   else if (medsPct != null && medsPct < 80) reason = { title: `Medicines logged on ${medsPct}% of doses`, detail: "Since the last visit" };
   else reason = { title: "On track", detail: "No alerts in the last 7 days" };
 
   const prefer = top ? ruleVital(top.rule_key) : recent ? ruleVital(recent.rule_key) : null;
-  const lastEventAt = Math.max(top?.level_at ?? 0, top?.started_at ?? 0, recent?.started_at ?? 0, flagged?.observed_at ?? 0) || null;
+  const lastEventAt = Math.max(top?.level_at ?? 0, top?.started_at ?? 0, recent?.started_at ?? 0, flagged?.observed_at ?? 0, watches[0]?.started_at ?? 0) || null;
   const r = get<{ at: number; user_id: string }>("SELECT at, user_id FROM patient_reviews WHERE patient_id = ? ORDER BY at DESC LIMIT 1", p.id);
   const review = r ? { at: r.at, by: getUser(r.user_id)?.name ?? "Unknown", byId: r.user_id } : null;
-  const attention = !!top || !!recent || (medsPct != null && medsPct < 80);
+  const attention = !!top || !!recent || watches.length > 0 || (medsPct != null && medsPct < 80);
   return {
     reason,
     trend: visit ? trendFor(p.id, visit, prefer, t) : null,

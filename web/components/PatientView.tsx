@@ -39,6 +39,10 @@ export interface Data {
   careTeam: CareTeamRow[];
   medChanges: MedChangeRow[];
   outsideVisits: OutsideVisitView[];
+  watches: { id: number; key: string; title: string; detail: string; advice: string | null; started_at: number }[];
+  watchOff: string[];
+  watchCatalog: { key: string; title: string }[];
+  symptomDetails: { at: number; key: string; answers: string[]; summary: string }[];
   labDue: LabDue | null;
   fluidToday: FluidToday | null;
   kidney: LongRange | null;

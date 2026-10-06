@@ -117,6 +117,11 @@ CREATE TABLE IF NOT EXISTS outside_visits (
   reviewed_by TEXT, reviewed_at INTEGER, followup_of INTEGER
 );
 CREATE INDEX IF NOT EXISTS outside_patient ON outside_visits(patient_id, visit_at);
+CREATE TABLE IF NOT EXISTS watches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, key TEXT NOT NULL, title TEXT NOT NULL, detail TEXT NOT NULL, advice TEXT,
+  state TEXT NOT NULL DEFAULT 'OPEN', started_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER, closed_by TEXT
+);
+CREATE INDEX IF NOT EXISTS watches_patient ON watches(patient_id, state);
 CREATE TABLE IF NOT EXISTS consents (
   id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL REFERENCES patients(id), user_id TEXT NOT NULL REFERENCES users(id),
   role TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', requested_at INTEGER NOT NULL, responded_at INTEGER, message_id INTEGER,
@@ -177,7 +182,7 @@ export function getDb(): DatabaseSyncT {
 export function resetDb(): void {
   const db = getDb();
   db.exec(`
-    DROP TABLE IF EXISTS patient_baseline; DROP TABLE IF EXISTS consents; DROP TABLE IF EXISTS outside_visits; DROP TABLE IF EXISTS onboarding_drafts;
+    DROP TABLE IF EXISTS patient_baseline; DROP TABLE IF EXISTS consents; DROP TABLE IF EXISTS outside_visits; DROP TABLE IF EXISTS watches; DROP TABLE IF EXISTS onboarding_drafts;
     DROP TABLE IF EXISTS patient_notes; DROP TABLE IF EXISTS patient_documents; DROP TABLE IF EXISTS patient_reviews; DROP TABLE IF EXISTS visit_prep; DROP TABLE IF EXISTS plan_drafts;
     DROP TABLE IF EXISTS escalation_events; DROP TABLE IF EXISTS escalations; DROP TABLE IF EXISTS observations;
     DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS visits;

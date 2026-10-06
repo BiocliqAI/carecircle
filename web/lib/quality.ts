@@ -5,7 +5,7 @@
 import { all, audit, get, getSetting, run, setSetting } from "./db";
 import { createEscalation, evaluateVital, getCaregivers, getPatient, getUser, resolveEscalation, type Alert, type EscalationRow, type PatientRow, type UserRow } from "./engine";
 import { sendWhatsApp } from "./whatsapp";
-import { DAY, HOUR, MIN, fmtTime } from "./time";
+import { DAY, HOUR, MIN, atLocal, dayStart, fmtTime } from "./time";
 import { VITAL_META, shortName, type CarePlan, type ClinicVitals, type ParsedMessage, type VitalType } from "./types";
 
 const first = (n: string) => shortName(n);
@@ -188,12 +188,73 @@ const getPending = (pid: string, type: VitalType, t: number): Pending | null => 
 };
 
 export interface Gate { alert: Alert | null; say: string | null }
+
+// ---------------------------------------------------------------- close the loop after an alert
+// When a caregiver closes a reading-based alert, CareCircle asks for a recheck and reports back whether it settled.
+const LOOP_GRACE = 3 * HOUR;
+interface Loop { pid: string; type: VitalType; label: string; old: string; dueAt: number; by: string; nudged: boolean; from: number }
+const lkey = (id: number) => `loop:${id}`;
+const RULE_TYPE: [RegExp, VitalType][] = [[/^bp/, "bp"], [/^glucose/, "glucose"], [/^hr/, "hr"], [/^spo2/, "spo2"], [/^weight/, "weight"], [/^temp|^fever/, "temp"]];
+
+export function scheduleRecheckLoop(esc: EscalationRow, code: string, byUser: string, t: number) {
+  if (esc.type === "COMPLIANCE" || code === "3" || code === "AUTO" || code === "CORRECTED" || code === "EXHAUSTED") return;
+  const obs = esc.trigger_observation_id ? get<ObsRow>("SELECT id, type, v1, v2, observed_at, flag FROM observations WHERE id = ?", esc.trigger_observation_id) : undefined;
+  const LOOP_TYPES: string[] = ["bp", "glucose", "hr", "spo2", "weight", "temp"];
+  const type = (obs && LOOP_TYPES.includes(obs.type) ? obs.type : undefined) ?? (obs ? undefined : RULE_TYPE.find(([re]) => re.test(esc.rule_key))?.[1]);
+  if (!type) return; // symptom, lab and task alerts have no reading to recheck
+  for (const r of all<{ key: string; value: string }>("SELECT key, value FROM settings WHERE key LIKE 'loop:%'")) {
+    const l = JSON.parse(r.value) as Loop;
+    if (l.pid === esc.patient_id && l.type === type) run("DELETE FROM settings WHERE key = ?", r.key); // one open loop per reading type
+  }
+  const dueAt = type === "weight" ? atLocal(dayStart(t + DAY), "07:30") : t + 2 * HOUR;
+  const label = VITAL_META[type].label.replace(/ \(.*\)/, "").toLowerCase();
+  const loop: Loop = { pid: esc.patient_id, type, label, old: obs ? (type === "bp" ? `${obs.v1}/${obs.v2}` : String(obs.v1)) : "", dueAt, by: byUser, nudged: false, from: t };
+  setSetting(lkey(esc.id), JSON.stringify(loop));
+  audit(t, "system", "RECHECK_LOOP_SCHEDULED", "escalation", esc.id, { type, dueAt });
+}
+
+/** A new reading may be the recheck we asked for. Returns a sentence for the reply when it closes the loop. */
+export function loopCheck(p: PatientRow, type: VitalType, v1: number, v2: number | null, flagged: boolean, t: number): { isRecheck: boolean; say: string | null } {
+  for (const r of all<{ key: string; value: string }>("SELECT key, value FROM settings WHERE key LIKE 'loop:%'")) {
+    const l = JSON.parse(r.value) as Loop;
+    if (l.pid !== p.id || l.type !== type || t < l.from) continue;
+    run("DELETE FROM settings WHERE key = ?", r.key);
+    const val = type === "bp" ? `${v1}/${v2}` : String(v1);
+    audit(t, "system", flagged ? "RECHECK_STILL_OUTSIDE" : "RECHECK_OK", "patient", p.id, { type, reading: val });
+    if (!flagged) {
+      if (l.by && l.by !== p.user_id) sendWhatsApp({ userId: l.by, patientId: p.id, kind: "info", at: t + 500, body: `👍 ${first(p.name)}'s ${l.label} was rechecked: ${val}. It's back within the doctor's limits. Thank you for following up.` });
+      return { isRecheck: true, say: `👍 The recheck (${val}) is within the doctor's limits.` };
+    }
+    return { isRecheck: true, say: null }; // still outside: the normal alert follows
+  }
+  return { isRecheck: false, say: null };
+}
+
+export function tickLoops(t: number) {
+  for (const r of all<{ key: string; value: string }>("SELECT key, value FROM settings WHERE key LIKE 'loop:%'")) {
+    const l = JSON.parse(r.value) as Loop;
+    const p = getPatient(l.pid);
+    if (!p) { run("DELETE FROM settings WHERE key = ?", r.key); continue; }
+    if (!l.nudged && t >= l.dueAt) {
+      l.nudged = true;
+      setSetting(r.key.slice(0), JSON.stringify(l));
+      const covered = get("SELECT 1 FROM tasks WHERE patient_id = ? AND kind = 'vital' AND item_key = ? AND status = 'PENDING' AND due_at BETWEEN ? AND ?", p.id, `vital:${l.type}`, t - 30 * MIN, t + 90 * MIN);
+      if (p.user_id && !covered) sendWhatsApp({ userId: p.user_id, patientId: p.id, kind: "prompt", at: t, body: `🔁 Earlier, ${l.label}${l.old ? ` was ${l.old}` : " was outside the limits"}. Please check it again now and send it, so we know it has settled.`, quick: [] });
+    }
+    if (t >= l.dueAt + LOOP_GRACE) {
+      run("DELETE FROM settings WHERE key = ?", r.key);
+      audit(t, "system", "RECHECK_NOT_RECEIVED", "patient", p.id, { type: l.type });
+      if (l.by) sendWhatsApp({ userId: l.by, patientId: p.id, kind: "info", at: t, body: `No recheck of ${first(p.name)}'s ${l.label} has come in since you closed the alert. You may want to check in with them.` });
+    }
+  }
+}
 /**
  * Decides what to do with the alert a reading produced. Returns the alert to raise now (or null to hold it) and
  * a sentence for the reply. A held reading is alerted by `tickRechecks` if no recheck arrives.
  */
-export function recheckGate(p: PatientRow, plan: CarePlan, type: VitalType, v1: number, v2: number | undefined, alert: Alert | null, by: UserRow, t: number): Gate {
+export function recheckGate(p: PatientRow, plan: CarePlan, type: VitalType, v1: number, v2: number | undefined, alert: Alert | null, by: UserRow, t: number, isLoopRecheck = false): Gate {
   const pending = getPending(p.id, type, t);
+  if (isLoopRecheck && alert) return { alert: { ...alert, detail: `${alert.detail} Still outside the limit when rechecked after the earlier alert.` }, say: null };
   if (!alert) {
     if (pending) { clearRecheck(p.id, type); return { alert: null, say: "👍 The recheck is back within the doctor's limits. Thank you." }; }
     return { alert: null, say: null };

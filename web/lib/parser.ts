@@ -284,7 +284,7 @@ export function parseRules(input: string, meds: MedRef[]): ParsedMessage {
       continue;
     }
     if (p.key === "breathlessness" && symptoms.some((s) => s.key === "orthopnea")) continue;
-    if (p.key === "breathlessness" && /(less|reduced|better|improv\w*)/.test(text.slice(m.index, m.index + 40))) continue;
+    if (p.key === "breathlessness" && /\b(less|reduced|better|improv\w*)\b/.test(text.slice(m.index + m[0].length - 1, m.index + 40))) continue;
     if (p.key === "edema" && /(less|reduced|better|improv\w*|gone|down)/.test(text.slice(m.index, m.index + 40))) {
       symptoms.push({ key: p.key, severity: "mild", text: m[0] + " (improving)" });
       continue;

@@ -201,3 +201,10 @@ describe("Parser - Medicine Changes by Other Doctors", () => {
     assert.equal(stopped.prescriber, "Dr Satish");
   });
 });
+
+test("a plain 'breathless' is a symptom; 'less breathless' is improvement (the word 'breathless' contains 'less')", () => {
+  assert.deepEqual(parseRules("a bit breathless today", []).symptoms.map((x) => x.key), ["breathlessness"]);
+  assert.deepEqual(parseRules("breathless since morning", []).symptoms.map((x) => x.key), ["breathlessness"]);
+  assert.deepEqual(parseRules("feeling less breathless now", []).symptoms.map((x) => x.key), []);
+  assert.deepEqual(parseRules("breathlessness is better", []).symptoms.map((x) => x.key), []);
+});

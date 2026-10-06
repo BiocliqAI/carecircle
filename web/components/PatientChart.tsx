@@ -113,6 +113,17 @@ export function PatientChart({ id }: { id: string }) {
             </div>
           ))}
 
+          {/* patterns: slow drifts under the limits (advisory) */}
+          {d.watches.map((w) => (
+            <div key={`w${w.id}`} className="pc-alert blue">
+              <span className="pc-alert-k">Pattern</span>
+              <b className="num">{w.title}</b>
+              <span className="v2-sub" style={{ flex: 1, minWidth: 220, fontSize: 13 }}>{w.detail} Advisory only: the family has had a gentle heads-up.</span>
+              <button className="tq-link" onClick={async () => { await api(`/api/patients/${id}/watches`, { body: { action: "dismiss", id: w.id } }); changed(); }}>Dismiss</button>
+              <button className="tq-link" style={{ color: "var(--c-mute)" }} title="Stop watching for this pattern for this patient" onClick={async () => { await api(`/api/patients/${id}/watches`, { body: { action: "off", key: w.key } }); changed(); }}>Turn off for {d.patient.name.split(" ")[0]}</button>
+            </div>
+          ))}
+
           {/* outside-doctor visits waiting for the clinic */}
           {d.outsideVisits.filter((v) => v.changes.some((c) => c.status === "REPORTED") || (!v.reviewed_at && v.status === "COMPLETE" && v.created_at > d.now - 14 * 86400_000)).slice(0, 3).map((v) => {
             const n = v.changes.filter((c) => c.status === "REPORTED").length;
@@ -162,7 +173,26 @@ export function PatientChart({ id }: { id: string }) {
                   {!(s?.escalations ?? []).some((e) => e.state === "RESOLVED" || e.state === "EXHAUSTED") && <div className="v2-sub">No closed alerts in this period.</div>}
                 </section>
               </div>
-              <div className="span4"><CareCircleCard pid={id} patient={d.patient} caregivers={d.caregivers} consents={d.consents} onChange={changed} /></div>
+              <div className="span4 stack gap16">
+                <CareCircleCard pid={id} patient={d.patient} caregivers={d.caregivers} consents={d.consents} onChange={changed} />
+                <section className="v2-card pad">
+                  <h2 style={{ marginBottom: 4 }}>Pattern watch</h2>
+                  <p className="v2-sub" style={{ margin: "0 0 8px" }}>Slow drifts that stay under your limits. Advisory only: a gentle heads-up to the family and a line on Today.</p>
+                  {d.watchCatalog.map((c) => {
+                    const off = d.watchOff.includes(c.key);
+                    return (
+                      <div key={c.key} className="v2-kv"><span>{c.title}</span>
+                        <button className="tq-link" onClick={async () => { await api(`/api/patients/${id}/watches`, { body: { action: off ? "on" : "off", key: c.key } }); changed(); }}>{off ? "Off · turn on" : "On · turn off"}</button></div>
+                    );
+                  })}
+                </section>
+                {d.symptomDetails.length > 0 && (
+                  <section className="v2-card pad">
+                    <h2 style={{ marginBottom: 6 }}>Symptom details</h2>
+                    {d.symptomDetails.map((x, i) => <div key={i} className="v2-kv" style={{ display: "block" }}><span className="v2-sub num">{fmtDate(x.at, { day: "numeric", month: "short" })}</span><div style={{ fontSize: 13.5 }}><b>{x.key.replace("_", " ")}</b>: {x.answers.join(" · ")}</div></div>)}
+                  </section>
+                )}
+              </div>
             </div>
           )}
 

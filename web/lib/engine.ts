@@ -13,7 +13,9 @@ import type { CarePlan, ClinicVitals, EscalationType, ParsedMessage, Visit, Vita
 import { LAB_META, MAX_CAREGIVERS, SYMPTOMS, VITAL_META, shortName } from "./types";
 import { dayIndex, describeMed, doseAt, medDueOn } from "./meds";
 import { activeFlow, looksLikeOutsideVisit, outsideVisitTurn, tickOutsideVisits, type TurnResult } from "./outside";
-import { applyCorrections, doubtReply, findDoubts, recheckGate, tickRechecks, weightJumpNote } from "./quality";
+import { applyCorrections, doubtReply, findDoubts, loopCheck, recheckGate, scheduleRecheckLoop, tickLoops, tickRechecks, weightJumpNote } from "./quality";
+import { answerSymptomQ, startSymptomQs } from "./symptoms";
+import { evaluateWatches, tickWatches } from "./watch";
 
 // ---------------------------------------------------------------- loaders
 export interface UserRow {
@@ -452,6 +454,7 @@ export function resolveEscalation(escId: number, userId: string, code: string, n
   escEvent(escId, t, "RESOLVED", esc.level, user?.name ?? "system", [OUTCOMES[code] ?? code, note].filter(Boolean).join(" — "));
   audit(t, userId, "ESCALATION_RESOLVED", "escalation", escId, { code, note, via });
   run("DELETE FROM convo_state WHERE escalation_id = ?", escId);
+  if (via !== "auto") scheduleRecheckLoop(esc, code, userId, t);
   if (via !== "auto") {
     sendWhatsApp({ userId, patientId: p.id, body: `✅ Recorded: ${OUTCOMES[code] ?? code}${note ? ` — “${note}”` : ""}.\nThank you! This is now on ${first(p.name)}'s record for ${doctorName(p)} to review at the next visit.`, kind: "reply", at: t });
     if (esc.type !== "COMPLIANCE") sendWhatsApp({ userId: p.user_id!, patientId: p.id, body: `✅ ${user?.name} closed the alert “${esc.title}”: ${OUTCOMES[code] ?? code}${note ? ` — ${note}` : ""}.`, kind: "info", at: t });
@@ -536,7 +539,7 @@ const RED_FLAGS: Record<string, string> = {
   confusion: "New confusion or unusual drowsiness needs urgent assessment (it can be caused by blood salts, sugar or kidney function).",
 };
 
-function evaluateSymptom(p: PatientRow, plan: CarePlan, key: string, severity: string, text: string, obsId: number): Alert | null {
+export function evaluateSymptom(p: PatientRow, plan: CarePlan, key: string, severity: string, text: string, obsId: number): Alert | null {
   const nm = first(p.name);
   if (RED_FLAGS[key])
     return { type: "URGENT", ruleKey: `sx:${key}`, title: SYMPTOMS[key], detail: `${nm} reported: “${text}”. ${RED_FLAGS[key]}`, advice: "Do not wait — call 108 or go to the nearest emergency department now.", observationId: obsId };
@@ -723,6 +726,12 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
     }
   }
 
+  // An answer to a symptom follow-up question ("When do you feel breathless?"). Anything that isn't an answer falls through.
+  if (get("SELECT 1 FROM convo_state WHERE user_id = ? AND state = 'symptom_q'", userId)) {
+    const sr = answerSymptomQ(user, p, (latestVisit(p.id, t) ?? safetyOnlyVisit(p, t)).plan, body, t);
+    if (sr.handled) return void reply(sr.text ?? "Thank you.", sr.quick);
+  }
+
   // --- caregiver conversational flows: ACK / outcome / note
   if (user.role === "CAREGIVER") {
     // Joining the care circle: a plain YES / NO answers the consent request, unless an alert is waiting (then YES = ACK).
@@ -818,6 +827,7 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
 
   const alerts: Alert[] = [];
   const lines: string[] = [];
+  const symObs = new Map<string, number>(); // symptom key → observation id, for the follow-up questions
   const says: string[] = []; // extra sentences for the reply (recheck asks, typo notes)
 
   // "Sorry, that was 128 not 182": fix the earlier reading instead of adding a new one.
@@ -837,7 +847,9 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
       const { flag, alert } = evaluateVital(p, plan, visit.vitals, v.type, v.v1, v.v2, t, obsId);
       if (flag) run("UPDATE observations SET flag = ? WHERE id = ?", flag, obsId);
       // A borderline high reading gets a recheck first (the family is alerted anyway if none comes).
-      const gate = recheckGate(p, plan, v.type, v.v1, v.v2, alert, user, t);
+      const loop = loopCheck(p, v.type, v.v1, v.v2 ?? null, !!flag, t);
+      if (loop.say) says.push(loop.say);
+      const gate = recheckGate(p, plan, v.type, v.v1, v.v2, alert, user, t, loop.isRecheck);
       if (gate.alert) alerts.push(gate.alert);
       if (gate.say) says.push(gate.say);
       if (v.type === "weight") {
@@ -916,6 +928,7 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
     // symptoms & lifestyle check-in
     for (const s of parsed.symptoms) {
       const obsId = run("INSERT INTO observations(patient_id, type, text, severity, observed_at, logged_by, message_id, parser) VALUES(?,?,?,?,?,?,?,?)", p.id, "symptom", s.key, s.severity, t, userId, msgId, parser).lastInsertRowid;
+      symObs.set(s.key, obsId);
       const a = evaluateSymptom(p, plan, s.key, s.severity, s.text, obsId);
       if (a) {
         alerts.push(a);
@@ -951,6 +964,11 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
     quick = c.quick;
   }
   if (says.length) text += (text ? "\n\n" : "") + says.join("\n\n");
+  // A reported symptom gets 2 short follow-up questions (when, where, how much) unless it is already an emergency.
+  if (parsed.symptoms.length && !alerts.some((a) => a.type === "URGENT")) {
+    const sq = startSymptomQs(user, p, parsed.symptoms.filter((x) => x.severity !== "severe").map((x) => x.key), symObs, t);
+    if (sq) { text += (text ? "\n\n" : "") + sq.text; quick = sq.quick; }
+  }
   if (doubts.length) {
     const dr = doubtReply(doubts[0], user.role === "CAREGIVER" ? `${first(p.name)}'s ` : "");
     text += (text ? "\n\n" : "") + dr.text;
@@ -968,6 +986,7 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   }
   if (prePlan) text += `\n\nℹ️ ${first(p.name)}'s care plan starts after the first visit with ${doctorName(p)}. Until then, the care circle is alerted only in an emergency.`;
   sendWhatsApp({ userId, patientId: p.id, body: text.trim(), quick, kind: "reply", at: t + 1000 });
+  if (parsed.vitals.length || parsed.symptoms.length) evaluateWatches(p, t + 2000); // patterns re-check right after a reading
   // If a caregiver logged it, keep the patient informed of alerts.
   if (user.role === "CAREGIVER" && created.some((c) => c.id)) {
     sendWhatsApp({ userId: p.user_id!, patientId: p.id, body: `ℹ️ ${user.name} logged a reading for you that needs attention: ${created.map((c) => c.a.title).join(", ")}. Please follow ${doctorName(p)}'s advice and rest.`, kind: "info", at: t + 1000 });
@@ -1069,6 +1088,8 @@ export function tick(t: number) {
     tickDigest(p, t);
   }
   tickRechecks(t);
+  tickLoops(t);
+  tickWatches(t);
   tickOutsideVisits(t);
 }
 

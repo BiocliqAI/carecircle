@@ -2,6 +2,7 @@ import { all } from "@/lib/db";
 import { now } from "@/lib/clock";
 import { dayFluid, getConsents, getCaregivers, getPatient, getUser, getVisits, latestVisit, type EscalationRow } from "@/lib/engine";
 import { outsideVisits } from "@/lib/outside";
+import { WATCH_KEYS, openWatches, watchOffList } from "@/lib/watch";
 import { intervalSummary, longRange, medChanges, type EscalationView } from "@/lib/summary";
 import { canView, err, json, ready, sessionUser } from "@/lib/server";
 import { getBaseline } from "@/lib/clinic";
@@ -85,6 +86,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     careTeam,
     medChanges: allChanges,
     outsideVisits: outsideVisits(id),
+    watches: openWatches(id),
+    watchOff: watchOffList(id),
+    watchCatalog: Object.entries(WATCH_KEYS).map(([key, title]) => ({ key, title })),
+    symptomDetails: all<{ observed_at: number; text: string }>("SELECT observed_at, text FROM observations WHERE patient_id = ? AND type = 'symptom_detail' ORDER BY observed_at DESC LIMIT 8", id).map((r) => ({ at: r.observed_at, ...(JSON.parse(r.text) as { key: string; answers: string[]; summary: string }) })),
     labDue: labTask ? { ...labTask, overdue: labTask.due_at < t } : null,
     fluidToday: current?.plan.fluid ? { ...dayFluid(id, t), limit: current.plan.fluid.limitMl } : null,
     kidney: hasKidney ? longRange(id) : null,
