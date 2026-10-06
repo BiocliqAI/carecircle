@@ -766,3 +766,46 @@ Rules:
 Output only the message text.`;
   return geminiCall(system, [{ type: "text", text: JSON.stringify(context) }]);
 }
+
+/** Translates one WhatsApp message (and its reply buttons) for an Indian-language reader. Null when unavailable. */
+export async function translateAI(body: string, quick: string[], lang: string): Promise<{ body: string; quick: string[] } | null> {
+  const names: Record<string, string> = { hi: "Hindi", ta: "Tamil", te: "Telugu", kn: "Kannada", ml: "Malayalam", bn: "Bengali", gu: "Gujarati", pa: "Punjabi", mr: "Marathi" };
+  const L = names[lang];
+  if (!L || !getGeminiApiKey()) return null;
+  const system = `You translate WhatsApp messages from a clinic's care assistant into ${L} for patients and their families in India. Write simple, warm, everyday spoken ${L}, the way a friendly nurse would talk. Never sound formal or bookish.
+
+Keep EXACTLY as written, never translate or alter: emojis, all numbers, times, dates, doses and units (mg, ml, kg, mmHg, bpm, %), medicine and brand names, people's names, phone numbers, the emergency number 108, bullet marks and line breaks. Words in capitals inside asterisks such as *ACK*, *YES*, *NO*, *HELP*, *SOS* stay in English with the asterisks. Other words in *asterisks* are translated and keep their asterisks.
+Do not add, remove, soften or reorder any information or instruction. Medical advice must keep its exact meaning.
+
+Input JSON: {"body": string, "quick": string[]} where quick are short reply-button labels. Return JSON {"body": string, "quick": string[]} with quick the same length and order, labels short. Single-digit labels stay as they are.`;
+  const text = await geminiCall(system, [{ type: "text", text: JSON.stringify({ body, quick }) }], true);
+  if (!text) return null;
+  try {
+    const o = JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as { body?: unknown; quick?: unknown };
+    return typeof o.body === "string" && Array.isArray(o.quick) ? { body: o.body, quick: o.quick.map(String) } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Answers a doctor's question from one patient's compact record. The reply is a short answer, the facts it rests on,
+ *  and a plan for the chart (series names only: the numbers plotted are read from the database, never from here). */
+export async function askRecordAI(context: unknown, question: string): Promise<{ answer?: unknown; facts?: unknown; chart?: unknown; note?: unknown } | null> {
+  const system = `You answer a doctor's question about ONE patient, using ONLY the record given (JSON). The record has dated medicine changes, daily averages of readings, lab values, weekly adherence, alerts, symptoms, visits and the current plan.
+
+Return JSON: {"answer": "2-5 plain sentences answering the question, quoting dates and values from the record exactly", "facts": ["up to 5 short facts with date and value that the answer rests on, e.g. 'Creatinine 2.0 on 12 Jun, 3.0 on 4 Oct'"], "chart": {"series": [up to 3 names from availableChartSeries that best show the answer], "days": number of days of history to plot} | null, "note": "one short caution, such as thin data or a gap, or null"}
+
+Rules:
+- Use only values present in the record. If the record does not contain the answer, say what is missing and what is available. Never guess, extrapolate or invent a date or value.
+- "When did X start rising/falling" = the first date in the data after which it moves consistently in that direction; say how sure that is given how often it was measured.
+- When asked about the effect of a medicine change, show the readings before and after the change date from the record and say only what the numbers show. You may note that other changes happened around the same time. Do not claim cause.
+- You are not prescribing. Never recommend starting, stopping or changing a medicine, and never advise on treatment. Describe what the record shows.
+- Today's date is in the record. Choose chart "days" so the period in question is visible with some history before it.`;
+  const text = await geminiCall(system, [{ type: "text", text: JSON.stringify({ record: context, question }) }], true);
+  if (!text) return null;
+  try {
+    return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as { answer?: unknown; facts?: unknown; chart?: unknown; note?: unknown };
+  } catch {
+    return null;
+  }
+}

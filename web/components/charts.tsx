@@ -1,6 +1,6 @@
 "use client";
 // Lightweight SVG charts (no chart library dependency).
-import { fmtDate } from "@/lib/time";
+import { dayKey, fmtDate } from "@/lib/time";
 
 export interface Pt {
   t: number;
@@ -9,12 +9,31 @@ export interface Pt {
   flag?: string | null;
 }
 
+export interface Marker { t: number; label: string; color?: string; row?: number; title?: string }
+
+/** Medicine changes (including other doctors') as chart markers, so cause and effect is visible. Rejected ones are left out. */
+export function medMarkers(changes: { at: number; med_name: string; change: string; new_dose?: string | null; prescriber?: string | null; status: string }[], from: number, to: number): Marker[] {
+  const live = changes.filter((c) => c.status !== "REJECTED" && c.at >= from && c.at <= to).sort((a, b) => a.at - b.at);
+  const byDay = new Map<string, typeof live>();
+  for (const c of live) byDay.set(dayKey(c.at), [...(byDay.get(dayKey(c.at)) ?? []), c]);
+  const word = (c: (typeof live)[number]) => {
+    const w = c.med_name.split(/[\s(]/)[0];
+    return c.change === "started" ? `+${w}` : c.change === "stopped" ? `−${w}` : c.change === "dose_changed" ? `${w} ↕` : w;
+  };
+  // Several changes on one day are one marker ("+Aldactone +3"), with every change in its tooltip.
+  return [...byDay.values()].map((day, i) => ({
+    t: day[0].at, row: 1 + (i % 3), color: "#b45309",
+    label: day.length > 1 ? `${word(day[0])} +${day.length - 1}` : word(day[0]),
+    title: day.map((c) => `${c.med_name}: ${c.change.replace("_", " ")}${c.new_dose ? ` → ${c.new_dose}` : ""}${c.prescriber ? ` · ${c.prescriber}` : ""}`).join("\n") + `\n${fmtDate(day[0].at, { day: "numeric", month: "short" })}`,
+  }));
+}
+
 interface Props {
   series: Pt[];
   from: number;
   to: number;
   lines?: { y: number; label: string; color?: string }[];
-  markers?: { t: number; label: string; color?: string }[];
+  markers?: Marker[];
   dual?: boolean;
   height?: number;
   unit?: string;
@@ -62,10 +81,11 @@ export function LineChart({ series, from, to, lines = [], markers = [], dual, he
           </text>
         </g>
       ))}
-      {markers.map((m, i) => (
+      {markers.filter((m) => m.t >= from && m.t <= to).map((m, i) => (
         <g key={i}>
+          <title>{m.title ?? m.label}</title>
           <line x1={x(m.t)} x2={x(m.t)} y1={T} y2={H - B} stroke={m.color || "#0f766e"} strokeDasharray="2 3" />
-          <text x={x(m.t) + 3} y={T + 9} fontSize="10" fill={m.color || "#0f766e"}>
+          <text x={x(m.t) + 3} y={T + 9 + (m.row ?? 0) * 11} fontSize="10" fill={m.color || "#0f766e"}>
             {m.label}
           </text>
         </g>
@@ -101,7 +121,7 @@ export interface ComboProps {
   line?: { pts: { t: number; v: number; flag?: string | null }[]; unit: string; color?: string; band?: [number, number]; label?: string };
   bars?: { pts: { t: number; v: number }[]; unit: string; color: string; label: string }[];
   barLines?: { y: number; label: string; color?: string }[];
-  markers?: { t: number; label: string; color?: string }[];
+  markers?: Marker[];
   height?: number;
 }
 
@@ -167,10 +187,11 @@ export function ComboChart({ from, to, line, bars = [], barLines = [], markers =
             <text x={W - R - 2} y={yb(l.y) - 4} fontSize="10" textAnchor="end" fill={l.color || "#ef4444"}>{l.label}</text>
           </g>
         ))}
-        {markers.map((m, i) => (
+        {markers.filter((m) => m.t >= from && m.t <= to).map((m, i) => (
           <g key={i}>
+            <title>{m.title ?? m.label}</title>
             <line x1={x(m.t)} x2={x(m.t)} y1={T} y2={H - B} stroke={m.color || "#334155"} strokeDasharray="2 3" />
-            <text x={x(m.t) + 3} y={T + 9} fontSize="10" fill={m.color || "#334155"}>{m.label}</text>
+            <text x={x(m.t) + 3} y={T + 9 + (m.row ?? 0) * 11} fontSize="10" fill={m.color || "#334155"}>{m.label}</text>
           </g>
         ))}
         {hasLine && (

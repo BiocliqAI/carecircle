@@ -3,7 +3,7 @@
 // lab entry, medicine-change reconciliation and care-team (other doctors) management.
 import { useState } from "react";
 import { api } from "@/components/client";
-import { ComboChart, LineChart } from "@/components/charts";
+import { ComboChart, LineChart, medMarkers } from "@/components/charts";
 import type { KidneySummary, LongRange, MedChangeRow } from "@/lib/summary";
 import { LAB_META, type CarePlan } from "@/lib/types";
 import { DAY, dayKey, fmtDate, fmtTime } from "@/lib/time";
@@ -134,7 +134,7 @@ export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChange
   const from = range === "visit" ? sinceVisit - DAY / 2 : range === "all" ? earliest - 3 * DAY : now - Number(range) * DAY;
   const to = now + DAY / 2;
   const inR = (t: number) => t >= from && t <= to;
-  const markers = lr.visits.filter((v) => inR(v.t)).map((v) => ({ t: v.t, label: `V${lr.visits.indexOf(v) + 1}` }));
+  const markers = [...lr.visits.filter((v) => inR(v.t)).map((v) => ({ t: v.t, label: `V${lr.visits.indexOf(v) + 1}` })), ...medMarkers(medChanges, from, to)];
   const th = plan.thresholds;
 
   const labCharts: { marker: string; lines: { y: number; label: string; color?: string }[] }[] = [

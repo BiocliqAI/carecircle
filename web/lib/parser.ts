@@ -394,6 +394,7 @@ export function normaliseParsed(raw: unknown, meds: MedRef[]): ParsedMessage {
     labs,
     medChanges,
     outsideVisit: r.outsideVisit === true,
+    language: typeof r.language === "string" ? r.language : undefined,
   };
 }
 
@@ -474,9 +475,10 @@ const SCHEMA = {
         required: ["medName", "change", "detail", "prescriber"],
       },
     },
+    language: { type: "string", description: "Language the message is written in as an ISO 639-1 code: en for English (including romanised English), hi, ta, te, kn, ml, bn, gu, pa, mr. Romanised Hindi/Tamil/etc. (e.g. 'dawa le li', 'potachu') gets that language's code." },
     outsideVisit: { type: "boolean", description: "true if the sender is telling about a visit to, or advice from, a doctor other than the clinic (specialist, hospital, GP)." },
   },
-  required: ["vitals", "meds", "physio", "lifestyle", "symptoms", "noSymptoms", "help", "fluids", "labs", "medChanges", "outsideVisit"],
+  required: ["vitals", "meds", "physio", "lifestyle", "symptoms", "noSymptoms", "help", "fluids", "labs", "medChanges", "outsideVisit", "language"],
 };
 
 async function parseGemini(text: string, meds: MedRef[]): Promise<ParsedMessage | null> {

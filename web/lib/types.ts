@@ -176,6 +176,8 @@ export interface ParsedMessage {
   medChanges: ParsedMedChange[];
   /** The sender is telling us about a visit to / advice from another doctor (Gemini only). */
   outsideVisit?: boolean;
+  /** ISO code of the language the message is written in (Gemini only), for replying in kind. */
+  language?: string;
 }
 
 export const VITAL_META: Record<VitalType, { label: string; unit: string }> = {

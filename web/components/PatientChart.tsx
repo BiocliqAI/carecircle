@@ -4,6 +4,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, avatarColor, initials, useSession } from "./client";
+import { medMarkers } from "./charts";
+import { AskRecord } from "./AskRecord";
 import { AdherenceHeatmap, EscalationCard, VitalCharts, visitDayKeys } from "./interval";
 import { KidneyTab } from "./kidney";
 import { ClinicalSummaryCard } from "./ClinicalSummaryCard";
@@ -16,7 +18,7 @@ import { Icon } from "./Icon";
 import { Spark } from "./Spark";
 import { describeMed } from "@/lib/meds";
 import { fmtDate, fmtDateTime, fmtTime, relDays } from "@/lib/time";
-import { LAB_META, VITAL_META, type CarePlan, type Medication, type VitalType } from "@/lib/types";
+import { LAB_META, VITAL_META, shortName, type CarePlan, type Medication, type VitalType } from "@/lib/types";
 import type { IntervalSummary } from "@/lib/summary";
 
 type Section = "overview" | "vitals" | "meds" | "alerts" | "visits" | "documents" | "profile";
@@ -120,7 +122,7 @@ export function PatientChart({ id }: { id: string }) {
               <b className="num">{w.title}</b>
               <span className="v2-sub" style={{ flex: 1, minWidth: 220, fontSize: 13 }}>{w.detail} Advisory only: the family has had a gentle heads-up.</span>
               <button className="tq-link" onClick={async () => { await api(`/api/patients/${id}/watches`, { body: { action: "dismiss", id: w.id } }); changed(); }}>Dismiss</button>
-              <button className="tq-link" style={{ color: "var(--c-mute)" }} title="Stop watching for this pattern for this patient" onClick={async () => { await api(`/api/patients/${id}/watches`, { body: { action: "off", key: w.key } }); changed(); }}>Turn off for {d.patient.name.split(" ")[0]}</button>
+              <button className="tq-link" style={{ color: "var(--c-mute)" }} title="Stop watching for this pattern for this patient" onClick={async () => { await api(`/api/patients/${id}/watches`, { body: { action: "off", key: w.key } }); changed(); }}>Turn off for {shortName(d.patient.name)}</button>
             </div>
           ))}
 
@@ -137,12 +139,14 @@ export function PatientChart({ id }: { id: string }) {
             );
           })}
 
+          {sec === "overview" && <AskRecord pid={id} patientFirst={shortName(d.patient.name)} />}
+
           {sec === "overview" && <Overview d={d} s={s} onSec={setSec} showAi={showAi} setShowAi={setShowAi} />}
 
           {sec === "vitals" && (
             cur && s ? (
               <div className="stack gap16">
-                <section className="v2-card pad"><VitalCharts s={s} plan={cur.plan} base={cur.vitals} markers={d.visits.map((v, i) => ({ t: v.visit_at, label: `Visit ${i + 1}` }))} /></section>
+                <section className="v2-card pad"><VitalCharts s={s} plan={cur.plan} base={cur.vitals} markers={[...d.visits.map((v, i) => ({ t: v.visit_at, label: `Visit ${i + 1}` })), ...medMarkers(d.medChanges, s.from, s.to)]} /></section>
                 {d.kidney ? <KidneyTab lr={d.kidney} plan={cur.plan} sinceVisit={cur.visit_at} now={d.now} clinician pid={id} medChanges={d.medChanges} team={d.careTeam} onChange={changed} /> : <LabsCard d={d} />}
               </div>
             ) : <Empty text="Vitals appear here once Visit 1 sets the care plan and readings start coming in." extra={<LabsCard d={d} />} />

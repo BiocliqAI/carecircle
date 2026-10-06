@@ -17,6 +17,8 @@ import { applyCorrections, doubtReply, findDoubts, loopCheck, recheckGate, sched
 import { answerSymptomQ, startSymptomQs } from "./symptoms";
 import { evaluateWatches, tickWatches } from "./watch";
 import { queueBriefs } from "./briefs";
+import { buildWeekly, gatherDigestInsights, gatherWeekStats } from "./insights";
+import { LANGS, detectScript, explicitLang, mapButtonReply, normaliseLang, recordLang, setLang } from "./lang";
 
 // ---------------------------------------------------------------- loaders
 export interface UserRow {
@@ -669,8 +671,8 @@ function kidneyMorningCheck(p: PatientRow, t: number) {
 
 // ---------------------------------------------------------------- ingestion
 const ACK_RE = /^\s*(ack\b|acknowledged?|ok(ay)?\b|on it|i'?ll handle|will handle|handling|yes\b|👍)/i;
-const YES_RE = /^\s*(yes|y|i agree|agree|ok|okay|haan|ha)\W*$/i;
-const NO_RE = /^\s*(no|n|stop|i do not agree|disagree)\W*$/i;
+const YES_RE = /^\s*(yes|y|i agree|agree|ok|okay|haan|haa|ha|ji|ji haan|haanji|aam|aamam|ஆம்|हाँ|हां|ಹೌದು|అవును|അതെ|হ্যাঁ|હા|ਹਾਂ)\W*$/i;
+const NO_RE = /^\s*(no|n|stop|i do not agree|disagree|nahi|nahin|illai|illa|இல்லை|नहीं|ಇಲ್ಲ|లేదు|അല്ല|না|ના|ਨਹੀਂ)\W*$/i;
 /** The reply to a message we couldn't read: a guess to confirm when we can make one, else what we're waiting for. */
 function clarifyFor(p: PatientRow, plan: CarePlan, user: UserRow, body: string, t: number): { text: string; quick: string[] } {
   const waiting = all<TaskRow>(
@@ -704,6 +706,19 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   const msgId = run("INSERT INTO messages(patient_id, user_id, direction, body, created_at, kind) VALUES(?,?,?,?,?,?)", p?.id ?? null, userId, "IN", body, t, "inbound").lastInsertRowid;
   const reply = (text: string, quick?: string[]) => sendWhatsApp({ userId, patientId: p?.id ?? null, body: text, quick, kind: "reply", at: t + 1000 });
   if (!p) return void reply("Hi! This number isn't linked to a patient yet. Please contact your clinic.");
+
+  // A tapped, translated button comes back as its translated label: map it to the English word the engine understands.
+  const tapped = mapButtonReply(userId, body);
+  if (tapped) body = tapped;
+
+  // "Reply in Tamil" / "english please": switch the language of everything we send this person.
+  const wantLang = explicitLang(body);
+  if (wantLang) {
+    const { isGeminiConfigured } = await import("./gemini");
+    if (wantLang !== "en" && !isGeminiConfigured()) return void reply(`Sorry, I can't reply in ${LANGS[wantLang] ?? wantLang} right now, but I'll understand you if you write in it.`);
+    setLang(userId, wantLang);
+    return void reply(wantLang === "en" ? "Okay, I'll reply in English from now on." : `Okay, I'll reply in ${LANGS[wantLang] ?? wantLang} from now on. You can say "reply in English" any time to change back.`);
+  }
 
   // An answer to "which one is it?" (see clarifyFor): act on the chosen reading as if it had been typed in full.
   const asked = get<{ state: string; data: string | null }>("SELECT state, data FROM convo_state WHERE user_id = ? AND state = 'clarify'", userId);
@@ -825,6 +840,9 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
     parsed.meds = { allTaken: false, allMissed: false, taken: [], missed: [] }; // "reduce Lasix" is not "took Lasix"
   }
   run("UPDATE messages SET parsed = ?, parser = ? WHERE id = ?", JSON.stringify(parsed), ov?.handled ? (ov.via ?? parser) : parser, msgId);
+  // Learn the language from how they write (script is a clear signal; romanised needs the AI and two in a row).
+  const script = detectScript(body);
+  recordLang(userId, script ?? normaliseLang(parsed.language), body.trim().split(/\s+/).length, !!script);
 
   const alerts: Alert[] = [];
   const lines: string[] = [];
@@ -1058,8 +1076,22 @@ function tickDigest(p: PatientRow, t: number) {
     if (o) readings.push(`${READING_LABEL[type]} ${type === "bp" ? `${o.v1}/${o.v2}` : o.v1}`);
   }
   const openAlerts = get<{ n: number }>(`SELECT COUNT(*) AS n FROM escalations WHERE patient_id = ? AND state IN ${OPEN}`, p.id)!.n;
-  const body = buildDigest({ patientFirst: first(p.name), medsDue: meds.length, medsTaken: meds.filter((x) => x.status === "DONE").length, missed, readings, openAlerts, nextVisit: visit.next_visit_at ? fmtDate(visit.next_visit_at, { weekday: "short", day: "numeric", month: "short" }) : null });
+  const body = buildDigest({ insights: gatherDigestInsights(p.id, t), patientFirst: first(p.name), medsDue: meds.length, medsTaken: meds.filter((x) => x.status === "DONE").length, missed, readings, openAlerts, nextVisit: visit.next_visit_at ? fmtDate(visit.next_visit_at, { weekday: "short", day: "numeric", month: "short" }) : null });
   for (const c of circle) sendWhatsApp({ userId: c.user_id!, patientId: p.id, body, kind: "info", at: t });
+}
+
+/** Sunday evening: a short week-in-review to the care circle and the patient. */
+function tickWeekly(p: PatientRow, t: number) {
+  if (localDow(t) !== 0 || localHHMM(t) < "19:00" || localHHMM(t) > "23:30") return;
+  const key = `weekly:${p.id}`;
+  if (getSetting(key) === dayKey(t)) return;
+  const visit = latestVisit(p.id, t);
+  if (!visit) return;
+  setSetting(key, dayKey(t));
+  const s = gatherWeekStats(p.id, first(p.name), t, visit.next_visit_at && visit.next_visit_at > t ? visit.next_visit_at : null);
+  const consented = (uid: string | null) => !!uid && !get("SELECT 1 FROM consents WHERE patient_id = ? AND user_id = ? AND status != 'GIVEN'", p.id, uid);
+  if (consented(p.user_id)) sendWhatsApp({ userId: p.user_id!, patientId: p.id, body: buildWeekly(s, true), kind: "info", at: t + 60_000 });
+  for (const c of getCaregivers(p.id)) if (consented(c.user_id)) sendWhatsApp({ userId: c.user_id!, patientId: p.id, body: buildWeekly(s, false), kind: "info", at: t + 60_000 });
 }
 
 // ---------------------------------------------------------------- automatic consent follow-up
@@ -1087,6 +1119,7 @@ export function tick(t: number) {
     kidneyMorningCheck(p, t);
     tickEscalations(p, t);
     tickDigest(p, t);
+    tickWeekly(p, t);
   }
   tickRechecks(t);
   tickLoops(t);

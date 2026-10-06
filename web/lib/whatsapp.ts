@@ -2,6 +2,7 @@
 // and rendered in the /whatsapp phone simulator. A Twilio / Meta Cloud API adapter can be added
 // here later without touching the engine (send -> provider API, inbound webhook -> ingestMessage).
 import { run } from "./db";
+import { langOf, scheduleTranslation } from "./lang";
 
 export interface OutboundMessage {
   userId: string; // recipient (patient or caregiver user)
@@ -23,5 +24,8 @@ export function sendWhatsApp(m: OutboundMessage): number {
     m.at,
     m.kind || "info",
   );
+  // In the person's own language: translated in the background right after it is stored (a real provider adapter
+  // would translate before sending). The English stays in body_en.
+  scheduleTranslation(r.lastInsertRowid, langOf(m.userId));
   return r.lastInsertRowid;
 }
