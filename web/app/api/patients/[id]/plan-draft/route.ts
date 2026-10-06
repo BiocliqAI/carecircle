@@ -2,6 +2,7 @@ import { now } from "@/lib/clock";
 import { createVisit, getPatient, latestVisit } from "@/lib/engine";
 import { addSource, blockers, buildDraft, clearPlanDraft, confirmItem, draftToPlan, editMed, getPlanDraft, removeItem, removeSource, resolveConflict, savePlanDraft, type SourceKind } from "@/lib/plandraft";
 import { clearPrep, getPrep } from "@/lib/prep";
+import { draftFamilySummary, suggestNextVisit } from "@/lib/aftervisit";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 import type { ClinicVitals } from "@/lib/types";
 
@@ -29,9 +30,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   await ready();
   const { id } = await ctx.params;
   const body = (await req.json()) as {
-    action: "source" | "removeSource" | "build" | "resolve" | "confirm" | "remove" | "editMed" | "clear" | "send";
+    action: "source" | "removeSource" | "build" | "resolve" | "confirm" | "remove" | "editMed" | "clear" | "send" | "familySummary";
     kind?: SourceKind; base64?: string; mime?: string; seconds?: number; id?: string; option?: number;
-    patch?: Record<string, unknown>; nextVisit?: string | null;
+    patch?: Record<string, unknown>; nextVisit?: string | null; familySummary?: string;
   };
   const user = await guard(id, body.action === "send");
   if (!user) return err(body.action === "send" ? "Only the doctor can send the care plan" : "Care team only", 403);
@@ -45,6 +46,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       removeSource(id, body.id ?? "", t);
     } else if (body.action === "build") {
       await buildDraft(id, t, user.id);
+    } else if (body.action === "familySummary") {
+      const d = getPlanDraft(id);
+      if (!d.built) return err("Build the draft first");
+      const changes = d.built.medications.filter((m) => m.change !== "same").length;
+      return json({ ...(await draftFamilySummary(d.built, body.nextVisit ?? d.built.nextVisit?.date ?? null)), suggest: suggestNextVisit(id, t, changes) });
     } else if (body.action === "clear") {
       clearPlanDraft(id);
     } else if (body.action === "send") {
@@ -63,7 +69,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       const nextDate = body.nextVisit ?? d.built.nextVisit?.date ?? null;
       const next = nextDate ? Date.parse(`${nextDate}T11:00:00+05:30`) : null;
       const notes = [d.built.note, ...d.built.answers.map((a) => `Q (${a.askedBy ?? "family"}): ${a.question}\nA: ${a.answer}`)].filter(Boolean).join("\n\n");
-      const vid = createVisit(id, user.id, { vitals, diagnosis: d.built.diagnosis || p.conditions || "", notes, plan, next_visit_at: next, answers: d.built.answers.map((a) => ({ question: a.question, answer: a.answer })) }, t);
+      const vid = createVisit(id, user.id, { vitals, diagnosis: d.built.diagnosis || p.conditions || "", notes, plan, next_visit_at: next, answers: d.built.answers.map((a) => ({ question: a.question, answer: a.answer })), familySummary: (body.familySummary ?? "").trim().slice(0, 1200) || undefined }, t);
       clearPlanDraft(id);
       clearPrep(id);
       return json({ ok: true, visitId: vid });

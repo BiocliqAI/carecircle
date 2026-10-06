@@ -753,3 +753,16 @@ Rules: include only the readings clearly visible on the display. Read digits exa
     return null;
   }
 }
+
+/** Plain-language "in short" for the family after a visit, written only from the doctor's own reviewed draft. */
+export async function familySummaryAI(context: unknown): Promise<string | null> {
+  const system = `You write the short "in short" message that a family receives on WhatsApp after a doctor's visit. You are given the doctor's reviewed care-plan draft (medicine changes, warning signs, the doctor's note, the next visit).
+
+Rules:
+- Use ONLY what is in the draft. Never add advice, doses, reasons or warnings that are not there. If the reason for a change is not stated, do not give one.
+- 4 to 6 short lines, plain everyday words (reading level of a worried family member, not a doctor). A few simple emojis are fine.
+- Cover, in this order and only if present: what changed (new, changed, stopped medicines in plain words), why (only if the note says so), what to watch for (from the warning signs), when the next visit is.
+- No greeting, no sign-off, no headings, no markdown, no medical jargon. Write numbers and doses exactly as given. Schedules are already in words; never write codes like 1-0-1.
+Output only the message text.`;
+  return geminiCall(system, [{ type: "text", text: JSON.stringify(context) }]);
+}

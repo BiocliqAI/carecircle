@@ -32,8 +32,14 @@ export function PlanBuilder({ id }: { id: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const [edit, setEdit] = useState<DraftMed | null>(null);
   const [nextVisit, setNextVisit] = useState("");
+  const [fam, setFam] = useState("");
+  const [famBusy, setFamBusy] = useState(false);
+  const [famVia, setFamVia] = useState<"ai" | "rules" | null>(null);
+  const [suggest, setSuggest] = useState<{ date: string; days: number; why: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const builtAt = d?.draft.built?.at ?? null;
+  useEffect(() => { if (builtAt) { setFam(""); draftFamily(); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [builtAt]);
   const load = () => api<Resp>(`/api/patients/${id}/plan-draft`).then((r) => { setD(r); if (r.draft.built?.nextVisit?.date) setNextVisit((v) => v || r.draft.built!.nextVisit!.date!); });
   useEffect(() => {
     load().catch((e) => setErr(e.message));
@@ -63,11 +69,18 @@ export function PlanBuilder({ id }: { id: string }) {
     if (!f) return;
     await act("rx", { action: "source", kind: "rx", base64: await blobToDataUrl(f), mime: f.type || "image/jpeg" });
   }
+  async function draftFamily() {
+    setFamBusy(true);
+    try {
+      const r = await api<{ text: string; via: "ai" | "rules"; suggest: { date: string; days: number; why: string } }>(`/api/patients/${id}/plan-draft`, { body: { action: "familySummary", nextVisit: nextVisit || null } });
+      setFam(r.text); setFamVia(r.via); setSuggest(r.suggest);
+    } catch { /* the doctor can still write it */ } finally { setFamBusy(false); }
+  }
   async function send() {
     setBusy("send");
     setErr(null);
     try {
-      await api(`/api/patients/${id}/plan-draft`, { body: { action: "send", nextVisit: nextVisit || null } });
+      await api(`/api/patients/${id}/plan-draft`, { body: { action: "send", nextVisit: nextVisit || null, familySummary: fam.trim() || undefined } });
       notifyChange();
       router.push(`/patients/${id}`);
     } catch (e) {
@@ -246,6 +259,7 @@ export function PlanBuilder({ id }: { id: string }) {
                 <div className="pb-item num">
                   <span style={{ flex: 1 }}>{b.labs ? <>{b.labs.panel}{b.labs.everyDays ? ` · every ${b.labs.everyDays} days` : ""}</> : <span className="v2-sub">No tests ordered</span>}</span>
                   <label className="row" style={{ gap: 6, fontSize: 13.5, fontWeight: 600 }}>Next visit<input type="date" value={nextVisit} onChange={(e) => setNextVisit(e.target.value)} className="pb-date" /></label>
+                  {suggest && suggest.date !== nextVisit && <button className="tq-link" title={suggest.why} onClick={() => setNextVisit(suggest.date)}>Suggested {fmtDate(Date.parse(`${suggest.date}T12:00:00+05:30`), { day: "numeric", month: "short" })} (in {suggest.days} days) · use</button>}
                   {b.labs && <Tags list={b.labs.sources} />}
                 </div>
 
@@ -261,7 +275,12 @@ export function PlanBuilder({ id }: { id: string }) {
             {b && (
               <section className="v2-card pad wa-preview">
                 <div className="row between" style={{ marginBottom: 8 }}><h2>{p?.name.split(" ")[0] ?? "The patient"} will receive on WhatsApp</h2><span className="v2-sub">the care circle is told the plan changed</span></div>
-                <div className="wa-preview-bubble">{preview(b, nextVisit)}</div>
+                <div className="wa-preview-bubble">{preview(b, nextVisit)}{fam.trim() ? `\n\n📝 In short:\n${fam.trim()}` : ""}</div>
+                <div className="stack" style={{ marginTop: 12, gap: 6 }}>
+                  <div className="row between"><b style={{ fontSize: 13.5 }}>“In short” for the family</b><span className="v2-sub">{famBusy ? "Drafting…" : famVia === "ai" ? "✨ AI draft from your plan. Edit freely." : famVia === "rules" ? "Drafted from your plan. Edit freely." : "Optional"}</span></div>
+                  <textarea className="fh-input" style={{ minHeight: 120, fontSize: 14 }} value={fam} onChange={(e) => setFam(e.target.value)} placeholder="A short plain-language summary of what changed and what to watch. It goes to the patient and the care circle with the plan." />
+                  <div className="row" style={{ gap: 8 }}><button className="v2-btn" disabled={famBusy} onClick={draftFamily}>{famBusy ? <span className="spin" /> : "✨"} {fam ? "Redraft" : "Draft it"}</button>{suggest && <span className="v2-sub" style={{ fontSize: 12.5 }}>{suggest.why}</span>}</div>
+                </div>
               </section>
             )}
           </div>

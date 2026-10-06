@@ -10,6 +10,8 @@ import { addDocument } from "./records";
 import { describeMed } from "./meds";
 import { DAY, HOUR, atLocal, dayKey, dayStart, fmtDate, localHHMM } from "./time";
 import { shortName, type CarePlan, type Medication } from "./types";
+import { checkChange, contextFor } from "./medcheck";
+import { now as clockNow } from "./clock";
 
 // ---------------------------------------------------------------- types
 export type ChangeKind = "started" | "stopped" | "dose_changed" | "other";
@@ -671,10 +673,11 @@ export function reviewOutsideVisit(id: number, by: string, t: number) {
 export interface OutsideVisitView extends OutsideVisitRow {
   reported_by_name: string | null;
   reviewed_by_name: string | null;
-  changes: { id: number; med_name: string; change: string; detail: string | null; new_dose: string | null; new_times: string[] | null; med_key: string | null; status: string; applied_at: number | null; reviewed_by_name: string | null }[];
+  changes: { id: number; med_name: string; change: string; detail: string | null; new_dose: string | null; new_times: string[] | null; med_key: string | null; status: string; applied_at: number | null; reviewed_by_name: string | null; warnings: string[] }[];
   documents: { id: number; title: string; mime: string; category: string }[];
 }
 export function outsideVisits(pid: string): OutsideVisitView[] {
+  const ctx = contextFor(pid, clockNow());
   return all<OutsideVisitRow & { reported_by_name: string | null; reviewed_by_name: string | null }>(
     `SELECT o.*, u.name AS reported_by_name, r.name AS reviewed_by_name FROM outside_visits o
        LEFT JOIN users u ON u.id = o.reported_by LEFT JOIN users r ON r.id = o.reviewed_by
@@ -683,7 +686,7 @@ export function outsideVisits(pid: string): OutsideVisitView[] {
     ...o,
     changes: all<{ id: number; med_name: string; change: string; detail: string | null; new_dose: string | null; new_times: string | null; med_key: string | null; status: string; applied_at: number | null; reviewed_by_name: string | null }>(
       "SELECT c.id, c.med_name, c.change, c.detail, c.new_dose, c.new_times, c.med_key, c.status, c.applied_at, r.name AS reviewed_by_name FROM med_changes c LEFT JOIN users r ON r.id = c.reviewed_by WHERE c.outside_visit_id = ? ORDER BY c.id", o.id,
-    ).map((c) => ({ ...c, new_times: c.new_times ? (JSON.parse(c.new_times) as string[]) : null })),
+    ).map((c) => ({ ...c, new_times: c.new_times ? (JSON.parse(c.new_times) as string[]) : null, warnings: c.status === "REPORTED" ? checkChange({ med_name: c.med_name, change: c.change, new_dose: c.new_dose, med_key: c.med_key }, ctx) : [] })),
     documents: all<{ id: number; title: string; mime: string; category: string }>("SELECT id, title, mime, category FROM patient_documents WHERE outside_visit_id = ? ORDER BY uploaded_at", o.id),
   }));
 }

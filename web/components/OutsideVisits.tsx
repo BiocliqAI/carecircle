@@ -397,7 +397,7 @@ export function ClinicOutsideVisits({ pid, visits, onChange }: { pid: string; vi
                     return (
                       <tr key={c.id} className={open ? "" : "done"}>
                         <td><b>{c.med_name}</b><div className="v2-sub">{CHANGE_WORD[c.change]}{c.med_key ? "" : c.change === "stopped" ? "" : " · not in plan"}</div></td>
-                        <td className="ov-detail">{c.detail}</td>
+                        <td className="ov-detail">{c.detail}{c.warnings?.map((w, i) => <div key={i} className="ov-warn"><span aria-hidden>⚠</span> {w}</div>)}</td>
                         <td>{open && c.change !== "stopped" ? <input aria-label={`New dose for ${c.med_name}`} value={d.dose} onChange={(e) => setEdit({ ...edit, [c.id]: { ...d, dose: e.target.value } })} placeholder={c.change === "dose_changed" ? "e.g. 20 mg" : "dose"} /> : c.new_dose ?? "—"}</td>
                         <td>{open && c.change !== "stopped" ? <input aria-label={`Times for ${c.med_name}`} value={d.times} onChange={(e) => setEdit({ ...edit, [c.id]: { ...d, times: e.target.value } })} placeholder={c.change === "started" ? "08:00, 20:00" : "keep current"} /> : timesText(c.new_times) || "—"}</td>
                         <td className="ov-acts">

@@ -855,3 +855,5 @@ body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; backg
 .helpbar { position: sticky; top: 0; z-index: 15; display: flex; justify-content: flex-end; padding: 8px 20px; background: rgba(244,246,245,0.92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--c-line); }
 .helpbar.float { position: fixed; top: 0; right: 0; left: auto; background: transparent; border: 0; backdrop-filter: none; z-index: 30; padding: 14px 20px; }
 @media (max-width: 900px) { .helpbar { position: static; padding: 6px 12px; } }
+.ov-warn { margin-top: 5px; padding: 5px 9px; border-radius: 8px; background: var(--c-amber-soft); color: var(--c-amber); font-size: 12.5px; line-height: 1.35; font-weight: 600; }
+.ov-warn span { margin-right: 3px; }

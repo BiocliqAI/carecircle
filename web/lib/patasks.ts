@@ -1,5 +1,7 @@
 // The assistant's work queue: everything that needs a person to act, derived from live records.
 import { all, get } from "./db";
+import { freshBrief } from "./briefs";
+import { extractLine, readExtract } from "./docauto";
 import { consentNudges, getCaregivers, getPatient, getUser, latestVisit, listPatients } from "./engine";
 import { getPrep } from "./prep";
 import { getBaseline, listDrafts } from "./clinic";
@@ -15,7 +17,7 @@ export interface PaTask {
   patientId: string | null;
   detail: string;
   at: number;
-  actions: { label: string; href?: string; api?: { path: string; body: unknown }; primary?: boolean }[];
+  actions: { label: string; href?: string; api?: { path: string; body: unknown }; primary?: boolean; done?: string }[];
 }
 
 const STEP = ["Patient details", "Care circle", "Baseline", "Review"];
@@ -68,14 +70,23 @@ export function paToday(t: number, userId: string) {
     visits.push({ id: p.id, name: p.name, at: next, ready: !!prep.readyAt, doctor: getUser(p.doctor_id)?.name ?? null });
     if (!prep.readyAt) {
       const todo = [!prep.attendance && "confirm attendance", !prep.vitalsAt && "check-in vitals", !prep.docsChecked && "file new reports"].filter(Boolean);
-      tasks.push({ id: `visit:${p.id}`, kind: "visit", label: `Prepare visit · ${relDays(t, next) === 0 ? "today" : fmtDate(next, { weekday: "short", day: "numeric", month: "short" })}, ${fmtTime(next)}`, patient: p.name, patientId: p.id, at: next - 2 * DAY, detail: todo.length ? `To do: ${todo.join(", ")}.` : "Everything is in; mark it ready for the doctor.", actions: [{ label: "Prepare", href: `/patients/${p.id}/visit`, primary: true }] });
+      tasks.push({ id: `visit:${p.id}`, kind: "visit", label: `Prepare visit · ${relDays(t, next) === 0 ? "today" : fmtDate(next, { weekday: "short", day: "numeric", month: "short" })}, ${fmtTime(next)}`, patient: p.name, patientId: p.id, at: next - 2 * DAY, detail: `${todo.length ? `To do: ${todo.join(", ")}.` : "Everything is in; mark it ready for the doctor."}${freshBrief(p.id, t) ? " The AI brief is ready." : ""}`, actions: [{ label: "Prepare", href: `/patients/${p.id}/visit`, primary: true }] });
     }
   }
 
-  for (const d of all<{ id: number; patient_id: string; title: string; uploaded_by: string | null; uploaded_at: number }>("SELECT id, patient_id, title, uploaded_by, uploaded_at FROM patient_documents WHERE source = 'whatsapp' AND filed_at IS NULL ORDER BY uploaded_at")) {
+  for (const d of all<{ id: number; patient_id: string; title: string; uploaded_by: string | null; uploaded_at: number; extract: string | null }>("SELECT id, patient_id, title, uploaded_by, uploaded_at, extract FROM patient_documents WHERE source = 'whatsapp' AND filed_at IS NULL AND outside_visit_id IS NULL ORDER BY uploaded_at")) {
     const p = getPatient(d.patient_id);
     if (!p) continue;
-    tasks.push({ id: `doc:${d.id}`, kind: "document", label: "Document to file", patient: p.name, patientId: p.id, at: d.uploaded_at, detail: `“${d.title}” sent on WhatsApp${d.uploaded_by ? ` by ${shortName(getUser(d.uploaded_by)?.name ?? "")}` : ""}, ${fmtDate(d.uploaded_at, { day: "numeric", month: "short" })} · not yet filed`, actions: [{ label: "Review & file", href: `/patients/${p.id}?tab=documents`, primary: true }] });
+    const x = readExtract(d.extract);
+    const from = `sent on WhatsApp${d.uploaded_by ? ` by ${shortName(getUser(d.uploaded_by)?.name ?? "")}` : ""}, ${fmtDate(d.uploaded_at, { day: "numeric", month: "short" })}`;
+    tasks.push({
+      id: `doc:${d.id}`, kind: "document", label: x ? "Document read, confirm to file" : "Document to file", patient: p.name, patientId: p.id, at: d.uploaded_at,
+      detail: x ? `Read automatically: ${extractLine(x)}. ${from}. Check it against the original, then confirm.` : `“${d.title}” ${from} · not yet filed`,
+      actions: [
+        ...(x ? [{ label: "Confirm & file", api: { path: `/api/patients/${p.id}/documents`, body: { action: "autofile", id: d.id } }, primary: true, done: `Filed${x.labs.length ? " and lab values entered" : ""} for ${shortName(p.name)}.` }] : []),
+        { label: x ? "Open" : "Review & file", href: `/patients/${p.id}?tab=documents`, primary: !x },
+      ],
+    });
   }
 
   // Visits to other doctors with medicine changes the family reported: one item per visit.

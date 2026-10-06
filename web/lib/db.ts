@@ -136,6 +136,7 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["users", "created_at", "INTEGER"],
   ["patient_documents", "filed_at", "INTEGER"],
   ["patient_documents", "outside_visit_id", "INTEGER"],
+  ["patient_documents", "extract", "TEXT"],
   ["med_changes", "outside_visit_id", "INTEGER"],
   ["med_changes", "med_key", "TEXT"],
   ["med_changes", "new_dose", "TEXT"],

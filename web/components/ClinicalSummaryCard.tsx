@@ -14,17 +14,19 @@ export function ClinicalSummaryCard({ patientId, patientName, onOpenSettings }: 
   const [summary, setSummary] = useState<ClinicalSummaryResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preparedAt, setPreparedAt] = useState<number | null>(null);
 
   async function loadSummary(refresh = false) {
     setLoading(true);
     setError(null);
     try {
-      const res = await api<{ ok: boolean; summary: ClinicalSummaryResult }>(
+      const res = await api<{ ok: boolean; summary: ClinicalSummaryResult; auto?: boolean; preparedAt?: number }>(
         `/api/patients/${patientId}/ai-summary`,
         refresh ? { method: "POST", body: { refresh: true } } : {}
       );
       if (res?.summary) {
         setSummary(res.summary);
+        setPreparedAt(res.auto && res.preparedAt ? res.preparedAt : null);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -56,7 +58,7 @@ export function ClinicalSummaryCard({ patientId, patientName, onOpenSettings }: 
             </h3>
             <small className="muted">
               Pre-consultation clinical synthesis across vitals, labs, fluid balance, adherence, and cross-doctor care.
-              {summary && ` Generated ${fmtDateTime(summary.generatedAt)}.`}
+              {summary && (preparedAt ? ` Prepared automatically before the visit (${fmtDateTime(preparedAt)}). Refresh for the latest.` : ` Generated ${fmtDateTime(summary.generatedAt)}.`)}
             </small>
           </div>
         </div>

@@ -49,6 +49,8 @@ export function VisitPrepare({ id }: { id: string }) {
 
   const load = () => api<Data>(`/api/patients/${id}`).then((x) => { setD(x); setP(x.prep ?? null); }).catch((e) => setErr(e.message));
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+  const [brief, setBrief] = useState<{ executiveSummary: string; consultationDiscussionPoints: string[] } | null>(null);
+  useEffect(() => { api<{ summary: { executiveSummary: string; consultationDiscussionPoints: string[] } | null }>(`/api/patients/${id}/ai-summary?stored=1`).then((r) => setBrief(r.summary)).catch(() => undefined); }, [id]);
 
   async function save(patch: Record<string, unknown>) {
     setSaving("saving");
@@ -176,6 +178,13 @@ export function VisitPrepare({ id }: { id: string }) {
           <div className="span4 stack gap16">
             <section className="v2-card pad">
               <h2 style={{ marginBottom: 8 }}>What {d.doctor?.name ?? "the doctor"} will see first</h2>
+              {brief && (
+                <div style={{ marginBottom: 10, padding: "10px 12px", background: "#F0F8F6", border: "1px solid #CFE5DF", borderRadius: 10, fontSize: 13.5 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".05em", color: "var(--c-brand)", textTransform: "uppercase" }}>✨ AI brief, prepared automatically</div>
+                  <div style={{ margin: "4px 0" }}>{brief.executiveSummary}</div>
+                  {brief.consultationDiscussionPoints.slice(0, 3).map((x, i) => <div key={i} className="v2-sub" style={{ fontSize: 12.5 }}>💡 {x}</div>)}
+                </div>
+              )}
               <ul className="pc-bullets num" style={{ fontSize: 13.5 }}>
                 {(d.summary?.highlights ?? []).slice(0, 4).map((h, i) => <li key={i}>{h.text}</li>)}
                 {hasVitals && <li>Clinic today: {VITALS.filter(([k]) => p.vitals[k]).map(([k, l]) => `${l.split(" ")[0]} ${p.vitals[k]}`).join(", ")}</li>}

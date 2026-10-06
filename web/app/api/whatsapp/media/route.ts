@@ -3,6 +3,7 @@ import { get, run } from "@/lib/db";
 import { getPatient, getUser, ingestMessage, latestVisit, runScheduler } from "@/lib/engine";
 import { isGeminiConfigured, lastTranscribeError, readDeviceAI, transcribeAudio } from "@/lib/gemini";
 import { deviceText, type DeviceRead } from "@/lib/quality";
+import { extractDocument } from "@/lib/docauto";
 import { fixHealthWords } from "@/lib/speechfix";
 import { addDocument } from "@/lib/records";
 import { FROM_VISIT_BUTTON, outsideVisitDocument } from "@/lib/outside";
@@ -60,7 +61,10 @@ export async function POST(req: Request) {
     const ov = await outsideVisitDocument(user, getPatient(pid)!, { id: docId, base64: b.base64, mime: b.mime || "application/octet-stream", title: name }, t);
     if (ov.handled) sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: ov.reply ?? "📄 Added to the visit.", quick: ov.quick });
     else if (await readDevicePhoto(user.id, pid, docId, b.base64, b.mime || "", t)) { /* replied: asked to confirm the reading */ }
-    else sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: `📄 Received “${name}”. It's been added to the record for your care team to review.${!isGeminiConfigured() && /^image\//.test(b.mime || "") && category !== "lab" && category !== "prescription" ? "\nIf this shows a reading from your BP machine, glucometer or scale, please also type it, e.g. “BP 138/86”." : ""}${category === "lab" ? "" : "\nIf it's from a visit to another doctor, tap below and I'll note the visit too."}`, quick: category === "lab" ? undefined : [FROM_VISIT_BUTTON] });
+    else {
+      void extractDocument(docId); // read in the background so the assistant's task is pre-filled; the reply does not wait
+      sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: `📄 Received “${name}”. It's been added to the record for your care team to review.${!isGeminiConfigured() && /^image\//.test(b.mime || "") && category !== "lab" && category !== "prescription" ? "\nIf this shows a reading from your BP machine, glucometer or scale, please also type it, e.g. “BP 138/86”." : ""}${category === "lab" ? "" : "\nIf it's from a visit to another doctor, tap below and I'll note the visit too."}`, quick: category === "lab" ? undefined : [FROM_VISIT_BUTTON] });
+    }
     return json({ ok: true, document: docId });
   } catch (e) {
     return err((e as Error).message, 400);

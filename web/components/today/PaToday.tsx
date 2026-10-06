@@ -51,7 +51,7 @@ export function PaToday() {
     setBusy(task.id + a.label);
     try {
       await api(a.api.path, { body: a.api.body });
-      setToast(a.label === "Resend" ? `Consent reminder sent for ${task.patient}.` : `${task.patient}: flagged for the doctor at the next visit.`);
+      setToast(a.done ?? (a.label === "Resend" ? `Consent reminder sent for ${task.patient}.` : `${task.patient}: flagged for the doctor at the next visit.`));
       notifyChange();
       await load();
     } catch (e) {
