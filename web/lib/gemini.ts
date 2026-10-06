@@ -630,3 +630,45 @@ Rules:
     return null;
   }
 }
+
+/** Reads a patient's old documents (discharge summaries, prescriptions, lab reports; photos or PDFs) into
+ *  baseline-intake fields. The PA reviews every value before saving; nothing here is saved. */
+export async function extractBaselineAI(files: { base64: string; mime: string }[], labMarkers: string[]): Promise<Record<string, unknown> | null> {
+  const system = `You read a patient's old medical documents (discharge summaries, prescriptions, lab reports) from an Indian clinic and fill an intake form. You only copy what the documents say. Never guess, infer or add.
+
+Return JSON with exactly these keys (use "" , [] or null when a document does not say):
+{
+ "dob": "YYYY-MM-DD" | null,
+ "bloodGroup": "A+|A-|B+|B-|AB+|AB-|O+|O-" | null,
+ "heightCm": number | null,
+ "vitals": {"sys":number,"dia":number,"weight":number,"hr":number,"glucose":number,"spo2":number},
+ "conditions": ["short diagnosis names"],
+ "allergies": "text",
+ "history": "one short paragraph: surgeries, hospital admissions and stopped medicines with years and reasons, oldest first",
+ "familyHistory": "text",
+ "currentMeds": [{"name":"brand or generic as written","dose":"e.g. 40 mg","frequency":"OD|BD|TDS|QID|HS|weekly|PRN","purpose":"what it is for, only if written","prescriber":"only if written","documentDate":"YYYY-MM-DD" | null}],
+ "labs": [{"marker": one of ${JSON.stringify(labMarkers)}, "value": number, "date": "YYYY-MM-DD"}],
+ "notes": "anything useful that fits nowhere else, briefly",
+ "warnings": ["things the reviewer should check, e.g. 'handwriting unclear for 2nd medicine', 'two documents disagree on metformin dose'"]
+}
+
+Rules:
+- currentMeds: only medicines that are current as of the NEWEST document. A medicine the documents show as stopped goes in "history", never in currentMeds. If documents disagree, use the newest and add a warning.
+- Convert dose patterns to frequency: 1-0-0 or once = OD; 1-0-1 or twice = BD; 1-1-1 = TDS; 0-0-1 at night = HS.
+- labs: use only markers from the allowed list; convert nothing; take the date printed on that report. Skip anything unreadable.
+- Dates: if only month and year are printed use day 01.
+- Add a warning for every value you were unsure of.`;
+  const input: unknown[] = [{ type: "text", text: "Extract the intake form from these documents." }];
+  for (const f of files) {
+    const mime = (f.mime || "image/jpeg").split(";")[0];
+    input.push({ type: mime === "application/pdf" ? "document" : "image", data: f.base64.replace(/^data:[^;]+;base64,/, ""), mime_type: mime });
+  }
+  const text = await geminiCall(system, input, true);
+  if (!text) return null;
+  try {
+    return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;
+  } catch {
+    lastTranscribeError = "The AI returned an unreadable result";
+    return null;
+  }
+}

@@ -1,7 +1,8 @@
 "use client";
 // Baseline intake (registration) form and the read-only baseline card shown on Patient 360.
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { api } from "./client";
 import { LAB_META, ageFromDob, bmi, type Baseline, type BaselineLab, type BaselineMed } from "@/lib/types";
 import { fmtDate } from "@/lib/time";
 
@@ -20,6 +21,8 @@ export function BaselineForm({ value, onChange }: { value: Baseline; onChange: (
   const set = (patch: Partial<Baseline>) => onChange({ ...b, ...patch });
   const [bp, setBp] = useState(b.vitals.sys ? `${b.vitals.sys}/${b.vitals.dia ?? ""}` : "");
   const [condText, setCondText] = useState("");
+  // Keep the BP box in step when BP is filled from documents (or undone) rather than typed.
+  useEffect(() => { setBp(b.vitals.sys ? `${b.vitals.sys}/${b.vitals.dia ?? ""}` : ""); }, [b.vitals.sys, b.vitals.dia]);
   const setVital = (k: keyof Baseline["vitals"], v: string) => set({ vitals: { ...b.vitals, [k]: v === "" ? undefined : Number(v) } });
   const setMed = (i: number, patch: Partial<BaselineMed>) => set({ currentMeds: b.currentMeds.map((m, j) => (j === i ? { ...m, ...patch } : m)) });
   const setLab = (i: number, patch: Partial<BaselineLab>) => set({ labs: b.labs.map((l, j) => (j === i ? { ...l, ...patch } : l)) });
@@ -35,6 +38,7 @@ export function BaselineForm({ value, onChange }: { value: Baseline; onChange: (
 
   return (
     <div className="stack gap16">
+      <FillFromDocuments value={b} onChange={onChange} />
       <div className="card">
         <div className="card-head"><div><h3>Profile</h3><small>Used to personalise WhatsApp messages and to read results in context.</small></div></div>
         <div className="grid g4">
@@ -276,6 +280,120 @@ export function BaselineCard({ b, pid, canEdit, now }: { b: StoredBaseline | nul
         {life.length > 0 && <small>{life.join(" · ")}</small>}
         {b.notes && <div className="callout">{b.notes}</div>}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- fill from documents
+type Extracted = Partial<Baseline>;
+
+/** Adds what the documents say without overwriting anything the PA already typed. */
+export function mergeExtraction(b: Baseline, x: Extracted): { next: Baseline; added: string[] } {
+  const added: string[] = [];
+  const next: Baseline = { ...b, vitals: { ...b.vitals }, conditions: [...b.conditions], currentMeds: [...b.currentMeds], labs: [...b.labs] };
+  if (!next.dob && x.dob) next.dob = x.dob;
+  if (!next.bloodGroup && x.bloodGroup) next.bloodGroup = x.bloodGroup;
+  if (!next.heightCm && x.heightCm) next.heightCm = x.heightCm;
+  for (const [k, v] of Object.entries(x.vitals ?? {}) as [keyof Baseline["vitals"], number][]) if (next.vitals[k] === undefined) next.vitals[k] = v;
+  const newConds = (x.conditions ?? []).filter((c) => !next.conditions.some((e) => e.toLowerCase() === c.toLowerCase()));
+  next.conditions.push(...newConds);
+  if (newConds.length) added.push(`${newConds.length} condition${newConds.length > 1 ? "s" : ""}`);
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const newMeds = (x.currentMeds ?? []).filter((m) => !next.currentMeds.some((e) => norm(e.name) === norm(m.name)));
+  next.currentMeds.push(...newMeds);
+  if (newMeds.length) added.push(`${newMeds.length} medicine${newMeds.length > 1 ? "s" : ""}`);
+  const newLabs = (x.labs ?? []).filter((l) => !next.labs.some((e) => e.marker === l.marker && e.date === l.date));
+  next.labs.push(...newLabs);
+  if (newLabs.length) added.push(`${newLabs.length} lab result${newLabs.length > 1 ? "s" : ""}`);
+  for (const k of ["allergies", "history", "familyHistory", "notes"] as const) {
+    const v = x[k]?.trim();
+    if (!v) continue;
+    if (!next[k].trim()) { next[k] = v; added.push(k === "familyHistory" ? "family history" : k); }
+    else if (!next[k].includes(v)) { next[k] = `${next[k].trim()}\n${v}`; added.push(k === "familyHistory" ? "family history" : k); }
+  }
+  return { next, added };
+}
+
+const fileToPayload = (f: File): Promise<{ base64: string; mime: string }> =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error(`Couldn't open ${f.name}`));
+    r.onload = () => {
+      const data = String(r.result);
+      // Phone photos are huge; shrink them (text stays readable at 2000px) before uploading.
+      if (!f.type.startsWith("image/") || f.size < 1_500_000) return resolve({ base64: data.split(",")[1], mime: f.type || "image/jpeg" });
+      const img = new Image();
+      img.onerror = () => resolve({ base64: data.split(",")[1], mime: f.type });
+      img.onload = () => {
+        const s = Math.min(1, 2000 / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * s);
+        c.height = Math.round(img.height * s);
+        c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+        resolve({ base64: c.toDataURL("image/jpeg", 0.85).split(",")[1], mime: "image/jpeg" });
+      };
+      img.src = data;
+    };
+    r.readAsDataURL(f);
+  });
+
+function FillFromDocuments({ value, onChange }: { value: Baseline; onChange: (b: Baseline) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [result, setResult] = useState<{ added: string[]; warnings: string[]; before: Baseline } | null>(null);
+
+  const add = (list: FileList | null) => {
+    if (!list) return;
+    setFiles((cur) => [...cur, ...Array.from(list)].slice(0, 10));
+    setResult(null);
+    setErr(null);
+  };
+
+  async function read() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const payload = await Promise.all(files.map(fileToPayload));
+      const r = await api<{ baseline: Extracted; warnings: string[] }>("/api/baseline/extract", { body: { files: payload } });
+      const { next, added } = mergeExtraction(value, r.baseline);
+      onChange(next);
+      setResult({ added, warnings: r.warnings, before: value });
+      setFiles([]);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ borderStyle: "dashed" }}>
+      <div className="card-head">
+        <div>
+          <h3>✨ Fill from documents</h3>
+          <small>Add old prescriptions, discharge summaries or lab reports (photos or PDFs). The form fills in below and you check it. Nothing is saved until you save.</small>
+        </div>
+      </div>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <input ref={input} type="file" hidden multiple accept="image/*,application/pdf" onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
+        <button type="button" className="btn" onClick={() => input.current?.click()} disabled={busy}>📎 Add documents</button>
+        {files.map((f, i) => (
+          <span key={i} className="badge brand">{f.name.slice(0, 28)} <button type="button" className="x-btn" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}>×</button></span>
+        ))}
+        {files.length > 0 && <button type="button" className="btn primary" onClick={read} disabled={busy}>{busy ? <><span className="spin" /> Reading…</> : `Read ${files.length} document${files.length > 1 ? "s" : ""}`}</button>}
+      </div>
+      {err && <div className="alert bad" style={{ marginTop: 10 }}>{err}</div>}
+      {result && (
+        <div className="alert" style={{ marginTop: 10 }} role="status"><div>
+          <b>{result.added.length ? `Filled in: ${result.added.join(", ")}.` : "Nothing new found in these documents."}</b>{" "}
+          {result.added.length > 0 && <>Please check each section below, especially medicines and doses. <button type="button" className="btn sm ghost" onClick={() => { onChange(result.before); setResult(null); }}>Undo</button></>}
+          {result.warnings.length > 0 && (
+            <ul style={{ margin: "8px 0 0 18px" }}>{result.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
+          )}
+        </div></div>
+      )}
     </div>
   );
 }

@@ -281,3 +281,51 @@ export function listDrafts(): (DraftRow & { updated_by_name: string | null; crea
 export function deleteDraft(id: string) {
   run("DELETE FROM onboarding_drafts WHERE id = ?", id);
 }
+
+/** Turns the AI's reading of old documents into a partial baseline. Lenient where cleanBaseline is strict:
+ *  anything unusable is dropped (and reported) so the PA can fix it on the form instead of hitting an error. */
+export function baselineFromExtraction(raw: Record<string, unknown>, t: number): { baseline: Partial<Baseline>; warnings: string[] } {
+  const warnings: string[] = Array.isArray(raw.warnings) ? raw.warnings.map((w) => str(w, 200)).filter(Boolean) : [];
+  const date = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && Date.parse(v) <= t + 86_400_000 ? v : undefined);
+  const out: Partial<Baseline> = { vitals: {}, conditions: [], currentMeds: [], labs: [] };
+  const dob = date(raw.dob);
+  if (dob) out.dob = dob;
+  const bg = str(raw.bloodGroup, 5);
+  if (["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].includes(bg)) out.bloodGroup = bg;
+  const h = num(raw.heightCm);
+  if (h !== undefined && h >= 40 && h <= 250) out.heightCm = h;
+  const ranges: Record<string, [number, number]> = { sys: [60, 260], dia: [30, 160], weight: [2, 300], hr: [20, 250], glucose: [20, 800], spo2: [50, 100] };
+  const vit = (raw.vitals ?? {}) as Record<string, unknown>;
+  for (const [k, [lo, hi]] of Object.entries(ranges)) {
+    const v = num(vit[k]);
+    if (v !== undefined && v >= lo && v <= hi) (out.vitals as Record<string, number>)[k] = v;
+  }
+  out.conditions = (Array.isArray(raw.conditions) ? raw.conditions : []).map((c) => str(c, 120)).filter(Boolean).slice(0, 30);
+  out.allergies = str(raw.allergies);
+  out.history = str(raw.history);
+  out.familyHistory = str(raw.familyHistory);
+  out.notes = str(raw.notes);
+  const freqs = ["OD", "BD", "TDS", "QID", "HS", "weekly", "PRN"];
+  out.currentMeds = (Array.isArray(raw.currentMeds) ? (raw.currentMeds as Record<string, unknown>[]) : [])
+    .filter((m) => str(m?.name))
+    .slice(0, 60)
+    .map((m): BaselineMed => {
+      const f = str(m.frequency, 40);
+      const freq = freqs.find((x) => x.toLowerCase() === f.toLowerCase());
+      if (!freq) warnings.push(`${str(m.name, 80)}: how often to take it was not clear (set to once daily). Please check.`);
+      return { name: str(m.name, 80).replace(/^(tab|tabs|cap|caps|inj|syp|syr|tablet|capsule)\.?\s+/i, ""), dose: str(m.dose, 40), frequency: freq ?? "OD", prescriber: str(m.prescriber, 80) || undefined, purpose: str(m.purpose, 80) || undefined };
+    });
+  // One reading per marker and date; the form's trend lines start from these.
+  const seen = new Set<string>();
+  for (const l of (Array.isArray(raw.labs) ? (raw.labs as Record<string, unknown>[]) : []).slice(0, 200)) {
+    const marker = str(l?.marker, 40);
+    const v = num(l?.value);
+    const d = date(l?.date);
+    if (!(marker in LAB_META) || v === undefined) continue;
+    if (!d) { warnings.push(`${LAB_META[marker].label} ${v}: report date missing, left out.`); continue; }
+    if (seen.has(marker + d)) continue;
+    seen.add(marker + d);
+    out.labs!.push({ marker, value: v, date: d });
+  }
+  return { baseline: out, warnings: warnings.slice(0, 20) };
+}
