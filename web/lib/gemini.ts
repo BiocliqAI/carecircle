@@ -737,3 +737,19 @@ How to talk:
     return null;
   }
 }
+
+/** Looks at a photo and, if it shows the display of a home health device (BP monitor, glucometer, scale, pulse
+ *  oximeter, thermometer), reads the numbers. The patient confirms the reading before anything is logged. */
+export async function readDeviceAI(base64: string, mime: string): Promise<Record<string, unknown> | null> {
+  const system = `You look at a photo sent on WhatsApp by an Indian patient or their family. Decide whether it shows the DISPLAY of a home health measuring device: blood pressure monitor, glucometer, weighing scale, pulse oximeter or thermometer. Prescriptions, lab reports, medicine strips, people and everything else are NOT devices.
+
+Return JSON: {"isDevice": boolean, "device": "bp"|"glucose"|"weight"|"spo2"|"temp"|null, "readings": {"sys": number, "dia": number, "pulse": number, "glucose": number, "weight": number, "spo2": number, "temp": number}, "unit": "mg/dL"|"mmol/L"|"kg"|"lb"|"C"|"F"|null, "confidence": "high"|"low", "note": "one short sentence"}
+Rules: include only the readings clearly visible on the display. Read digits exactly; if a digit is blurry, cut off, or you are not sure, set confidence "low". Never guess or calculate. On a blood pressure monitor, SYS is the top number, DIA the middle, PULSE the bottom. If isDevice is false, leave readings empty.`;
+  const text = await geminiCall(system, [{ type: "text", text: "Is this a health device display? Read it." }, { type: "image", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: (mime || "image/jpeg").split(";")[0] }], true);
+  if (!text) return null;
+  try {
+    return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}

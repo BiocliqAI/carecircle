@@ -70,6 +70,9 @@ describe("Escalation Engine - Comprehensive Tests", () => {
     it("triggers DEVIATION alert when BP exceeds care plan limits", async () => {
       const t = now() + 1000;
       await engine.ingestMessage("u_ramesh", "BP 155/96", { allowAi: false, at: t });
+      // A borderline reading is rechecked first; a recheck that is still high alerts the care circle.
+      assert.equal(get("SELECT 1 FROM escalations WHERE patient_id = 'p_ramesh' AND rule_key = 'bp_high' AND started_at >= ?", t), undefined, "held for a recheck");
+      await engine.ingestMessage("u_ramesh", "BP 156/97", { allowAi: false, at: t + 10 * MIN });
 
       const esc = get<{ id: number; type: string; rule_key: string }>(
         "SELECT * FROM escalations WHERE patient_id = 'p_ramesh' AND rule_key = 'bp_high' AND started_at >= ?",

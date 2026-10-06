@@ -13,6 +13,7 @@ import type { CarePlan, ClinicVitals, EscalationType, ParsedMessage, Visit, Vita
 import { LAB_META, MAX_CAREGIVERS, SYMPTOMS, VITAL_META, shortName } from "./types";
 import { dayIndex, describeMed, doseAt, medDueOn } from "./meds";
 import { activeFlow, looksLikeOutsideVisit, outsideVisitTurn, tickOutsideVisits, type TurnResult } from "./outside";
+import { applyCorrections, doubtReply, findDoubts, recheckGate, tickRechecks, weightJumpNote } from "./quality";
 
 // ---------------------------------------------------------------- loaders
 export interface UserRow {
@@ -296,6 +297,7 @@ export const OUTCOMES: Record<string, string> = {
   "3": "Taken to hospital / emergency",
   "4": "Other action taken",
   AUTO: "Patient completed the task",
+  CORRECTED: "Reading was entered wrongly and has been corrected",
   EXHAUSTED: "No one acknowledged",
 };
 
@@ -458,7 +460,7 @@ export function resolveEscalation(escId: number, userId: string, code: string, n
 }
 
 // ---------------------------------------------------------------- deviation rules (deterministic)
-interface Alert {
+export interface Alert {
   type: EscalationType;
   ruleKey: string;
   title: string;
@@ -467,7 +469,7 @@ interface Alert {
   observationId?: number;
 }
 
-function evaluateVital(p: PatientRow, plan: CarePlan, baseline: ClinicVitals, type: VitalType, v1: number, v2: number | undefined, t: number, obsId: number): { flag: string | null; alert: Alert | null } {
+export function evaluateVital(p: PatientRow, plan: CarePlan, baseline: ClinicVitals, type: VitalType, v1: number, v2: number | undefined, t: number, obsId: number): { flag: string | null; alert: Alert | null } {
   const th = plan.thresholds;
   const nm = first(p.name);
   switch (type) {
@@ -816,12 +818,33 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
 
   const alerts: Alert[] = [];
   const lines: string[] = [];
+  const says: string[] = []; // extra sentences for the reply (recheck asks, typo notes)
+
+  // "Sorry, that was 128 not 182": fix the earlier reading instead of adding a new one.
+  const corr = tx(() => applyCorrections(p, plan, visit.vitals, user, body, parsed, msgId, t));
+  if (corr.remove.size) parsed.vitals = parsed.vitals.filter((v) => !corr.remove.has(v.type));
+  lines.push(...corr.lines);
+  alerts.push(...corr.alerts);
+  // Impossible numbers ("weight 592") were dropped by the parser: say so and offer the likely fix.
+  const lastBp = get<{ v1: number; v2: number }>("SELECT v1, v2 FROM observations WHERE patient_id = ? AND type = 'bp' AND observed_at > ? ORDER BY observed_at DESC LIMIT 1", p.id, t - 7 * DAY);
+  const lastWt = get<{ v1: number }>("SELECT v1 FROM observations WHERE patient_id = ? AND type = 'weight' AND observed_at > ? ORDER BY observed_at DESC LIMIT 1", p.id, t - 7 * DAY);
+  const doubts = corr.lines.length ? [] : findDoubts(body, new Set(), { weight: lastWt?.v1 ?? null, bp: lastBp ? [lastBp.v1, lastBp.v2] : null });
+  // The AI parser must never silently "fix" an impossible number (592 → 59.2): the sender confirms it instead.
+  if (doubts.length) parsed.vitals = parsed.vitals.filter((v) => !doubts.some((d) => d.type === v.type));
   tx(() => {
     for (const v of parsed.vitals) {
       const obsId = run("INSERT INTO observations(patient_id, type, v1, v2, observed_at, logged_by, message_id, parser) VALUES(?,?,?,?,?,?,?,?)", p.id, v.type, v.v1, v.v2 ?? null, t, userId, msgId, parser).lastInsertRowid;
       const { flag, alert } = evaluateVital(p, plan, visit.vitals, v.type, v.v1, v.v2, t, obsId);
       if (flag) run("UPDATE observations SET flag = ? WHERE id = ?", flag, obsId);
-      if (alert) alerts.push(alert);
+      // A borderline high reading gets a recheck first (the family is alerted anyway if none comes).
+      const gate = recheckGate(p, plan, v.type, v.v1, v.v2, alert, user, t);
+      if (gate.alert) alerts.push(gate.alert);
+      if (gate.say) says.push(gate.say);
+      if (v.type === "weight") {
+        const prev = get<{ v1: number; observed_at: number }>("SELECT v1, observed_at FROM observations WHERE patient_id = ? AND type = 'weight' AND id != ? AND observed_at <= ? ORDER BY observed_at DESC LIMIT 1", p.id, obsId, t);
+        const note = weightJumpNote(prev ? { v: prev.v1, at: prev.observed_at } : null, v.v1, t);
+        if (note) says.push(`ℹ️ ${note}`);
+      }
       const val = v.type === "bp" ? `${v.v1}/${v.v2}` : String(v.v1);
       lines.push(`• ${VITAL_META[v.type].label}: ${val} ${VITAL_META[v.type].unit}${flag ? " ⚠️" : ""}`);
       completeTasks(p.id, "vital", [`vital:${v.type}`], "DONE", t, userId, msgId);
@@ -922,10 +945,19 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   if (ov?.handled) {
     text = text ? `${text}\n\n${ov.reply ?? ""}` : ov.reply ?? "";
     quick = ov.quick?.length ? ov.quick : undefined;
-  } else if (!lines.length && !alerts.length) {
+  } else if (!lines.length && !alerts.length && !doubts.length) {
     const c = clarifyFor(p, plan, user, body, t);
     text = c.text;
     quick = c.quick;
+  }
+  if (says.length) text += (text ? "\n\n" : "") + says.join("\n\n");
+  if (doubts.length) {
+    const dr = doubtReply(doubts[0], user.role === "CAREGIVER" ? `${first(p.name)}'s ` : "");
+    text += (text ? "\n\n" : "") + dr.text;
+    if (dr.fixText && !get("SELECT 1 FROM convo_state WHERE user_id = ?", userId)) {
+      run("INSERT INTO convo_state(user_id, state, data) VALUES(?, 'clarify', ?)", userId, JSON.stringify([{ label: dr.quick[0], text: dr.fixText }]));
+      quick = dr.quick;
+    }
   }
   const created: { a: Alert; id: number | null }[] = [];
   for (const a of alerts) created.push({ a, id: createEscalation(p, { ...a, messageId: msgId }, t + 500) });
@@ -1036,6 +1068,7 @@ export function tick(t: number) {
     tickEscalations(p, t);
     tickDigest(p, t);
   }
+  tickRechecks(t);
   tickOutsideVisits(t);
 }
 

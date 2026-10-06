@@ -1,7 +1,8 @@
 import { now } from "@/lib/clock";
 import { get, run } from "@/lib/db";
 import { getPatient, getUser, ingestMessage, latestVisit, runScheduler } from "@/lib/engine";
-import { lastTranscribeError, transcribeAudio } from "@/lib/gemini";
+import { isGeminiConfigured, lastTranscribeError, readDeviceAI, transcribeAudio } from "@/lib/gemini";
+import { deviceText, type DeviceRead } from "@/lib/quality";
 import { fixHealthWords } from "@/lib/speechfix";
 import { addDocument } from "@/lib/records";
 import { FROM_VISIT_BUTTON, outsideVisitDocument } from "@/lib/outside";
@@ -58,9 +59,29 @@ export async function POST(req: Request) {
     // Mid-conversation about another doctor's visit, the file joins that visit and is read for its details.
     const ov = await outsideVisitDocument(user, getPatient(pid)!, { id: docId, base64: b.base64, mime: b.mime || "application/octet-stream", title: name }, t);
     if (ov.handled) sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: ov.reply ?? "📄 Added to the visit.", quick: ov.quick });
-    else sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: `📄 Received “${name}”. It's been added to the record for your care team to review.${category === "lab" ? "" : "\nIf it's from a visit to another doctor, tap below and I'll note the visit too."}`, quick: category === "lab" ? undefined : [FROM_VISIT_BUTTON] });
+    else if (await readDevicePhoto(user.id, pid, docId, b.base64, b.mime || "", t)) { /* replied: asked to confirm the reading */ }
+    else sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: `📄 Received “${name}”. It's been added to the record for your care team to review.${!isGeminiConfigured() && /^image\//.test(b.mime || "") && category !== "lab" && category !== "prescription" ? "\nIf this shows a reading from your BP machine, glucometer or scale, please also type it, e.g. “BP 138/86”." : ""}${category === "lab" ? "" : "\nIf it's from a visit to another doctor, tap below and I'll note the visit too."}`, quick: category === "lab" ? undefined : [FROM_VISIT_BUTTON] });
     return json({ ok: true, document: docId });
   } catch (e) {
     return err((e as Error).message, 400);
   }
+}
+
+/**
+ * A photo of a BP monitor, glucometer, scale, oximeter or thermometer: read the display and ask the sender to confirm
+ * before it is logged (their "Yes" is processed exactly like typing the reading). Returns true when it replied.
+ */
+async function readDevicePhoto(userId: string, pid: string, docId: number, base64: string, mime: string, t: number): Promise<boolean> {
+  if (!/^image\//.test(mime) || !isGeminiConfigured()) return false;
+  const raw = await readDeviceAI(base64, mime).catch(() => null);
+  if (!raw || raw.isDevice !== true) return false;
+  const read = deviceText(raw as unknown as DeviceRead);
+  run("UPDATE patient_documents SET filed_at = ?, title = ? WHERE id = ?", t, `Device photo${read ? `: ${read.label}` : ""}`.slice(0, 120), docId); // nothing for the assistant to file
+  if (!read) {
+    sendWhatsApp({ userId, patientId: pid, at: t + 1000, kind: "reply", body: "📷 I can see a health device, but I can't read the numbers clearly. Please type them, for example “BP 138/86” or “sugar 110”." });
+    return true;
+  }
+  if (!get("SELECT 1 FROM convo_state WHERE user_id = ?", userId)) run("INSERT INTO convo_state(user_id, state, data) VALUES(?, 'clarify', ?)", userId, JSON.stringify([{ label: "Yes, log it", text: read.text }]));
+  sendWhatsApp({ userId, patientId: pid, at: t + 1000, kind: "reply", body: `📷 I read this as: *${read.label}*.\nIs that right?`, quick: ["Yes, log it", "No"] });
+  return true;
 }
