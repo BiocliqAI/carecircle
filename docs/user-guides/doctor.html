@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CareCircle guide for doctors</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Fraunces:opsz,wght,SOFT,WONK@9..144,500..700,100,1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body style="--accent:#24478F">
+<header class="bar"><div class="bar-in">
+  <a class="brand" href="index.html"><i></i>CareCircle guides</a>
+  <nav><a href="index.html">Start</a><a href="patient.html">Patient</a><a href="caregiver.html">Caregiver</a><a class="on" href="doctor.html">Doctor</a><a href="assistant.html">Assistant</a><a href="admin.html">Admin</a></nav>
+</div></header>
+
+<main class="wrap">
+<div class="hero">
+  <div class="eyebrow">Guide for doctors</div>
+  <h1>See what changed, not every message</h1>
+  <p class="lede">CareCircle watches the weeks between visits so you do not have to. Families handle the alerts. You review a short list, and at each visit you start from what actually happened at home.</p>
+  <ul class="toc">
+    <li><a href="#model"><b>1</b>How it works</a></li><li><a href="#today"><b>2</b>Your Today</a></li><li><a href="#chart"><b>3</b>The patient chart</a></li>
+    <li><a href="#visit"><b>4</b>Record a visit</a></li><li><a href="#limits"><b>5</b>Alert limits</a></li><li><a href="#other"><b>6</b>Other doctors</a></li>
+    <li><a href="#more"><b>7</b>Notes &amp; documents</a></li><li><a href="#faq"><b>8</b>Good to know</a></li>
+  </ul>
+</div>
+
+<section class="sec" id="model" style="margin-top:36px">
+  <h2><span class="n">1</span>How it works</h2>
+  <div class="flow">
+    <div class="node"><span class="em">🏠</span><b>Patient at home</b>logs on WhatsApp</div>
+    <div class="arrow">→<small>rules check your limits</small></div>
+    <div class="node"><span class="em">👪</span><b>Family responds</b>first contact, then backup</div>
+    <div class="arrow">→<small>everything is recorded</small></div>
+    <div class="node hl"><span class="em">🩺</span><b>You review</b>on your own time</div>
+  </div>
+  <div class="grid3">
+    <div class="card"><span class="em">🔕</span><h4>You are never paged</h4><p>CareCircle does not message doctors or assistants. Urgent matters are for the family and emergency services.</p></div>
+    <div class="card"><span class="em">📏</span><h4>Rules decide alerts</h4><p>Your limits trigger alerts, not AI. AI only reads messages, photos and drafts summaries for you to check.</p></div>
+    <div class="card"><span class="em">✍️</span><h4>You own the plan</h4><p>Medicines and limits change only when you (or your assistant, on your behalf) change them.</p></div>
+  </div>
+  <div class="note tip"><span class="ic">🔒</span><p>You see <b>your own patients</b>. Your assistants see every patient in the clinic.</p></div>
+</section>
+
+<section class="sec" id="today">
+  <h2><span class="n">2</span>Your Today</h2>
+  <p class="sub">After you sign in you land on <b>Today</b>. It is a short list of patients who need you, most urgent first, with one reason each.</p>
+  <figure>
+    <div class="screen"><div class="chrome"><i></i><i></i><i></i><span>carecircle · /doctor</span></div><div class="body">
+      <div style="font:600 24px var(--serif)">Good morning, Dileep</div>
+      <div style="color:#5B6B68">1 patient needs your review · families closed 2 alerts today</div>
+      <div class="mtabs" style="position:relative"><span class="pin" style="left:-6px;top:-30px">1</span><span class="on">Needs review 1</span><span>Visits this week 2</span><span>Onboarding 1</span></div>
+      <div class="m-card" style="position:relative"><span class="pin" style="left:-8px;top:-8px">2</span>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font-size:16px">A Gopal</b><span class="pill a">Needs attention</span><span style="flex:1"></span><span class="mbtn p" style="position:relative">Mark reviewed<span class="pin" style="right:-10px;top:-14px">3</span></span></div>
+        <div style="margin-top:4px;color:#3D4B48"><b>Weight up 1.6 kg in 2 days.</b> Primary caregiver handling it since 2:08 pm.</div>
+        <div style="color:#5B6B68;font-size:12.5px;margin-top:2px">Also: 2 medicine changes from Dr Ezhilan to review</div></div>
+      <div class="m-card" style="position:relative"><span class="pin" style="left:-8px;top:-8px">4</span><h6>Today in the care circles <span style="font-weight:400;color:#5B6B68;float:right">last 24 h</span></h6>
+        <div class="m-row"><span class="t">2:41 pm</span>Mom closed “weight rise” · spoke to clinic<span class="s"></span></div>
+        <div class="m-row"><span class="t">8:12 am</span>Gopal logged BP 118/65, weight 59.2<span class="s"></span></div></div>
+    </div></div>
+    <ol class="legend">
+      <li><b>Three lists.</b> <i>Needs review</i> (the main one), <i>Visits this week</i>, and <i>Onboarding</i> for patients still being set up or waiting for consent.</li>
+      <li><b>One reason per patient.</b> The highest-priority reason is shown first. Open the patient to see everything.</li>
+      <li><b>Mark reviewed.</b> Clears the patient from the list until something new happens. You can undo it.</li>
+      <li><b>Today in the care circles.</b> What families did in the last 24 hours, so you can see problems were handled.</li>
+    </ol>
+    <figcaption><b>Figure 1</b>Today, simplified. Tap a patient to open their chart.</figcaption>
+  </figure>
+</section>
+
+<section class="sec" id="chart">
+  <h2><span class="n">3</span>The patient chart</h2>
+  <p class="sub">Everything about one patient, in seven tabs. The banner on top stays with you.</p>
+  <figure>
+    <div class="screen"><div class="chrome"><i></i><i></i><i></i><span>carecircle · /patients/p_gopal</span></div><div class="body">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b style="font:600 22px var(--serif)">A Gopal</b><span class="pill k">CKD stage 4</span><span class="pill k">Heart failure</span><span class="pill r">Allergy: sulfa</span><span style="flex:1"></span><span class="mbtn">WhatsApp thread</span><span class="mbtn p" style="position:relative">Start visit 9<span class="pin" style="right:-10px;top:-14px">2</span></span></div>
+      <div class="m-card" style="display:flex;gap:18px;flex-wrap:wrap;position:relative"><span class="pin" style="left:-8px;top:-8px">1</span>
+        <div><div style="font-size:11.5px;color:#5B6B68">Treating doctor</div><b>Dr. Dileep</b></div><div><div style="font-size:11.5px;color:#5B6B68">Care circle</div><b>Mom (wife) · Durai</b></div><div><div style="font-size:11.5px;color:#5B6B68">Last visit</div><b>3 Sept · 33 days ago</b></div><div><div style="font-size:11.5px;color:#5B6B68">Next visit</div><b>Sun 11 Oct, 5 pm</b></div></div>
+      <div class="mtabs" style="position:relative"><span class="pin" style="left:-8px;top:6px">3</span><span class="on">Overview</span><span>Vitals &amp; labs</span><span>Medications</span><span>Alerts &amp; care circle</span><span>Visits &amp; notes <span class="pill b">2</span></span><span>Documents</span><span>Profile</span></div>
+      <div class="m-card" style="background:#F5F8FF;border-color:#D4DEFA;position:relative"><span class="pin" style="left:-8px;top:-8px">4</span><span style="font-size:11.5px;font-weight:700;color:#1D4ED8">OTHER DOCTOR</span> <b>Dr Ezhilan (Cardiology) · 6 Oct</b> <span style="color:#5B6B68">2 medicine changes to review.</span> <span style="color:#24478F;font-weight:700;float:right">Review</span></div>
+    </div></div>
+    <ol class="legend">
+      <li><b>Banner.</b> Allergy and diagnoses in chips, care circle, last and next visit.</li>
+      <li><b>Start visit.</b> Opens the visit builder (section 4). The first one says “Record Visit 1”.</li>
+      <li><b>Seven tabs.</b> A badge shows what needs you.</li>
+      <li><b>Strips under the banner.</b> Open alerts, and visits to other doctors waiting for review.</li>
+    </ol>
+    <figcaption><b>Figure 2</b>Open alert strips always say who is handling it. The clinic is not paged.</figcaption>
+  </figure>
+  <div class="tw"><table class="t">
+    <tr><th>Tab</th><th>What you find</th></tr>
+    <tr><td>Overview</td><td>Since last visit: adherence, BP, weight and sugar trends, creatinine; current medicines; latest labs; AI summary.</td></tr>
+    <tr><td>Vitals &amp; labs</td><td>Charts against visit markers. For kidney patients: fluid, urine, dry-weight band, lab trends and entry.</td></tr>
+    <tr><td>Medications</td><td>Current plan, who prescribed each medicine, a 14-day adherence grid, and changes reported by other doctors.</td></tr>
+    <tr><td>Alerts &amp; care circle</td><td>Every alert with its full timeline, who responded and what they did; the care circle.</td></tr>
+    <tr><td>Visits &amp; notes</td><td>Past plans, <b>visits to other doctors</b>, clinical notes, and the full timeline.</td></tr>
+    <tr><td>Documents</td><td>Photos and PDFs from the family and clinic. “Read with AI” extracts values.</td></tr>
+    <tr><td>Profile</td><td>Details, baseline from onboarding, care circle, treating doctor.</td></tr>
+  </table></div>
+</section>
+
+<section class="sec" id="visit">
+  <h2><span class="n">4</span>Record a visit</h2>
+  <p class="sub">Press <b>Start visit</b>. The visit builder turns your consultation into a care plan in three steps. You check every line before it reaches the patient.</p>
+  <figure>
+    <div class="flow">
+      <div class="node hl"><span class="em">📷 🎙️ ⌨️</span><b>1 · Capture</b>prescription photo, listen to the consultation, dictate: any mix</div>
+      <div class="arrow">→</div>
+      <div class="node hl"><span class="em">🔍</span><b>2 · Review draft</b>every line shows its source; fix what is flagged</div>
+      <div class="arrow">→</div>
+      <div class="node hl"><span class="em">📤</span><b>3 · Send</b>preview what the patient gets, then confirm</div>
+    </div>
+    <figcaption><b>Figure 3</b>You can skip any source. A printed prescription alone is enough.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li><b>Capture.</b>Add the <i>Prescription photo</i>, press <i>Listen to consultation</i> while you talk with the patient and family, and/or <i>Dictate</i> your advice. Then press <b>Build draft</b>. If your assistant prepared the visit, their flags and the family's questions are included.</li>
+    <li><b>Review the draft.</b>Medicines are marked new, changed, same or stopped. Each line says where it came from (prescription, conversation, dictation, or carried over). Unclear numbers are highlighted. If the prescription and your spoken words disagree, you choose which is right, and <b>conflicts must be resolved before sending</b>. A taper (“40 mg for 2 weeks, then 20 mg”) becomes two steps automatically.</li>
+    <li><b>Send.</b>You see the exact WhatsApp message the patient will receive: medicines with timings, what to send, limits, next visit, and answers to the family's questions. Confirm, and reminders start. The care circle is told that the plan was updated.</li>
+  </ol>
+  <div class="note care"><span class="ic">🧐</span><p><b>AI drafts, you decide.</b> The builder never invents medicines, doses or limits. It quotes the sentence it relied on. If something is missing from your sources, it is left out, not guessed.</p></div>
+  <p>The first visit is pre-filled from the baseline your assistant collected: current medicines, intake vitals and allergies. A simpler manual form is also available, where you type the plan field by field.</p>
+</section>
+
+<section class="sec" id="limits">
+  <h2><span class="n">5</span>Alert limits and timers</h2>
+  <p class="sub">Part of each plan. When a reading crosses a limit, the care circle is alerted, not you. Defaults below; change them per patient in the visit.</p>
+  <div class="tw"><table class="t">
+    <tr><th>Reading</th><th>Default alert</th></tr>
+    <tr><td>Blood pressure</td><td>above 150 / 95, or systolic below 100</td></tr>
+    <tr><td>Pulse</td><td>above 110 or below 50</td></tr>
+    <tr><td>Blood sugar</td><td>above 250 or below 70 mg/dL</td></tr>
+    <tr><td>Oxygen (SpO₂)</td><td>below 92%</td></tr>
+    <tr><td>Weight</td><td>gain of 2 kg within 3 days (kidney and heart-failure plans use a dry-weight band)</td></tr>
+    <tr><td>Pain score</td><td>7 or more</td></tr>
+  </table></div>
+  <div class="grid3">
+    <div class="card"><h4>⏱ Urgent</h4><p>Caregiver has <b>15 min</b> before the next level is called.</p></div>
+    <div class="card"><h4>⏱ Deviation</h4><p><b>60 min</b> for a reading outside limits.</p></div>
+    <div class="card"><h4>⏱ Missed task</h4><p><b>120 min</b> for medicines or readings not reported.</p></div>
+  </div>
+  <div class="note sos"><span class="ic">🛟</span><p><b>Emergency rules always apply</b>, even before Visit 1: BP 180/110 or higher, oxygen below 88%, sugar below 54, chest pain, fainting, or a help request. They alert the care circle straight away.</p></div>
+</section>
+
+<section class="sec" id="other">
+  <h2><span class="n">6</span>When the patient sees another doctor</h2>
+  <p class="sub">Specialists change medicines between your visits. Families can record these visits on WhatsApp or on their page. You see them as a strip on the chart and as a panel under <b>Visits &amp; notes</b>.</p>
+  <figure>
+    <div class="screen"><div class="chrome"><i></i><i></i><i></i><span>carecircle · Visits &amp; notes</span></div><div class="body">
+      <div class="m-card" style="margin-top:0"><span class="pin" style="left:-8px;top:-8px">1</span><h6>Visits to other doctors</h6>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>Dr Ezhilan</b><span class="pill k">Cardiology</span><span style="color:#5B6B68;font-size:12.5px">Apollo · reported by Mom via WhatsApp · next visit Tue 27 Oct</span></div>
+        <div style="margin:6px 0;color:#3D4B48;font-size:13px">ADVICE Low salt. Daily weight check. · TESTS ECHO, Serum K+, Creatinine · 📄 prescription_apollo.jpg</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr style="color:#5B6B68;text-align:left"><th>Medicine</th><th>Reported</th><th>Dose</th><th>Times</th><th></th></tr>
+          <tr style="border-top:1px solid #EDF1EF"><td style="padding:7px 4px"><b>Lasix</b><br><span style="color:#5B6B68">dose changed</span></td><td>Morning 40 → 20 mg</td><td><span class="mbtn" style="padding:3px 8px;position:relative">20 mg<span class="pin" style="right:-12px;top:-14px">2</span></span></td><td><span class="mbtn" style="padding:3px 8px">08:00, 16:00</span></td><td><span class="mbtn p" style="position:relative">Apply to plan<span class="pin" style="right:-10px;top:-14px">3</span></span> Note only · Reject</td></tr>
+          <tr style="border-top:1px solid #EDF1EF"><td style="padding:7px 4px"><b>Nifedipine</b><br><span style="color:#5B6B68">started · not in plan</span></td><td>10 mg three times a day</td><td><span class="mbtn" style="padding:3px 8px">10 mg</span></td><td><span class="mbtn" style="padding:3px 8px">08:00, 14:00, 20:00</span></td><td><span class="mbtn p">Apply to plan</span> Note only · Reject</td></tr>
+        </table></div>
+    </div></div>
+    <ol class="legend">
+      <li><b>Each reported change</b>, in the family's words, with the prescription photo alongside.</li>
+      <li><b>Edit dose and times</b> before applying. Type “40 mg / 20 mg” for different doses at two times.</li>
+      <li><b>Apply to plan</b> amends the current plan (no new visit number), rebuilds future reminders and tells the patient and family. <b>Note only</b> keeps it on record without changing reminders. <b>Reject</b> says it will not be used.</li>
+    </ol>
+    <figcaption><b>Figure 4</b>Until you apply a change, reminders stay exactly as you set them. The family sees “Waiting for Dr. Dileep”.</figcaption>
+  </figure>
+  <div class="note care"><span class="ic">👀</span><p>If a change looks unsafe, do not apply it. Reach the family yourself. When several changes arrive in one visit, <b>Apply all</b> handles them together. Stopping a medicine that is not in the plan will say so.</p></div>
+</section>
+
+<section class="sec" id="more">
+  <h2><span class="n">7</span>Notes, documents and summaries</h2>
+  <div class="grid2">
+    <div class="card"><span class="em">📝</span><h4>Clinical notes</h4><p>Under <b>Visits &amp; notes</b>. Visible to the care team only, never to the patient or family. Type or press <b>Dictate</b>; dictated text is added to the box so you can check it before saving. You can only edit notes you wrote; every change is audited.</p></div>
+    <div class="card"><span class="em">📄</span><h4>Documents</h4><p>Photos, PDFs and scans up to 5 MB, by category (prescription, lab, discharge, imaging, voice, other). “Read a prescription or report with AI” pulls out values for you to confirm.</p></div>
+    <div class="card"><span class="em">✨</span><h4>AI summary</h4><p>One screen on Overview that explains what changed since the last visit, in plain sentences, with points to discuss. It is a draft for you, built from the record.</p></div>
+    <div class="card"><span class="em">⇄</span><h4>Compare visits</h4><p>Side-by-side view of two visits: plan, vitals and what changed, so you can see what worked.</p></div>
+  </div>
+</section>
+
+<section class="sec" id="faq">
+  <h2><span class="n">8</span>Good to know</h2>
+  <div class="card"><h4>I am not getting WhatsApp alerts.</h4><p>That is by design. Alerts go to the family. You see the same events on Today, under the patient's alerts, and in the activity feed.</p></div>
+  <div class="card" style="margin-top:12px"><h4>Can my assistant do things for me?</h4><p>Your assistants onboard patients, collect the baseline, prepare visits, file documents and chase consent. They can also apply or note other doctors' changes. You are still the one who records visits and sets limits. See <a href="assistant.html">the assistant's guide</a>.</p></div>
+  <div class="card" style="margin-top:12px"><h4>A caregiver declined or stopped answering.</h4><p>Your assistant gets a “Care circle not responding” task and can update the care circle (maximum two people: a primary and a backup).</p></div>
+</section>
+
+<footer class="foot"><span>CareCircle guide for doctors</span><span><a href="caregiver.html">← Caregivers</a> · <a href="assistant.html">Next: assistants →</a></span></footer>
+</main>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CareCircle guide for clinic admins</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Fraunces:opsz,wght,SOFT,WONK@9..144,500..700,100,1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body style="--accent:#8A4B08">
+<header class="bar"><div class="bar-in">
+  <a class="brand" href="index.html"><i></i>CareCircle guides</a>
+  <nav><a href="index.html">Start</a><a href="patient.html">Patient</a><a href="caregiver.html">Caregiver</a><a href="doctor.html">Doctor</a><a href="assistant.html">Assistant</a><a class="on" href="admin.html">Admin</a></nav>
+</div></header>
+
+<main class="wrap">
+<div class="hero">
+  <div class="eyebrow">Guide for clinic admins</div>
+  <h1>Set up the clinic once, then step back</h1>
+  <p class="lede">The admin creates the clinic, adds doctors and assistants, and decides whether AI assistance is on. You do not see patient information, and you never need to.</p>
+  <ul class="toc">
+    <li><a href="#clinic"><b>1</b>Create the clinic</a></li><li><a href="#staff"><b>2</b>Add your team</a></li><li><a href="#ai"><b>3</b>AI assistance</a></li>
+    <li><a href="#golive"><b>4</b>Go live</a></li><li><a href="#afresh"><b>5</b>Start afresh</a></li><li><a href="#care"><b>6</b>Keeping it safe</a></li>
+  </ul>
+</div>
+
+<div class="note tip" style="margin-top:36px"><span class="ic">🔐</span><p>The admin page holds <b>no patient data</b>. It manages the clinic and its staff only.</p></div>
+
+<section class="sec" id="clinic">
+  <h2><span class="n">1</span>Create the clinic</h2>
+  <p class="sub">On your first sign-in you see “Set up your clinic”. Three boxes, one button.</p>
+  <figure>
+    <div class="screen"><div class="chrome"><i></i><i></i><i></i><span>carecircle · /admin</span></div><div class="body">
+      <div style="font:600 24px var(--serif)">Set up your clinic</div>
+      <div style="color:#5B6B68">Create the clinic, then add its doctors and assistants.</div>
+      <div class="m-card" style="position:relative"><span class="pin" style="left:-8px;top:-8px">1</span><h6>1 · Clinic <span style="font-weight:400;color:#5B6B68;float:right">Shown in WhatsApp messages to patients and families</span></h6>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          <div><div style="font-size:11.5px;font-weight:700;color:#3D4B48">Clinic name *</div><div style="border:1px solid #CFD8D5;border-radius:8px;padding:7px 9px;background:#fff">Sunrise Heart &amp; Kidney Clinic</div></div>
+          <div><div style="font-size:11.5px;font-weight:700;color:#3D4B48">Area / address</div><div style="border:1px solid #CFD8D5;border-radius:8px;padding:7px 9px;background:#fff">Jayanagar, Bengaluru</div></div>
+          <div><div style="font-size:11.5px;font-weight:700;color:#3D4B48">Front-desk phone</div><div style="border:1px solid #CFD8D5;border-radius:8px;padding:7px 9px;background:#fff">+91 80 …</div></div></div>
+        <div style="margin-top:10px"><span class="mbtn p">Create clinic →</span></div></div>
+    </div></div>
+    <figcaption><b>Figure 1</b>The clinic name appears in the welcome message and in alerts, so use the name families know.</figcaption>
+  </figure>
+</section>
+
+<section class="sec" id="staff">
+  <h2><span class="n">2</span>Add doctors and assistants</h2>
+  <p class="sub">Below the clinic details, there are two lists: <b>Doctors</b> and <b>Assistants</b>.</p>
+  <div class="grid2">
+    <div class="card"><span class="em">🩺</span><h4>Doctors</h4><p>Each doctor sees <b>only their own patients</b>. They record visits and set alert limits.</p></div>
+    <div class="card"><span class="em">🧑‍💼</span><h4>Assistants (PAs)</h4><p>Onboard patients and see <b>every patient</b> in the clinic. They prepare visits and file documents.</p></div>
+  </div>
+  <ol class="steps">
+    <li><b>Press “+ Add doctor” (or assistant).</b></li>
+    <li><b>Fill in the form.</b>Full name and mobile are required. Also: specialty or designation, email, and for doctors the medical registration number (for example KMC 123456).</li>
+    <li><b>Press “Add doctor”.</b>They can now sign in. Use <i>Edit</i> to change details, or <i>Remove</i> (you will be asked to confirm). You cannot remove yourself.</li>
+  </ol>
+  <div class="note care"><span class="ic">⚠️</span><p>A doctor who is still the treating doctor for patients cannot be removed. Reassign those patients first (a doctor or assistant can do this from each patient's profile).</p></div>
+</section>
+
+<section class="sec" id="ai">
+  <h2><span class="n">3</span>AI assistance (Gemini)</h2>
+  <p class="sub">Press <b>✨ Configure Gemini</b> and paste your API key. The page shows <b>On</b> with the model name, or <b>Off · rule-based</b>.</p>
+  <div class="tw"><table class="t">
+    <tr><th>With AI on</th><th>With AI off</th></tr>
+    <tr><td>Understands free-text, voice notes and other Indian languages. Reads prescription and lab photos. Drafts the pre-visit brief and care-plan draft. Has natural conversations about other doctors' visits.</td><td>Still works. Messages are read with fixed rules, and the assistant asks fixed questions in order. Photos are filed but not read.</td></tr>
+  </table></div>
+  <div class="note tip"><span class="ic">📏</span><p><b>Alerts never depend on AI.</b> Rules and the doctor's limits decide every alert. AI only reads and drafts. A person checks anything it drafts before it reaches a patient or the record.</p></div>
+  <p>Get a key from Google AI Studio. The key is stored in the clinic's database. Do not share it in chat or email.</p>
+</section>
+
+<section class="sec" id="golive">
+  <h2><span class="n">4</span>Go live: who does what</h2>
+  <p class="sub">The first time, Today shows a “Getting started” checklist to your team. It ticks itself off.</p>
+  <div class="ladder">
+    <div class="rung"><div class="who">You<small>admin</small></div><div class="what"><b>1 · Create the clinic and add the team</b></div></div>
+    <div class="rung"><div class="who">Assistant</div><div class="what"><b>2 · Onboard a patient and care circle, 3 · capture the baseline</b></div></div>
+    <div class="rung"><div class="who">Family</div><div class="what"><b>4 · Reply YES to the consent message on WhatsApp</b></div></div>
+    <div class="rung"><div class="who">Doctor</div><div class="what"><b>5 · Record Visit 1 and the care plan</b></div></div>
+    <div class="rung last"><div class="who">Patient<small>at home</small></div><div class="what"><b>6 · First log from home, 7 · first care-circle alert</b>The system is working end to end.</div></div>
+  </div>
+</section>
+
+<section class="sec" id="afresh">
+  <h2><span class="n">5</span>Start afresh</h2>
+  <div class="note sos"><span class="ic">🧨</span><div><p><b class="big">This erases everything.</b></p><p>The clinic, staff, patients, messages and records are all removed. It cannot be undone. To confirm you must type the clinic's exact name. It is meant for demos and fresh starts, never for a clinic in use.</p></div></div>
+</section>
+
+<section class="sec" id="care">
+  <h2><span class="n">6</span>Keeping it safe</h2>
+  <div class="grid2">
+    <div class="card"><span class="em">💾</span><h4>Back up regularly</h4><p>Whoever runs the server should take backups and test a restore. See the README: <code>npm run clinic:backup</code>.</p></div>
+    <div class="card"><span class="em">🔑</span><h4>Protect the site</h4><p>Ask your technical contact to set a site password (<code>APP_PASSWORD</code>) before sharing the link outside the clinic.</p></div>
+    <div class="card"><span class="em">👥</span><h4>Keep staff current</h4><p>Remove staff who leave. Check that every doctor has a medical registration number.</p></div>
+    <div class="card"><span class="em">📣</span><h4>Tell patients what to expect</h4><p>Share the <a href="patient.html">patient</a> and <a href="caregiver.html">caregiver</a> guides at onboarding.</p></div>
+  </div>
+  <div class="note care"><span class="ic">📌</span><p>This version uses a simple persona picker for sign-in and a WhatsApp simulator. Production sign-in and the real WhatsApp Business connection are planned. See <code>docs/ROADMAP.md</code>.</p></div>
+</section>
+
+<footer class="foot"><span>CareCircle guide for clinic admins</span><span><a href="assistant.html">← Assistants</a> · <a href="index.html">Back to start ↑</a></span></footer>
+</main>
+</body>
+</html>

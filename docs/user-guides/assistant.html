@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CareCircle guide for assistants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Fraunces:opsz,wght,SOFT,WONK@9..144,500..700,100,1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body style="--accent:#6B3FA0">
+<header class="bar"><div class="bar-in">
+  <a class="brand" href="index.html"><i></i>CareCircle guides</a>
+  <nav><a href="index.html">Start</a><a href="patient.html">Patient</a><a href="caregiver.html">Caregiver</a><a href="doctor.html">Doctor</a><a class="on" href="assistant.html">Assistant</a><a href="admin.html">Admin</a></nav>
+</div></header>
+
+<main class="wrap">
+<div class="hero">
+  <div class="eyebrow">Guide for physician assistants</div>
+  <h1>You keep the clinic ready</h1>
+  <p class="lede">You set patients up, make sure everyone has agreed, prepare each visit and tidy what families send in. When you do this well, the doctor spends visits deciding, not hunting for information.</p>
+  <ul class="toc">
+    <li><a href="#queue"><b>1</b>Your Today queue</a></li><li><a href="#onboard"><b>2</b>Onboard a patient</a></li><li><a href="#baseline"><b>3</b>Baseline from documents</a></li>
+    <li><a href="#consent"><b>4</b>Consent</a></li><li><a href="#prep"><b>5</b>Prepare a visit</a></li><li><a href="#inbox"><b>6</b>Documents &amp; changes</a></li>
+    <li><a href="#circle"><b>7</b>Care circle</a></li><li><a href="#day"><b>8</b>A good day</a></li>
+  </ul>
+</div>
+
+<section class="sec" id="queue" style="margin-top:36px">
+  <h2><span class="n">1</span>Your Today queue</h2>
+  <p class="sub">Today is a work list of things that need a person. Do them top to bottom. When a task is finished it disappears.</p>
+  <figure>
+    <div class="screen"><div class="chrome"><i></i><i></i><i></i><span>carecircle · /doctor</span></div><div class="body">
+      <div style="font:600 24px var(--serif)">Good morning, Priya</div>
+      <div class="mtabs" style="position:relative"><span class="pin" style="left:-6px;top:-30px">1</span><span class="on">To do 5</span><span>Onboarding</span><span>Visits</span><span>Done today</span></div>
+      <div class="m-card" style="position:relative"><span class="pin" style="left:-8px;top:-8px">2</span>
+        <div class="m-row"><span class="pill k" style="background:#FEF0E1;color:#9A4A06">Consent</span><div><b>Sunita Sharma</b> · Consent pending, 2 days<div style="color:#5B6B68;font-size:12.5px">Daughter has not replied YES</div></div><span class="s"><span class="mbtn">Call</span> <span class="mbtn p">Resend</span></span></div>
+        <div class="m-row"><span class="pill" style="background:#E8EEFB;color:#1D4ED8">Visit</span><div><b>A Gopal</b> · Visit on Sunday<div style="color:#5B6B68;font-size:12.5px">Brief not marked ready</div></div><span class="s"><span class="mbtn p">Prepare visit</span></span></div>
+        <div class="m-row"><span class="pill" style="background:#F3EDFA;color:#6B3FA0">Medicine change</span><div><b>A Gopal</b> · Dr Ezhilan (Cardiology): Lasix, Nifedipine<div style="color:#5B6B68;font-size:12.5px">Reported by Mom; reminders unchanged until the plan is updated</div></div><span class="s"><span class="mbtn p">Review &amp; apply</span></span></div>
+        <div class="m-row"><span class="pill k">Document</span><div><b>A Gopal</b> · “blood_report.jpg” sent on WhatsApp</div><span class="s"><span class="mbtn p">Review &amp; file</span></span></div>
+        <div class="m-row"><span class="pill r">Circle</span><div><b>Ramesh Kumar</b> · Care circle not responding<div style="color:#5B6B68;font-size:12.5px">Primary caregiver missed 4 of 5 alerts</div></div><span class="s"><span class="mbtn p">Manage circle</span></span></div></div>
+      <div class="m-card" style="position:relative"><span class="pin" style="left:-8px;top:-8px">3</span><h6>Getting started <span class="pill b" style="float:right">4/7</span></h6><div style="font-size:13px;color:#3D4B48">Next: Consent on WhatsApp · Record Visit 1 and the care plan · First WhatsApp log from home</div></div>
+    </div></div>
+    <ol class="legend">
+      <li><b>Tabs.</b> Everything to do, then onboarding in progress, visits coming up, and what you finished today.</li>
+      <li><b>Each task</b> says whose, why, and has the one button that does it.</li>
+      <li><b>Getting started.</b> In a new clinic, a checklist of go-live steps shows until all are done.</li>
+    </ol>
+    <figcaption><b>Figure 1</b>Today, simplified. Seven kinds of task can appear: onboarding, baseline, consent, visit, document, medicine change, care circle.</figcaption>
+  </figure>
+</section>
+
+<section class="sec" id="onboard">
+  <h2><span class="n">2</span>Onboard a patient</h2>
+  <p class="sub">Press <b>Onboard patient</b> (sidebar). Four steps. Your progress is saved as a draft, so you can stop and come back.</p>
+  <figure>
+    <div class="flow">
+      <div class="node hl"><span class="em">1</span><b>Patient</b>name, age, sex, WhatsApp number, treating doctor, conditions, address</div>
+      <div class="arrow">→</div>
+      <div class="node hl"><span class="em">2</span><b>Care circle</b>primary and backup caregiver</div>
+      <div class="arrow">→</div>
+      <div class="node hl"><span class="em">3</span><b>Baseline</b>history, vitals, medicines, labs</div>
+      <div class="arrow">→</div>
+      <div class="node hl"><span class="em">4</span><b>Review</b>check everything, then create</div>
+    </div>
+    <figcaption><b>Figure 2</b>You can open any earlier step from the stepper to fix something. “Skip for now” on the baseline is fine if you do not have the papers.</figcaption>
+  </figure>
+  <ol class="steps">
+    <li><b>Patient.</b>Use the number the patient has on WhatsApp. Two patients cannot share a number. Pick the treating doctor.</li>
+    <li><b>Care circle.</b>Add one or two people (maximum two). Level 1 is contacted first, Level 2 is the backup. For each give name, relationship and WhatsApp number. Keep <i>dashboard access</i> ticked if they should see the patient's page.</li>
+    <li><b>Baseline.</b>Profile, intake vitals, medical history, lifestyle, current medicines (from any doctor) and recent labs. This fills Visit 1 for the doctor and starts the lab trend lines. Baseline labs never raise alerts.</li>
+    <li><b>Review and create.</b>Check each card (every one has an Edit button). When you create the patient, welcome and consent messages go out on WhatsApp.</li>
+  </ol>
+  <div class="note tip"><span class="ic">💾</span><p>Interrupted? Your drafts are listed on Today (Onboarding). Open one to resume at the step you left.</p></div>
+</section>
+
+<section class="sec" id="baseline">
+  <h2><span class="n">3</span>Fill the baseline from old documents</h2>
+  <p class="sub">Discharge summaries, old prescriptions and lab reports are in the baseline step as <b>✨ Fill from documents</b>.</p>
+  <figure>
+    <div class="flow">
+      <div class="node"><span class="em">📷</span><b>Add photos or PDFs</b>of old records</div>
+      <div class="arrow">→</div>
+      <div class="node"><span class="em">✨</span><b>AI reads them</b>copying only what is written</div>
+      <div class="arrow">→</div>
+      <div class="node hl"><span class="em">👀</span><b>You check every value</b>on the form, then save</div>
+    </div>
+    <figcaption><b>Figure 3</b>Nothing is saved until you press save.</figcaption>
+  </figure>
+  <div class="note care"><span class="ic">⚠️</span><div><p><b>You are the safety check.</b> Read each field against the paper. The reader lists warnings for anything it was unsure of (blurred handwriting, two documents that disagree).</p><p>Medicines the documents show as stopped go to history, not to current medicines.</p></div></div>
+</section>
+
+<section class="sec" id="consent">
+  <h2><span class="n">4</span>Make sure everyone has agreed</h2>
+  <p>After creation, the patient and each caregiver gets a WhatsApp message asking them to reply <span class="say">YES</span>. Until they do, the patient shows under <b>Onboarding</b> and a <b>Consent</b> task appears.</p>
+  <div class="grid2">
+    <div class="card"><span class="em">🤖</span><h4>CareCircle follows up first</h4><p>It sends reminders on its own after a while.</p></div>
+    <div class="card"><span class="em">📞</span><h4>Then you</h4><p>Press <b>Call</b> to phone them, or <b>Resend</b> to send the reminder again.</p></div>
+  </div>
+  <p>If a caregiver replies <span class="say">NO</span>, the clinic is told and you get a task, so you can ask the family for someone else.</p>
+</section>
+
+<section class="sec" id="prep">
+  <h2><span class="n">5</span>Prepare a visit</h2>
+  <p class="sub">Before a visit, press <b>Prepare visit</b> on the patient or from a visit task. This gives the doctor a head start.</p>
+  <ol class="steps">
+    <li><b>Look at what changed.</b>The page shows the care plan, since-last-visit trends, alerts and reported changes from other doctors.</li>
+    <li><b>Flag what matters.</b>Press <b>Flag for doctor</b> next to a reported medicine change, or add your own flag (“skin rash since Tuesday”, “family wants to discuss diet”). Add the questions the family wants to ask.</li>
+    <li><b>Mark ready.</b>Press <b>Mark ready for Dr …</b>. The doctor sees “brief ready”. You can press <i>Undo ready</i> if something changes. The doctor can always edit.</li>
+  </ol>
+  <div class="note tip"><span class="ic">🧠</span><p>The doctor's visit builder includes your flags and the family's questions, and answers them in the plan sent to the family.</p></div>
+</section>
+
+<section class="sec" id="inbox">
+  <h2><span class="n">6</span>Documents and other doctors' changes</h2>
+  <h3>Documents the family sends</h3>
+  <p>Photos and PDFs sent on WhatsApp wait on Today as <b>Document to file</b> until you press <b>Review &amp; file</b>. Give each a proper title and category (prescription, lab report, discharge summary, imaging, other), add notes, and file it. Files you upload yourself are filed at once. Limit 5 MB each.</p>
+  <h3>Changes reported by other doctors</h3>
+  <p>When the family tells CareCircle that a specialist changed a medicine, you get a task. The reminders do <b>not</b> change on their own.</p>
+  <figure>
+    <div class="flow">
+      <div class="node"><span class="em">💬</span><b>Family reports</b>WhatsApp or their page</div>
+      <div class="arrow">→</div>
+      <div class="node hl"><span class="em">🧑‍💼</span><b>You check</b>with the prescription photo</div>
+      <div class="arrow">→<small>Apply to plan</small></div>
+      <div class="node"><span class="em">⏰</span><b>Reminders update</b>patient and family are told</div>
+    </div>
+    <figcaption><b>Figure 4</b>You can also choose <b>Note only</b> (keep on record, no change) or <b>Reject</b>, or <b>Flag for doctor</b> if you are unsure.</figcaption>
+  </figure>
+  <div class="note care"><span class="ic">✋</span><p>Open the prescription photo and compare it with what was reported. Edit the dose or times if needed before pressing Apply. If a change looks risky or confusing, flag it for the doctor instead.</p></div>
+</section>
+
+<section class="sec" id="circle">
+  <h2><span class="n">7</span>Fix a care circle that is not responding</h2>
+  <p>If a caregiver misses most alerts (three or more, over 60%, in two weeks), a <b>Care circle</b> task appears naming who and how many. Press <b>Manage circle</b>.</p>
+  <ul>
+    <li>Check the phone number and that WhatsApp is working.</li>
+    <li>Ask the family whether someone else should be the contact.</li>
+    <li>Swap or replace a caregiver. A circle has at most two people.</li>
+  </ul>
+</section>
+
+<section class="sec" id="day">
+  <h2><span class="n">8</span>A good day</h2>
+  <div class="ladder">
+    <div class="rung"><div class="who">Morning<small>10 min</small></div><div class="what"><b>Clear Today</b>Consent chases, documents, other-doctor changes.</div></div>
+    <div class="rung"><div class="who">Before visits<small>per patient</small></div><div class="what"><b>Prepare visit</b>Flag changes, add family questions, mark ready.</div></div>
+    <div class="rung"><div class="who">New patients<small>as needed</small></div><div class="what"><b>Onboard</b>Save drafts if interrupted. Confirm consent within a day or two.</div></div>
+    <div class="rung last"><div class="who">Evening<small>5 min</small></div><div class="what"><b>Glance at “Done today”</b>Anything left? Anyone waiting for a call?</div></div>
+  </div>
+  <div class="note tip"><span class="ic">🙋</span><p>You see <b>every patient</b> in the clinic. The doctor records visits and sets alert limits. If you are unsure of anything clinical, flag it for the doctor.</p></div>
+</section>
+
+<footer class="foot"><span>CareCircle guide for assistants</span><span><a href="doctor.html">← Doctors</a> · <a href="admin.html">Next: clinic admin →</a></span></footer>
+</main>
+</body>
+</html>
