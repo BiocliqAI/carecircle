@@ -96,6 +96,49 @@ export function DetailsCard({ p, onChange }: { p: ProfilePatient; onChange: () =
   );
 }
 
+/** Removes the patient and their whole record, after typing their name. Shown to the patient's doctor only. */
+export function DeletePatientCard({ p }: { p: ProfilePatient }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const matches = typed.trim().toLowerCase() === p.name.trim().toLowerCase();
+
+  async function remove() {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/api/patients/${p.id}`, { method: "DELETE", body: { confirmName: typed } });
+      window.location.assign("/patients");
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h3>Delete patient</h3>
+        {!open && <button className="btn sm" onClick={() => setOpen(true)}>Delete…</button>}
+      </div>
+      {!open ? (
+        <p className="muted">Removes {p.name} and their whole record. This can't be undone.</p>
+      ) : (
+        <div className="stack">
+          <div className="alert bad"><div>This permanently deletes {p.name}&rsquo;s visits, readings, labs, alerts, documents, notes, care circle and WhatsApp conversation. It can&rsquo;t be undone.</div></div>
+          <label className="f">Type <b>{p.name}</b> to confirm<input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus /></label>
+          {err && <div className="alert bad">{err}</div>}
+          <div className="row">
+            <button className="btn danger" disabled={!matches || busy} onClick={remove}>{busy ? <span className="spin" /> : null} Delete {p.name}</button>
+            <button className="btn" onClick={() => { setOpen(false); setTyped(""); setErr(null); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 interface CgDraft { id?: string; name: string; relation: string; phone: string; dashboard: boolean }
 
 export function CareCircleCard({ pid, patient, caregivers, consents, onChange }: { pid: string; patient: ProfilePatient; caregivers: ProfileCaregiver[]; consents: ConsentView[]; onChange: () => void }) {

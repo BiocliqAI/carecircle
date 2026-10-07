@@ -7,7 +7,7 @@ import { intervalSummary, longRange, medChanges, type EscalationView } from "@/l
 import { canView, err, json, ready, sessionUser } from "@/lib/server";
 import { getBaseline } from "@/lib/clinic";
 import { getPrep } from "@/lib/prep";
-import { listDocuments, listNotes, updatePatient, type PatientEdit } from "@/lib/records";
+import { deletePatient, listDocuments, listNotes, updatePatient, type PatientEdit } from "@/lib/records";
 import { DAY } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -123,4 +123,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   } catch (e) {
     return err((e as Error).message, 409);
   }
+}
+
+// Deletes the patient and their whole record. Only their own doctor or the clinic admin, and the name must be typed.
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  await ready();
+  const { id } = await ctx.params;
+  const user = await sessionUser();
+  const p = getPatient(id);
+  if (!p) return err("Not found", 404);
+  if (!user || !(user.role === "ADMIN" || (user.role === "DOCTOR" && p.doctor_id === user.id))) return err("Only the patient's doctor or the clinic admin can delete a patient", 403);
+  const { confirmName } = (await req.json().catch(() => ({}))) as { confirmName?: string };
+  if ((confirmName ?? "").trim().toLowerCase() !== p.name.trim().toLowerCase()) return err(`Type the patient's name (${p.name}) to confirm`, 400);
+  return json({ ok: true, ...deletePatient(id, now(), user.id) });
 }
