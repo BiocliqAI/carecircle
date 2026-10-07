@@ -53,7 +53,7 @@ Rules for baseline data:
 
 **Password gate:** set `APP_PASSWORD` (and optionally `APP_USER`) to require HTTP Basic auth on every page and API route (`proxy.ts`). It's off when unset.
 
-**Still demo-grade:** sign-in is the persona switcher, WhatsApp is the simulator, and everything is single-clinic SQLite on this Mac. See `docs/ROADMAP.md` for the production path (real auth, WhatsApp Business API, Postgres).
+**Still demo-grade:** sign-in is the persona switcher, WhatsApp is the simulator (real WhatsApp via Twilio is available in live mode, see `docs/WHATSAPP_GO_LIVE.md`), and everything is single-clinic SQLite on this Mac. See `docs/ROADMAP.md` for the production path (real auth, WhatsApp Business API, Postgres).
 
 ## Deploy to Railway (public test instance)
 
@@ -71,6 +71,7 @@ The repo root contains `docs/` and `web/`; the app lives in `web/`. `web/railway
    | `APP_USER` | optional, defaults to `carecircle` |
    | `GEMINI_API_KEY` | optional, enables AI parsing |
    | `NODE_VERSION` | `22` |
+   | `TWILIO_*`, `PUBLIC_BASE_URL` | optional, real WhatsApp: see [`docs/WHATSAPP_GO_LIVE.md`](../docs/WHATSAPP_GO_LIVE.md) |
 
 5. **Settings → Networking → Generate domain.** Open it, sign in with `APP_USER` / `APP_PASSWORD`, and set up the clinic.
 
@@ -79,6 +80,7 @@ Notes:
 - **Replicas:** keep exactly 1. The database is a single SQLite file on the volume.
 - **Scheduler:** a background timer (`instrumentation.ts`) runs it every minute, so reminders and escalations fire without traffic.
 - **Backups:** run `npm run clinic:backup` from a Railway shell, or download `/data/clinic.db`.
+- **Importing A Gopal's history** (anonymised spreadsheet, baseline 13 Aug 2025) into a patient created in the app: from a Railway shell, `npm run clinic:backup`, then `npm run clinic:import-appa -- <patient-id>` (the id is in the patient's page URL, `/patients/<id>`). Re-running replaces the earlier import. Nothing is sent; reminders follow the current plan from then on.
 - **Data:** synthetic data only. There are no per-user accounts, and everyone who has the password sees everything.
 
 ## Demo script (≈10 min)
@@ -125,7 +127,8 @@ Patient **A Gopal**'s data is grounded in the family's real record (`Appa blood 
 | `lib/parser.ts` | Free-text parser: Gemini (JSON schema) with deterministic fallback (vitals, symptoms, fluids, labs, med changes) |
 | `lib/meds.ts` | Medicine scheduling, split doses, course lengths, PRN and human-readable descriptions |
 | `lib/summary.ts` | Interval summary (adherence, vitals, symptoms, alerts, highlights), kidney summary, long-range trends, and visit-to-visit diff |
-| `lib/whatsapp.ts` | Gateway adapter (simulator now; Twilio / Meta Cloud API later) |
+| `lib/whatsapp.ts` & `lib/twilio.ts` | Gateway: every message shows in the simulator; in live mode with Twilio set, also delivered on real WhatsApp (24-hour window, templates, buttons, receipts) |
+| `lib/inbox.ts` | Photos, documents and voice notes arriving on WhatsApp (simulator or Twilio) |
 | `lib/clinic.ts` & `lib/mode.ts` | Live-clinic mode: clinic setup, staff, baseline intake (validation + storage), go-live checklist, reset |
 | `lib/seed.ts` & `lib/seed_gopal.ts` | Demo clinics (Dr. Rao & Dr. Dileep), 4 patients with scripted between-visit history |
 | `components/kidney.tsx` | Header badges, pre-visit kidney panel, long-range "Kidney & labs" tab, lab entry, med-change reconciliation, care team |

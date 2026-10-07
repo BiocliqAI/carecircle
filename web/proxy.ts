@@ -1,5 +1,6 @@
 // Password gate for hosted deployments. Set APP_PASSWORD (and optionally APP_USER) to require
-// HTTP Basic auth on every page and API route. Unset (local use) = no gate.
+// HTTP Basic auth on every page and API route. Unset (local use) = no gate. Twilio webhooks are exempt: they
+// carry Twilio's signature instead, which the routes check.
 import { NextResponse, type NextRequest } from "next/server";
 
 export function proxy(req: NextRequest) {
@@ -15,5 +16,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/health).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/health|api/twilio).*)"],
 };

@@ -60,10 +60,11 @@ const pending = new Set<Promise<void>>();
 export const settled = () => Promise.all([...pending]);
 
 /** Called right after a message is stored: translates it in the background and updates it in place. */
-export function scheduleTranslation(msgId: number, lang: string) {
+export function scheduleTranslation(msgId: number, lang: string): Promise<void> | undefined {
   if (lang === "en" || !LANGS[lang]) return;
   const p = translateRow(msgId, lang).catch(() => undefined).finally(() => pending.delete(p));
   pending.add(p);
+  return p;
 }
 
 async function translateRow(id: number, lang: string) {

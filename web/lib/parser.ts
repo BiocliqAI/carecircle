@@ -197,6 +197,8 @@ export function parseRules(input: string, meds: MedRef[]): ParsedMessage {
 
   const bp =
     text.match(/(\d{2,3})\s*(?:\/|over|by)\s*(\d{2,3})/) ||
+    // "BP 130 80", "bp: 130-80", "blood pressure 130,80": two numbers right after the word, without a slash.
+    text.match(/(?:\bbp\b|\bb\.p\.?|blood ?pressure)\s*(?:is|was|:|-|=)?\s*(\d{2,3})\s*(?:[-,\\]|\s|and)\s*(\d{2,3})\b/) ||
     text.match(/(?:sys\w*|systolic)\s*(\d{2,3})\D{0,8}(?:dia\w*|diastolic)\s*(\d{2,3})/);
   if (bp) {
     const s = num(bp[1])!, d = num(bp[2])!;

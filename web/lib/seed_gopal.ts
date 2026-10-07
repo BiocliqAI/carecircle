@@ -30,12 +30,22 @@ type AppaData = {
   diuretic: { d: string; drug: string; mg: number }[];
   labs: { d: string; m: string; v: number }[];
 };
-const A = appa as unknown as AppaData;
+export const APPA = appa as unknown as AppaData;
+const A = APPA;
 
 export const GOPAL = { pid: "p_gopal", uid: "u_gopal", mom: "u_mom", cg: "u_durai", doctor: "u_dr_dileep" };
-const LATEST_REAL = "2026-09-03";
+export const LATEST_REAL = "2026-09-03";
 
 const EZ = "Dr Ezhilan", SA = "Dr Satish", MS = "Dr Manoj Shah", DI = "Dr Dileep", SS = "Dr Sunil Shroff";
+
+/** The other doctors involved in Appa's care (the primary is the clinic's own doctor). */
+export const GOPAL_CONSULTANTS: [name: string, specialty: string][] = [
+  ["Dr Ezhilan", "Cardiology"],
+  ["Dr Satish", "Cardiology (to confirm)"],
+  ["Dr Manoj Shah", "Diabetology"],
+  ["Dr Sunil Shroff", "Gastroenterology / general (to confirm)"],
+  ["Dr. K. Sridhar", "Neurology"],
+];
 const M = (key: string, name: string, dose: string, times: string[], prescriber: string, purpose: string, extra: Partial<Medication> = {}): Medication => ({ key, name, dose, times, prescriber, purpose, ...extra });
 
 // Reconstructed from the prescription sheets (Morn 08:00, Anoon 14:00, Night 21:00, before food 07:30).
@@ -86,19 +96,19 @@ export const GOPAL_LATEST_PLAN: CarePlan = {
   template: "kidney",
 };
 
-const DX = "CKD stage 4 (cardiorenal) · Heart failure · Type 2 diabetes · Atrial fibrillation on apixaban · Epilepsy · Hyperuricaemia";
-const OLD_VISITS: { d: string; dx: string; notes: string; plan: CarePlan }[] = [
-  { d: "2025-06-19", dx: DX, notes: "Diuretic (Dytor) calibrated up to 80 mg/day as needed. Trajenta and Ciplox stopped. Augmentin 1 week.", plan: basePlan([...P2025, ...core("1.25 mg", "08:00"), M("dytor", "Dytor (torsemide)", "20 mg", ["08:00", "14:00"], DI, "Water tablet (diuretic)"), M("augmentin", "Augmentin", "625 mg", ["08:00", "21:00"], DI, "Infection", { courseDays: 7 }), M("bifilac", "Bifilac", "1 cap", ["08:00", "21:00"], DI, "Gut")]) },
-  { d: "2025-08-13", dx: DX, notes: "Dytor 30 mg/day. Zytanix 2.5 mg × 4 days. Rystat thrice weekly, iron.", plan: basePlan([...P2025, ...core("1.25 mg", "08:00"), M("dytor", "Dytor (torsemide)", "20 mg", ["08:00", "14:00"], DI, "Water tablet (diuretic)", { doses: ["20 mg", "10 mg"] }), M("zytanix", "Zytanix (metolazone)", "2.5 mg", ["08:00"], SA, "Water tablet (diuretic)", { courseDays: 4 }), M("zurig", "Zurig (febuxostat)", "40 mg", ["08:00"], SA, "Uric acid"), M("rystat", "Rystat", "50 mg", ["08:00"], DI, "Anaemia", { days: [1, 3, 5] }), M("ferinios", "Ferinios", "1 tab", ["08:00"], DI, "Iron")]) },
-  { d: "2025-09-30", dx: DX, notes: "Sacurise restarted after cardiology–nephrology discussion. Zytanix Tue/Fri.", plan: basePlan([...P2025, ...core("1.25 mg", "08:00"), M("dytor", "Dytor (torsemide)", "20 mg", ["08:00", "14:00"], DI, "Water tablet (diuretic)", { doses: ["20 mg", "10 mg"] }), M("sacurise", "Sacurise", "½ tab (25 mg)", ["08:00", "21:00"], SA, "Heart failure"), M("zytanix", "Zytanix (metolazone)", "2.5 mg", ["08:00"], SA, "Water tablet (diuretic)", { days: [2, 5] }), M("zurig", "Zurig (febuxostat)", "40 mg", ["08:00"], SA, "Uric acid"), M("rystat", "Rystat", "50 mg", ["08:00"], DI, "Anaemia", { days: [1, 4] }), M("ferinios", "Ferinios", "1 tab", ["08:00"], DI, "Iron")]) },
-  { d: "2025-10-30", dx: DX, notes: "Dytor reduced to 20 mg/day. Rystat and iron stopped.", plan: basePlan([...P2025, ...core("1.25 mg", "08:00"), M("dytor", "Dytor (torsemide)", "10 mg", ["08:00", "14:00"], DI, "Water tablet (diuretic)"), M("sacurise", "Sacurise", "½ tab (25 mg)", ["08:00", "21:00"], SA, "Heart failure"), M("zytanix", "Zytanix (metolazone)", "2.5 mg", ["08:00"], SA, "Water tablet (diuretic)", { days: [2, 5] }), M("zurig", "Zurig (febuxostat)", "40 mg", ["08:00"], SA, "Uric acid")]) },
-  { d: "2025-11-29", dx: DX + " · post-admission", notes: "Discharge plan: Dytor/Zytanix changed to Lasix + Aldactone. Betaloc newly added. Several changes followed in December by Dr Satish / Dr Dileep (see medicine-change log).", plan: basePlan([M("ecosprin", "Ecosprin AV 75/20", "1 tab", ["21:00"], EZ, "Heart attack prevention / cholesterol"), M("eliquis", "Eliquis (apixaban)", "5 mg", ["08:00", "21:00"], EZ, "Blood thinner (AF)"), M("concor", "Concor (bisoprolol)", "5 mg", ["08:00"], EZ, "Heart rate / rhythm"), M("levesam", "Levesam (levetiracetam)", "500 mg", ["08:00", "21:00"], EZ, "Epilepsy"), M("prizide", "Prizide MR (gliclazide)", "60 mg", ["07:30"], MS, "Diabetes"), M("pan", "Pan", "40 mg", ["07:30"], SS, "Acidity", { prn: true }), M("pruvict", "Pruvict", "1 mg", ["21:00"], SS, "Constipation", { prn: true }), M("sacurise", "Sacurise", "½ tab (25 mg)", ["08:00", "21:00"], SA, "Heart failure"), M("aldactone", "Aldactone (spironolactone)", "25 mg", ["10:00", "17:00"], EZ, "Diuretic / heart"), M("betaloc", "Betaloc (metoprolol)", "25 mg", ["08:00", "21:00"], EZ, "BP / heart"), M("lasix", "Lasix (furosemide)", "60 mg", ["08:00", "16:00"], DI, "Water tablet (diuretic)", { doses: ["60 mg", "40 mg"] })]) },
-  { d: "2026-02-10", dx: DX, notes: "December changes reconciled. Lasix 40 + 20 mg. Zurig 20 mg/day. Concor 1.25 mg at night.", plan: basePlan([M("ecosprin", "Ecosprin AV 75/20", "1 tab", ["14:00"], EZ, "Heart attack prevention / cholesterol"), ...core("1.25 mg", "21:00"), M("lasix", "Lasix (furosemide)", "40 mg", ["08:00", "16:00"], DI, "Water tablet (diuretic)", { doses: ["40 mg", "20 mg"] }), M("zurig", "Zurig (febuxostat)", "½ tab (20 mg)", ["08:00"], SA, "Uric acid"), M("zincovit", "Zincovit", "1 tab", ["21:00"], SS, "Multivitamin"), M("pan", "Pan", "40 mg", ["07:30"], SS, "Acidity", { prn: true }), M("bixify", "Bixify", "1 tab", ["21:00"], DI, "Constipation", { prn: true })]) },
-  { d: "2026-07-02", dx: DX, notes: "Stable. Continue same medicines.", plan: basePlan([M("ecosprin", "Ecosprin AV 75/20", "1 tab", ["14:00"], EZ, "Heart attack prevention / cholesterol"), ...core("1.25 mg", "21:00"), M("lasix", "Lasix (furosemide)", "40 mg", ["08:00", "16:00"], DI, "Water tablet (diuretic)", { doses: ["40 mg", "20 mg"] }), M("zurig", "Zurig (febuxostat)", "½ tab (20 mg)", ["08:00"], SA, "Uric acid"), M("zincovit", "Zincovit", "1 tab", ["21:00"], SS, "Multivitamin"), M("pan", "Pan", "40 mg", ["07:30"], SS, "Acidity", { prn: true }), M("bixify", "Bixify", "1 tab", ["21:00"], DI, "Constipation", { prn: true })]) },
+export const GOPAL_DX = "CKD stage 4 (cardiorenal) · Heart failure · Type 2 diabetes · Atrial fibrillation on apixaban · Epilepsy · Hyperuricaemia";
+export const GOPAL_VISITS: { d: string; dx: string; notes: string; plan: CarePlan }[] = [
+  { d: "2025-06-19", dx: GOPAL_DX, notes: "Diuretic (Dytor) calibrated up to 80 mg/day as needed. Trajenta and Ciplox stopped. Augmentin 1 week.", plan: basePlan([...P2025, ...core("1.25 mg", "08:00"), M("dytor", "Dytor (torsemide)", "20 mg", ["08:00", "14:00"], DI, "Water tablet (diuretic)"), M("augmentin", "Augmentin", "625 mg", ["08:00", "21:00"], DI, "Infection", { courseDays: 7 }), M("bifilac", "Bifilac", "1 cap", ["08:00", "21:00"], DI, "Gut")]) },
+  { d: "2025-08-13", dx: GOPAL_DX, notes: "Dytor 30 mg/day. Zytanix 2.5 mg × 4 days. Rystat thrice weekly, iron.", plan: basePlan([...P2025, ...core("1.25 mg", "08:00"), M("dytor", "Dytor (torsemide)", "20 mg", ["08:00", "14:00"], DI, "Water tablet (diuretic)", { doses: ["20 mg", "10 mg"] }), M("zytanix", "Zytanix (metolazone)", "2.5 mg", ["08:00"], SA, "Water tablet (diuretic)", { courseDays: 4 }), M("zurig", "Zurig (febuxostat)", "40 mg", ["08:00"], SA, "Uric acid"), M("rystat", "Rystat", "50 mg", ["08:00"], DI, "Anaemia", { days: [1, 3, 5] }), M("ferinios", "Ferinios", "1 tab", ["08:00"], DI, "Iron")]) },
+  { d: "2025-09-30", dx: GOPAL_DX, notes: "Sacurise restarted after cardiology–nephrology discussion. Zytanix Tue/Fri.", plan: basePlan([...P2025, ...core("1.25 mg", "08:00"), M("dytor", "Dytor (torsemide)", "20 mg", ["08:00", "14:00"], DI, "Water tablet (diuretic)", { doses: ["20 mg", "10 mg"] }), M("sacurise", "Sacurise", "½ tab (25 mg)", ["08:00", "21:00"], SA, "Heart failure"), M("zytanix", "Zytanix (metolazone)", "2.5 mg", ["08:00"], SA, "Water tablet (diuretic)", { days: [2, 5] }), M("zurig", "Zurig (febuxostat)", "40 mg", ["08:00"], SA, "Uric acid"), M("rystat", "Rystat", "50 mg", ["08:00"], DI, "Anaemia", { days: [1, 4] }), M("ferinios", "Ferinios", "1 tab", ["08:00"], DI, "Iron")]) },
+  { d: "2025-10-30", dx: GOPAL_DX, notes: "Dytor reduced to 20 mg/day. Rystat and iron stopped.", plan: basePlan([...P2025, ...core("1.25 mg", "08:00"), M("dytor", "Dytor (torsemide)", "10 mg", ["08:00", "14:00"], DI, "Water tablet (diuretic)"), M("sacurise", "Sacurise", "½ tab (25 mg)", ["08:00", "21:00"], SA, "Heart failure"), M("zytanix", "Zytanix (metolazone)", "2.5 mg", ["08:00"], SA, "Water tablet (diuretic)", { days: [2, 5] }), M("zurig", "Zurig (febuxostat)", "40 mg", ["08:00"], SA, "Uric acid")]) },
+  { d: "2025-11-29", dx: GOPAL_DX + " · post-admission", notes: "Discharge plan: Dytor/Zytanix changed to Lasix + Aldactone. Betaloc newly added. Several changes followed in December by Dr Satish / Dr Dileep (see medicine-change log).", plan: basePlan([M("ecosprin", "Ecosprin AV 75/20", "1 tab", ["21:00"], EZ, "Heart attack prevention / cholesterol"), M("eliquis", "Eliquis (apixaban)", "5 mg", ["08:00", "21:00"], EZ, "Blood thinner (AF)"), M("concor", "Concor (bisoprolol)", "5 mg", ["08:00"], EZ, "Heart rate / rhythm"), M("levesam", "Levesam (levetiracetam)", "500 mg", ["08:00", "21:00"], EZ, "Epilepsy"), M("prizide", "Prizide MR (gliclazide)", "60 mg", ["07:30"], MS, "Diabetes"), M("pan", "Pan", "40 mg", ["07:30"], SS, "Acidity", { prn: true }), M("pruvict", "Pruvict", "1 mg", ["21:00"], SS, "Constipation", { prn: true }), M("sacurise", "Sacurise", "½ tab (25 mg)", ["08:00", "21:00"], SA, "Heart failure"), M("aldactone", "Aldactone (spironolactone)", "25 mg", ["10:00", "17:00"], EZ, "Diuretic / heart"), M("betaloc", "Betaloc (metoprolol)", "25 mg", ["08:00", "21:00"], EZ, "BP / heart"), M("lasix", "Lasix (furosemide)", "60 mg", ["08:00", "16:00"], DI, "Water tablet (diuretic)", { doses: ["60 mg", "40 mg"] })]) },
+  { d: "2026-02-10", dx: GOPAL_DX, notes: "December changes reconciled. Lasix 40 + 20 mg. Zurig 20 mg/day. Concor 1.25 mg at night.", plan: basePlan([M("ecosprin", "Ecosprin AV 75/20", "1 tab", ["14:00"], EZ, "Heart attack prevention / cholesterol"), ...core("1.25 mg", "21:00"), M("lasix", "Lasix (furosemide)", "40 mg", ["08:00", "16:00"], DI, "Water tablet (diuretic)", { doses: ["40 mg", "20 mg"] }), M("zurig", "Zurig (febuxostat)", "½ tab (20 mg)", ["08:00"], SA, "Uric acid"), M("zincovit", "Zincovit", "1 tab", ["21:00"], SS, "Multivitamin"), M("pan", "Pan", "40 mg", ["07:30"], SS, "Acidity", { prn: true }), M("bixify", "Bixify", "1 tab", ["21:00"], DI, "Constipation", { prn: true })]) },
+  { d: "2026-07-02", dx: GOPAL_DX, notes: "Stable. Continue same medicines.", plan: basePlan([M("ecosprin", "Ecosprin AV 75/20", "1 tab", ["14:00"], EZ, "Heart attack prevention / cholesterol"), ...core("1.25 mg", "21:00"), M("lasix", "Lasix (furosemide)", "40 mg", ["08:00", "16:00"], DI, "Water tablet (diuretic)", { doses: ["40 mg", "20 mg"] }), M("zurig", "Zurig (febuxostat)", "½ tab (20 mg)", ["08:00"], SA, "Uric acid"), M("zincovit", "Zincovit", "1 tab", ["21:00"], SS, "Multivitamin"), M("pan", "Pan", "40 mg", ["07:30"], SS, "Acidity", { prn: true }), M("bixify", "Bixify", "1 tab", ["21:00"], DI, "Constipation", { prn: true })]) },
 ];
 
 // Real medicine changes made between visits by other doctors (from the sheet comments).
-const CHANGES: { d: string; med: string; change: string; detail: string; by: string; status: string }[] = [
+export const GOPAL_CHANGES: { d: string; med: string; change: string; detail: string; by: string; status: string }[] = [
   { d: "2025-12-06", med: "Betaloc (metoprolol)", change: "stopped", detail: "Stopped — Concor does the same job", by: SA, status: "REVIEWED" },
   { d: "2025-12-13", med: "Sacurise", change: "stopped", detail: "Stopped — creatinine 2.9, urea 122", by: SA, status: "REVIEWED" },
   { d: "2025-12-13", med: "Aldactone (spironolactone)", change: "stopped", detail: "Stopped — potassium 5.2", by: SA, status: "REVIEWED" },
@@ -139,10 +149,17 @@ const nearest = <T extends { d: string }>(xs: T[], d: string, maxDays = 10): T |
   return best;
 };
 
-function clinicVitals(d: string): ClinicVitals {
+export function clinicVitals(d: string): ClinicVitals {
   const w = nearest(A.weight, d), b = nearest(A.bp, d), s = nearest(A.spo2, d);
   return { ...(w ? { weight: w.kg } : {}), ...(b ? { sys: b.s, dia: b.di } : {}), ...(s ? { spo2: s.v } : {}) };
 }
+
+/** The latest real visit (03 Sep 2026): post-discharge review, which set the current plan. */
+export const GOPAL_LATEST_VISIT = {
+  vitals: { ...clinicVitals(LATEST_REAL), weight: 59.6, sys: 118, dia: 64 } as ClinicVitals,
+  diagnosis: GOPAL_DX + " — creatinine rising (2.59), K 5.1",
+  notes: "Post-discharge review. Aldactone, Nodosis and Anxit stopped. Zurig reintroduced with Dr Satish. Dry weight 59.2 kg (±1). Fluids 1 litre/day incl. tea & soup. Daily weight, BP, fasting sugar; evening intake/urine totals. RFT + electrolytes every 4 weeks — sooner if unwell.",
+};
 
 export interface GopalSetup {
   latestVisit: { at: number; pid: string; doctorId: string; vitals: ClinicVitals; diagnosis: string; notes: string; plan: CarePlan; next: number };
@@ -161,7 +178,7 @@ export function setupGopal(realNow: number): GopalSetup {
   run("INSERT INTO users(id, name, role, phone, title) VALUES(?,?,?,?,?)", GOPAL.uid, "A Gopal", "PATIENT", "+91 90000 50001", "Patient");
   run("INSERT INTO users(id, name, role, phone, title) VALUES(?,?,?,?,?)", GOPAL.mom, "Mom", "CAREGIVER", "+91 90000 50003", "Wife of A Gopal");
   run("INSERT INTO users(id, name, role, phone, title) VALUES(?,?,?,?,?)", GOPAL.cg, "Durai", "CAREGIVER", "+91 90000 50002", "Caretaker of A Gopal");
-  run("INSERT INTO patients(id, user_id, name, age, sex, phone, conditions, address, doctor_id, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", GOPAL.pid, GOPAL.uid, "A Gopal", null, "M", "+91 90000 50001", DX, "", GOPAL.doctor, at("2025-06-19", "10:00"));
+  run("INSERT INTO patients(id, user_id, name, age, sex, phone, conditions, address, doctor_id, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", GOPAL.pid, GOPAL.uid, "A Gopal", null, "M", "+91 90000 50001", GOPAL_DX, "", GOPAL.doctor, at("2025-06-19", "10:00"));
   run("INSERT INTO caregivers(id, patient_id, user_id, name, relation, phone, level, dashboard) VALUES(?,?,?,?,?,?,?,1)", "cg_gopal_1", GOPAL.pid, GOPAL.mom, "Mom", "Wife", "+91 90000 50003", 1);
   run("INSERT INTO caregivers(id, patient_id, user_id, name, relation, phone, level, dashboard) VALUES(?,?,?,?,?,?,?,1)", "cg_gopal_2", GOPAL.pid, GOPAL.cg, "Durai", "Caretaker", "+91 90000 50002", 2);
   const team: [string, string, string, string | null][] = [
@@ -175,7 +192,7 @@ export function setupGopal(realNow: number): GopalSetup {
   for (const [name, sp, role, uid] of team) run("INSERT INTO care_team(patient_id, name, specialty, role, user_id) VALUES(?,?,?,?,?)", GOPAL.pid, name, sp, role, uid);
 
   // Prior visits (prescription versions) — recorded directly; no reminders are generated for the past.
-  const all = [...OLD_VISITS.map((v) => ({ ...v, at: at(v.d, "11:00") }))];
+  const all = [...GOPAL_VISITS.map((v) => ({ ...v, at: at(v.d, "11:00") }))];
   all.forEach((v, i) => {
     const next = i + 1 < all.length ? all[i + 1].at : vAt;
     run("INSERT INTO visits(id, patient_id, doctor_id, visit_at, vitals, diagnosis, notes, plan, next_visit_at, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", `v_${GOPAL.pid}_${v.at}`, GOPAL.pid, GOPAL.doctor, v.at, JSON.stringify(clinicVitals(v.d)), v.dx, v.notes, JSON.stringify(v.plan), next, v.at);
@@ -196,7 +213,7 @@ export function setupGopal(realNow: number): GopalSetup {
   }
   for (const x of A.diuretic) if (before(x.d)) obs("diuretic", x.mg, null, x.drug, at(x.d, "08:00"));
   for (const l of A.labs) if (l.d <= LATEST_REAL) addLab(GOPAL.pid, l.m, l.v, at(l.d, "09:00"), "import", null, null);
-  for (const c of CHANGES) {
+  for (const c of GOPAL_CHANGES) {
     const id = addMedChange(GOPAL.pid, at(c.d, "12:00"), { medName: c.med, change: c.change, detail: c.detail, prescriber: c.by }, null, null, "import", c.status);
     run("UPDATE med_changes SET reviewed_by = ?, reviewed_at = ? WHERE id = ?", GOPAL.doctor, vAt, id);
   }
@@ -260,9 +277,7 @@ export function setupGopal(realNow: number): GopalSetup {
       at: vAt,
       pid: GOPAL.pid,
       doctorId: GOPAL.doctor,
-      vitals: { ...clinicVitals(LATEST_REAL), weight: 59.6, sys: 118, dia: 64 },
-      diagnosis: DX + " — creatinine rising (2.59), K 5.1",
-      notes: "Post-discharge review. Aldactone, Nodosis and Anxit stopped. Zurig reintroduced with Dr Satish. Dry weight 59.2 kg (±1). Fluids 1 litre/day incl. tea & soup. Daily weight, BP, fasting sugar; evening intake/urine totals. RFT + electrolytes every 4 weeks — sooner if unwell.",
+      ...GOPAL_LATEST_VISIT,
       plan: GOPAL_LATEST_PLAN,
       next: atLocal(dayStart(realNow), "17:00"),
     },
