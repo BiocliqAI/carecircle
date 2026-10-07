@@ -113,7 +113,8 @@ export function importAppa(pid: string, now: number): ImportSummary {
     let labs = 0;
     for (const l of APPA.labs) {
       const isBase = baseLabs.get(l.m)?.date === l.d && baseLabs.get(l.m)?.value === l.v;
-      addLab(pid, l.m, l.v, at(l.d, "09:00"), isBase ? "BASELINE" : "import", null, null);
+      const { id } = addLab(pid, l.m, l.v, at(l.d, "09:00"), isBase ? "BASELINE" : "import", null, null);
+      if (l.c) run("UPDATE labs SET mark = ? WHERE id = ?", l.c, id);
       labs++;
     }
     for (const c of GOPAL_CHANGES) {
@@ -182,4 +183,21 @@ export function topUpAppaFluids(): number {
     setSetting("sample:appa:fluids-v2", String(added));
   });
   return added;
+}
+
+/** Adds the sheet's lab colours (red / yellow) to histories imported before they were carried over. Runs once. */
+export function topUpAppaLabMarks(): number {
+  if (getSetting("sample:appa:labmarks")) return 0;
+  let n = 0;
+  const pids = all<{ entity_id: string }>("SELECT DISTINCT entity_id FROM audit WHERE action = 'HISTORY_IMPORTED' AND entity = 'patient'").map((r) => r.entity_id).filter((id) => getPatient(id));
+  tx(() => {
+    for (const pid of pids) {
+      for (const l of APPA.labs) {
+        if (!l.c) continue;
+        n += run("UPDATE labs SET mark = ? WHERE patient_id = ? AND marker = ? AND value = ? AND taken_at = ? AND source IN ('import','BASELINE') AND mark IS NULL", l.c, pid, l.m, l.v, at(l.d, "09:00")).changes;
+      }
+    }
+    setSetting("sample:appa:labmarks", String(n));
+  });
+  return n;
 }

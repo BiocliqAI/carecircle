@@ -58,7 +58,7 @@ export interface LabSeries {
   marker: string;
   label: string;
   unit: string;
-  series: { t: number; v: number; flag: string | null; source: string }[];
+  series: { t: number; v: number; flag: string | null; source: string; mark: string | null }[];
   latest: { t: number; v: number; flag: string | null } | null;
   pre: { t: number; v: number } | null; // last value at/before the interval start
 }
@@ -133,7 +133,7 @@ export function fluidDays(pid: string, from: number, to: number, limit: number |
 }
 
 export function labSeries(pid: string, from: number, to: number): LabSeries[] {
-  const rows = all<{ marker: string; value: number; taken_at: number; flag: string | null; source: string }>("SELECT marker, value, taken_at, flag, source FROM labs WHERE patient_id = ? AND taken_at > ? AND taken_at <= ? ORDER BY taken_at, id", pid, from, to);
+  const rows = all<{ marker: string; value: number; taken_at: number; flag: string | null; source: string; mark: string | null }>("SELECT marker, value, taken_at, flag, source, mark FROM labs WHERE patient_id = ? AND taken_at > ? AND taken_at <= ? ORDER BY taken_at, id", pid, from, to);
   const markers = [...new Set(rows.map((r) => r.marker))].sort((a, b) => Object.keys(LAB_META).indexOf(a) - Object.keys(LAB_META).indexOf(b));
   return markers.map((mk) => {
     const s = rows.filter((r) => r.marker === mk);
@@ -143,7 +143,7 @@ export function labSeries(pid: string, from: number, to: number): LabSeries[] {
       marker: mk,
       label: LAB_META[mk]?.label ?? mk,
       unit: LAB_META[mk]?.unit ?? "",
-      series: s.map((r) => ({ t: r.taken_at, v: r.value, flag: r.flag, source: r.source })),
+      series: s.map((r) => ({ t: r.taken_at, v: r.value, flag: r.flag, source: r.source, mark: r.mark })),
       latest: last ? { t: last.taken_at, v: last.value, flag: last.flag } : null,
       pre: pre ? { t: pre.taken_at, v: pre.value } : null,
     };

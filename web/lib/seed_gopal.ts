@@ -28,7 +28,7 @@ type AppaData = {
   bp: { d: string; s: number; di: number }[];
   spo2: { d: string; v: number }[];
   diuretic: { d: string; drug: string; mg: number }[];
-  labs: { d: string; m: string; v: number }[];
+  labs: { d: string; m: string; v: number; c?: string }[]; // c: the cell's colour in the sheet (red / yellow)
 };
 export const APPA = appa as unknown as AppaData;
 const A = APPA;
@@ -212,7 +212,11 @@ export function setupGopal(realNow: number): GopalSetup {
     if (f.out) obs("urine_out", f.out, null, "total", at(f.d, "21:00"));
   }
   for (const x of A.diuretic) if (before(x.d)) obs("diuretic", x.mg, null, x.drug, at(x.d, "08:00"));
-  for (const l of A.labs) if (l.d <= LATEST_REAL) addLab(GOPAL.pid, l.m, l.v, at(l.d, "09:00"), "import", null, null);
+  for (const l of A.labs) {
+    if (l.d > LATEST_REAL) continue;
+    const { id } = addLab(GOPAL.pid, l.m, l.v, at(l.d, "09:00"), "import", null, null);
+    if (l.c) run("UPDATE labs SET mark = ? WHERE id = ?", l.c, id);
+  }
   for (const c of GOPAL_CHANGES) {
     const id = addMedChange(GOPAL.pid, at(c.d, "12:00"), { medName: c.med, change: c.change, detail: c.detail, prescriber: c.by }, null, null, "import", c.status);
     run("UPDATE med_changes SET reviewed_by = ?, reviewed_at = ? WHERE id = ?", GOPAL.doctor, vAt, id);
