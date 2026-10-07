@@ -497,9 +497,10 @@ export async function ensureSeeded(): Promise<void> {
     // The anonymised sample kidney patient (A Gopal) with real history, once the clinic has a doctor.
     const g = globalThis as unknown as { __ccAppaDone?: boolean };
     if (!g.__ccAppaDone) {
-      const { ensureAppaSample } = await import("./import_appa");
+      const { ensureAppaSample, topUpAppaFluids } = await import("./import_appa");
       const { now } = await import("./clock");
       ensureAppaSample(now());
+      topUpAppaFluids(); // the earlier fluid sheet, for histories imported before it was added
       g.__ccAppaDone = !!get("SELECT 1 FROM settings WHERE key = 'sample:appa'");
     }
     return;

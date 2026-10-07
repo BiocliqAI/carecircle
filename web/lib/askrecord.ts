@@ -5,7 +5,7 @@
 import { all, get } from "./db";
 import { getBaseline } from "./clinic";
 import { getVisits, getPatient } from "./engine";
-import { DAY, dayKey, fmtDate } from "./time";
+import { DAY, dayKey, dayStart, fmtDate } from "./time";
 import { LAB_META, VITAL_META, type VitalType } from "./types";
 import { medChanges } from "./summary";
 
@@ -14,7 +14,26 @@ export interface ChartData { from: number; to: number; panels: Panel[]; changes:
 export interface Answer { via: "ai" | "rules"; answer: string; facts: string[]; chart: ChartData | null; note: string | null }
 
 const VITALS: VitalType[] = ["bp", "weight", "glucose", "hr", "spo2"];
-export const seriesNames = (): string[] => [...VITALS, ...Object.keys(LAB_META)];
+// Day totals: fluid intake and urine output (a logged "total" replaces the running sum, as in dayFluid), water tablets.
+const DAILY: Record<string, { label: string; unit: string }> = {
+  fluid_in: { label: "Fluid intake", unit: "ml/day" },
+  urine_out: { label: "Urine output", unit: "ml/day" },
+  diuretic: { label: "Water tablet (diuretic) dose", unit: "mg/day" },
+};
+export const seriesNames = (): string[] => [...VITALS, ...Object.keys(DAILY), ...Object.keys(LAB_META)];
+
+/** One value per day for fluid intake, urine output or total diuretic mg, with the drugs taken that day. */
+export function dailyTotals(pid: string, type: string, from: number, t: number): { day: number; v: number; drugs: string[] }[] {
+  const days = new Map<number, { v: number; drugs: Set<string> }>();
+  for (const r of all<{ v1: number; text: string | null; at: number }>("SELECT v1, text, observed_at AS at FROM observations WHERE patient_id = ? AND type = ? AND observed_at > ? AND observed_at <= ? ORDER BY observed_at, id", pid, type, from, t)) {
+    const d = dayStart(r.at);
+    const cur = days.get(d) ?? { v: 0, drugs: new Set<string>() };
+    if (type === "diuretic") { cur.v += r.v1; if (r.text) cur.drugs.add(r.text); }
+    else cur.v = r.text === "total" ? r.v1 : cur.v + r.v1;
+    days.set(d, cur);
+  }
+  return [...days.entries()].sort((a, b) => a[0] - b[0]).map(([day, x]) => ({ day, v: Math.round(x.v), drugs: [...x.drugs] }));
+}
 
 /** Plotted points for the chosen series, straight from the database. */
 export function buildChart(pid: string, names: string[], days: number, t: number): ChartData | null {
@@ -24,6 +43,9 @@ export function buildChart(pid: string, names: string[], days: number, t: number
     if ((VITALS as string[]).includes(n)) {
       const pts = all<{ v1: number; v2: number | null; at: number }>("SELECT v1, v2, observed_at AS at FROM observations WHERE patient_id = ? AND type = ? AND observed_at > ? AND observed_at <= ? ORDER BY observed_at", pid, n, from, t);
       if (pts.length) panels.push({ name: n, label: VITAL_META[n as VitalType].label, unit: VITAL_META[n as VitalType].unit, dual: n === "bp", points: pts.map((p) => ({ t: p.at, v1: p.v1, ...(p.v2 != null ? { v2: p.v2 } : {}) })) });
+    } else if (DAILY[n]) {
+      const pts = dailyTotals(pid, n, from, t);
+      if (pts.length) panels.push({ name: n, label: DAILY[n].label, unit: DAILY[n].unit, dual: false, points: pts.map((p) => ({ t: p.day + 12 * 3600_000, v1: p.v })) });
     } else if (LAB_META[n]) {
       const pts = all<{ value: number; at: number }>("SELECT value, taken_at AS at FROM labs WHERE patient_id = ? AND marker = ? AND taken_at > ? AND taken_at <= ? ORDER BY taken_at", pid, n, from, t);
       if (pts.length) panels.push({ name: n, label: LAB_META[n].label, unit: LAB_META[n].unit, dual: false, points: pts.map((p) => ({ t: p.at, v1: p.value })) });
@@ -35,6 +57,8 @@ export function buildChart(pid: string, names: string[], days: number, t: number
 }
 
 // ---------------------------------------------------------------- the compact record the AI reads
+const doseText = (m: { dose: string; times: string[]; doses?: string[] }) =>
+  m.doses?.length && m.doses.some((d) => d !== m.dose) ? m.times.map((t, i) => `${m.doses![i] ?? m.dose} at ${t}`).join(" + ") : m.dose;
 const thin = <T,>(a: T[], max: number): T[] => (a.length <= max ? a : a.filter((_, i) => i % Math.ceil(a.length / max) === 0 || i === a.length - 1));
 
 export function buildContext(pid: string, t: number) {
@@ -53,10 +77,18 @@ export function buildContext(pid: string, t: number) {
   return {
     today: day(t),
     patient: { name: p.name, age: p.age, sex: p.sex, conditions: p.conditions, allergies: getBaseline(pid)?.allergies || null },
-    currentPlan: getVisits(pid).at(-1)?.plan.medications.map((m) => ({ name: m.name, dose: m.dose, times: m.times, by: m.prescriber ?? null })) ?? [],
-    visits: getVisits(pid).slice(-6).map((v) => ({ date: day(v.visit_at), note: v.notes.slice(0, 200), medicines: v.plan.medications.map((m) => `${m.name} ${m.dose}`) })),
+    // A different dose at each time ("40 mg" at 08:00, "20 mg" at 16:00) is spelled out, so totals come out right.
+    currentPlan: getVisits(pid).at(-1)?.plan.medications.map((m) => ({ name: m.name, dose: doseText(m), times: m.times, by: m.prescriber ?? null })) ?? [],
+    visits: getVisits(pid).slice(-6).map((v) => ({ date: day(v.visit_at), note: v.notes.slice(0, 200), medicines: v.plan.medications.map((m) => `${m.name} ${doseText(m)}`) })),
     medicineChanges: medChanges(pid, 0, t).slice(-45).map((c) => ({ date: day(c.at), medicine: c.med_name, change: c.change, detail: (c.detail ?? "").slice(0, 90), by: c.prescriber })),
     dailyAverages: { bpSystolic: dailyMean("bp"), bpDiastolic: dailyMean("bp", "v2"), weightKg: dailyMean("weight"), sugar: dailyMean("glucose"), pulse: dailyMean("hr"), spo2: dailyMean("spo2") },
+    // [date, intake ml, urine ml] — a day's totals; null when only one of the two was logged.
+    fluidPerDay: (() => {
+      const inn = new Map(dailyTotals(pid, "fluid_in", from, t).map((x) => [x.day, x.v])), out = new Map(dailyTotals(pid, "urine_out", from, t).map((x) => [x.day, x.v]));
+      return [...new Set([...inn.keys(), ...out.keys()])].sort((a, b) => a - b).map((d) => [day(d), inn.get(d) ?? null, out.get(d) ?? null]); // every day: counts of logged days must be right
+    })(),
+    // [date, total mg, drugs]
+    diureticPerDay: dailyTotals(pid, "diuretic", from, t).map((x) => [day(x.day), x.v, x.drugs.join(" + ")]),
     labs,
     weeklyMedicineAdherence: weeks.map((w) => ({ weeksAgo: w.wk, dosesDue: w.due, dosesTaken: w.done })),
     alerts: all<{ started_at: number; type: string; title: string; state: string; outcome_code: string | null }>("SELECT started_at, type, title, state, outcome_code FROM escalations WHERE patient_id = ? AND started_at > ? ORDER BY started_at DESC LIMIT 25", pid, from).map((e) => ({ date: day(e.started_at), type: e.type, title: e.title, state: e.state, outcome: e.outcome_code })),
@@ -69,6 +101,8 @@ export function buildContext(pid: string, t: number) {
 const KEYWORDS: [RegExp, string][] = [
   [/creatinine|creat\b/i, "creatinine"], [/egfr/i, "egfr"], [/urea|\bbun\b/i, "urea"], [/potassium|\bk\+?\b/i, "potassium"], [/sodium|\bna\b/i, "sodium"], [/uric/i, "uric_acid"],
   [/haemoglobin|hemoglobin|\bhb\b/i, "hb"], [/bnp/i, "ntprobnp"], [/albumin/i, "albumin"],
+  [/fluid|intake|input|i\/p|drink|water(?! tablet)|tea|liquid/i, "fluid_in"], [/urine|output|o\/p|\bpee|passed/i, "urine_out"],
+  [/diuretic|water tablet|lasix|furosemide|dytor|torsemide|zytanix|metolazone|aldactone/i, "diuretic"],
   [/weight|\bwt\b|kg/i, "weight"], [/\bbp\b|pressure|systolic|diastolic/i, "bp"], [/sugar|glucose|diabet/i, "glucose"], [/pulse|heart ?rate|\bhr\b/i, "hr"], [/spo2|oxygen|saturation/i, "spo2"],
 ];
 export function questionSeries(q: string): string[] { return KEYWORDS.filter(([re]) => re.test(q)).map(([, n]) => n).filter((n, i, a) => a.indexOf(n) === i).slice(0, 3); }

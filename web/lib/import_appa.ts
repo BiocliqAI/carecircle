@@ -158,3 +158,28 @@ export function ensureAppaSample(now: number): string | null {
   setSetting("sample:appa", pid);
   return pid;
 }
+
+/**
+ * Adds spreadsheet fluid days that an earlier import didn't have (the "fluid IO" sheet, Jul–Dec 2025) to every patient
+ * the history was imported into. Only days with no fluid entries are filled; nothing else changes. Runs once.
+ */
+export function topUpAppaFluids(): number {
+  if (getSetting("sample:appa:fluids-v2")) return 0;
+  let added = 0;
+  const pids = all<{ entity_id: string }>("SELECT DISTINCT entity_id FROM audit WHERE action = 'HISTORY_IMPORTED' AND entity = 'patient'").map((r) => r.entity_id).filter((id) => getPatient(id));
+  tx(() => {
+    for (const pid of pids) {
+      for (const f of APPA.fluid) {
+        const day = at(f.d, "00:00");
+        if (get("SELECT 1 FROM observations WHERE patient_id = ? AND type IN ('fluid_in','urine_out') AND observed_at >= ? AND observed_at < ?", pid, day, day + 86_400_000)) continue;
+        for (const [type, v] of [["fluid_in", f.in], ["urine_out", f.out]] as const) {
+          if (!v) continue;
+          run("INSERT INTO observations(patient_id, type, v1, v2, text, observed_at, logged_by, parser) VALUES(?,?,?,?,?,?,?,?)", pid, type, v, null, "total", at(f.d, "21:00"), null, "import");
+          added++;
+        }
+      }
+    }
+    setSetting("sample:appa:fluids-v2", String(added));
+  });
+  return added;
+}

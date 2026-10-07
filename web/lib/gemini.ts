@@ -791,7 +791,7 @@ Input JSON: {"body": string, "quick": string[]} where quick are short reply-butt
 /** Answers a doctor's question from one patient's compact record. The reply is a short answer, the facts it rests on,
  *  and a plan for the chart (series names only: the numbers plotted are read from the database, never from here). */
 export async function askRecordAI(context: unknown, question: string): Promise<{ answer?: unknown; facts?: unknown; chart?: unknown; note?: unknown } | null> {
-  const system = `You answer a doctor's question about ONE patient, using ONLY the record given (JSON). The record has dated medicine changes, daily averages of readings, lab values, weekly adherence, alerts, symptoms, visits and the current plan.
+  const system = `You answer a doctor's question about ONE patient, using ONLY the record given (JSON). The record has dated medicine changes, daily averages of readings, daily fluid intake and urine output totals (fluidPerDay: [date, intake ml, urine ml]), daily water-tablet (diuretic) doses (diureticPerDay: [date, total mg, drugs]), lab values, weekly adherence, alerts, symptoms, visits and the current plan.
 
 Return JSON: {"answer": "2-5 plain sentences answering the question, quoting dates and values from the record exactly", "facts": ["up to 5 short facts with date and value that the answer rests on, e.g. 'Creatinine 2.0 on 12 Jun, 3.0 on 4 Oct'"], "chart": {"series": [up to 3 names from availableChartSeries that best show the answer], "days": number of days of history to plot} | null, "note": "one short caution, such as thin data or a gap, or null"}
 

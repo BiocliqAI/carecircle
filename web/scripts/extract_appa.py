@@ -1,5 +1,6 @@
 """Extract Appa's spreadsheet into web/lib/data/appa.json (stdlib only).
-Real history: weight / fluid / sugar / BP / SpO2 / diuretic doses (sheet 'weight'), labs ('lab tests summary').
+Real history: weight / fluid / sugar / BP / SpO2 / diuretic doses (sheet 'weight'), earlier fluids ('fluid IO'),
+labs ('lab tests summary').
 Usage: python3 extract_appa.py <xlsx> <out.json>
 """
 import sys, json, re, zipfile, datetime, xml.etree.ElementTree as ET
@@ -50,8 +51,8 @@ for c in sheet("weight")[1:]:
     day = d(c["B"])
     if f(c.get("C")):
         data["weight"].append({"d": day, "kg": f(c["C"])})
-    if f(c.get("N")) and f(c.get("O")):
-        data["fluid"].append({"d": day, "in": f(c["N"]), "out": f(c["O"])})
+    if f(c.get("N")) or f(c.get("O")):
+        data["fluid"].append({"d": day, "in": f(c.get("N")), "out": f(c.get("O"))})
     if f(c.get("H")) or f(c.get("I")):
         data["glucose"].append({"d": day, "f": f(c.get("H")), "pp": f(c.get("I"))})
     if f(c.get("K")) and f(c.get("L")):
@@ -73,6 +74,16 @@ for c in sheet("weight")[1:]:
         data["diuretic"].append({"d": day, "drug": "Metolazone (Zytanix)", "mg": f(c["F"])})
     if f(c.get("G")):
         data["diuretic"].append({"d": day, "drug": "Furosemide (Lasix)", "mg": f(c["G"])})
+
+# ---- earlier fluid log (sheet 'fluid IO', Jul-Dec 2025); the daily log's values win on days both have
+have = {x["d"] for x in data["fluid"]}
+for c in sheet("fluid IO"):
+    if f(c.get("B")) is None or not (f(c.get("C")) or f(c.get("D"))):
+        continue
+    day = d(c["B"])
+    if day not in have:
+        data["fluid"].append({"d": day, "in": f(c.get("C")), "out": f(c.get("D"))})
+data["fluid"].sort(key=lambda x: x["d"])
 
 # ---- labs sheet
 MARKERS = {
