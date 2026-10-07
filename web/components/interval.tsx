@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { IntervalSummary, EscalationView } from "@/lib/summary";
 import type { CarePlan, ClinicVitals } from "@/lib/types";
 import { dayKey, fmtDate, fmtDateTime } from "@/lib/time";
-import { LineChart, Ring } from "./charts";
+import { ChartCard, LineChart, Ring } from "./charts";
 import { api } from "./client";
 
 const ICON = { good: "✓", warn: "!", bad: "▲", info: "i" } as const;
@@ -121,7 +121,7 @@ export function VitalCharts({ s, plan, base, markers = [] }: { s: IntervalSummar
         if (v.type === "weight" && base?.weight) lines.push({ y: base.weight, label: `clinic ${base.weight} kg`, color: "#0f766e" });
         const delta = v.first != null && v.last != null ? Math.round((v.last - v.first) * 10) / 10 : null;
         return (
-          <div key={v.type} className="card">
+          <ChartCard key={v.type} label={v.label}>
             <div className="card-head">
               <div>
                 <h3>{v.label}</h3>
@@ -140,7 +140,7 @@ export function VitalCharts({ s, plan, base, markers = [] }: { s: IntervalSummar
               </div>
             </div>
             <LineChart series={v.series} from={s.from} to={s.to} lines={lines} markers={[...markers, ...alertMarkers]} dual={v.type === "bp"} unit={v.unit} height={190} />
-          </div>
+          </ChartCard>
         );
       })}
     </div>
