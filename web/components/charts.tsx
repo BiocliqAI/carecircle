@@ -1,6 +1,44 @@
 "use client";
 // Lightweight SVG charts (no chart library dependency).
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { dayKey, fmtDate } from "@/lib/time";
+
+/** True inside an enlarged (popped-out) chart: charts draw taller so the extra width isn't just bigger text. */
+const ChartZoom = createContext(false);
+const ZOOM_H = 1.8;
+
+/** A chart card that opens larger in an overlay on click (or Enter/Space). Esc, ✕ or a click outside closes it. */
+export function ChartCard({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [open]);
+  return (
+    <>
+      <div className="card chart-card" role="button" tabIndex={0} aria-label={`${label}: open larger`}
+        onClick={(e) => { if (!(e.target as HTMLElement).closest("button, a, input, select")) setOpen(true); }}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
+        {children}
+        <span className="chart-card-hint" aria-hidden>⤢</span>
+      </div>
+      {open && createPortal(
+        <div className="chart-pop" role="dialog" aria-modal="true" aria-label={label} onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
+          <div className="card chart-pop-box">
+            <button type="button" className="chart-pop-x" onClick={() => setOpen(false)} aria-label="Close" autoFocus>✕</button>
+            <ChartZoom.Provider value={true}>{children}</ChartZoom.Provider>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
 
 export interface Pt {
   t: number;
@@ -42,7 +80,8 @@ interface Props {
 }
 
 export function LineChart({ series, from, to, lines = [], markers = [], dual, height = 200, unit = "", color = "#0f766e", color2 = "#7c3aed" }: Props) {
-  const W = 760, H = height, L = 44, R = 12, T = 14, B = 26;
+  const zoom = useContext(ChartZoom);
+  const W = 760, H = zoom ? Math.round(height * ZOOM_H) : height, L = 44, R = 12, T = 14, B = 26;
   const vals = [...series.map((p) => p.v1), ...(dual ? series.map((p) => p.v2 ?? p.v1) : []), ...lines.map((l) => l.y)];
   if (!series.length) return <div className="empty">No readings in this period</div>;
   let lo = Math.min(...vals), hi = Math.max(...vals);
@@ -127,7 +166,8 @@ export interface ComboProps {
 
 /** Line (left axis) + grouped daily bars (right axis). Used for weight vs diuretic dose and fluid in/out. */
 export function ComboChart({ from, to, line, bars = [], barLines = [], markers = [], height = 230 }: ComboProps) {
-  const W = 760, H = height, L = 44, R = 46, T = 16, B = 26;
+  const zoom = useContext(ChartZoom);
+  const W = 760, H = zoom ? Math.round(height * ZOOM_H) : height, L = 44, R = 46, T = 16, B = 26;
   const hasLine = !!line && line.pts.length > 0;
   const hasBars = bars.some((b) => b.pts.length);
   if (!hasLine && !hasBars) return <div className="empty">No data in this period</div>;

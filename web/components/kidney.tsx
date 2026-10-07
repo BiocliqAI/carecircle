@@ -3,7 +3,7 @@
 // lab entry, medicine-change reconciliation and care-team (other doctors) management.
 import { useState } from "react";
 import { api } from "@/components/client";
-import { ComboChart, LineChart, medMarkers } from "@/components/charts";
+import { ChartCard, ComboChart, LineChart, medMarkers } from "@/components/charts";
 import type { KidneySummary, LongRange, MedChangeRow } from "@/lib/summary";
 import { LAB_META, type CarePlan } from "@/lib/types";
 import { DAY, dayKey, fmtDate, fmtTime } from "@/lib/time";
@@ -168,13 +168,13 @@ export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChange
       </div>
 
       <div className="grid g2">
-        <div className="card">
+        <ChartCard label="Weight vs diuretic dose">
           <div className="card-head"><h3>Weight vs diuretic dose</h3><small>{band ? `dry weight ${lr.dryWeight} ± ${lr.band} kg (shaded)` : "no dry weight set"}</small></div>
           <ComboChart from={from} to={to} markers={markers}
             line={{ pts: weight, unit: "kg", color: "#0f766e", band, label: "Weight (kg)" }}
             bars={[{ pts: diur.map((d) => ({ t: dayMs(d.d), v: d.mg })), unit: "mg", color: "#f59e0b", label: "Diuretic mg/day" }]} />
-        </div>
-        <div className="card">
+        </ChartCard>
+        <ChartCard label="Fluid intake vs urine output">
           <div className="card-head"><h3>Fluid intake vs urine output</h3><small>{lr.limit ? `limit ${lr.limit} ml/day` : ""}</small></div>
           <ComboChart from={from} to={to} markers={markers}
             bars={[
@@ -182,7 +182,7 @@ export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChange
               { pts: fluid.filter((f) => f.out != null).map((f) => ({ t: dayMs(f.d), v: f.out! })), unit: "ml", color: "#a855f7", label: "Urine ml" },
             ]}
             barLines={lr.limit ? [{ y: lr.limit, label: `limit ${lr.limit}` }] : []} />
-        </div>
+        </ChartCard>
       </div>
 
       <div className="grid g3">
@@ -191,10 +191,10 @@ export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChange
           if (!ls) return null;
           const pts = ls.series.filter((p) => inR(p.t)).map((p) => ({ t: p.t, v1: p.v, flag: p.flag }));
           return (
-            <div key={marker} className="card">
+            <ChartCard key={marker} label={ls.label}>
               <div className="card-head"><h3>{ls.label}</h3><small>{ls.unit}{ls.latest ? ` · latest ${fmtLab(marker, ls.latest.v)}` : ""}</small></div>
               <LineChart series={pts} from={from} to={to} lines={lines} markers={markers} height={170} unit={ls.unit} />
-            </div>
+            </ChartCard>
           );
         })}
       </div>
