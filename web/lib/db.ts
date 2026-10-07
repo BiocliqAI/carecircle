@@ -127,6 +127,11 @@ CREATE TABLE IF NOT EXISTS consents (
   role TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING', requested_at INTEGER NOT NULL, responded_at INTEGER, message_id INTEGER,
   UNIQUE(patient_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS record_questions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL REFERENCES patients(id), user_id TEXT NOT NULL, at INTEGER NOT NULL,
+  question TEXT NOT NULL, answer TEXT NOT NULL, facts TEXT, note TEXT, via TEXT NOT NULL, chart TEXT, ctx_hash TEXT
+);
+CREATE INDEX IF NOT EXISTS questions_patient ON record_questions(patient_id, at);
 `;
 
 // Columns added after the first release; applied to existing databases on open.
@@ -142,6 +147,7 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["messages", "wa_status", "TEXT"],
   ["messages", "wa_sid", "TEXT"],
   ["messages", "wa_error", "TEXT"],
+  ["record_questions", "ctx_hash", "TEXT"],
   ["med_changes", "outside_visit_id", "INTEGER"],
   ["med_changes", "med_key", "TEXT"],
   ["med_changes", "new_dose", "TEXT"],
@@ -189,7 +195,7 @@ export function getDb(): DatabaseSyncT {
 export function resetDb(): void {
   const db = getDb();
   db.exec(`
-    DROP TABLE IF EXISTS patient_baseline; DROP TABLE IF EXISTS consents; DROP TABLE IF EXISTS outside_visits; DROP TABLE IF EXISTS watches; DROP TABLE IF EXISTS onboarding_drafts;
+    DROP TABLE IF EXISTS record_questions; DROP TABLE IF EXISTS patient_baseline; DROP TABLE IF EXISTS consents; DROP TABLE IF EXISTS outside_visits; DROP TABLE IF EXISTS watches; DROP TABLE IF EXISTS onboarding_drafts;
     DROP TABLE IF EXISTS patient_notes; DROP TABLE IF EXISTS patient_documents; DROP TABLE IF EXISTS patient_reviews; DROP TABLE IF EXISTS visit_prep; DROP TABLE IF EXISTS plan_drafts;
     DROP TABLE IF EXISTS escalation_events; DROP TABLE IF EXISTS escalations; DROP TABLE IF EXISTS observations;
     DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS visits;

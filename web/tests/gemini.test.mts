@@ -39,7 +39,7 @@ describe("Gemini AI Integration & Capabilities", () => {
   });
 
   describe("Comprehensive Clinical AI Summary", () => {
-    it("generates a medically accurate, 8-section structured clinical summary for A Gopal", async () => {
+    it("generates a short, bullet-point clinical summary for A Gopal from the record", async () => {
       const p = getPatient("p_gopal");
       assert.ok(p, "Patient A Gopal must exist");
 
@@ -47,21 +47,15 @@ describe("Gemini AI Integration & Capabilities", () => {
       assert.equal(summary.patientId, "p_gopal");
       assert.equal(summary.patientName, "A Gopal");
 
-      // Check all 8 structured clinical sections
-      assert.ok(summary.executiveSummary.length > 20, "Executive summary must be comprehensive");
-      assert.ok(summary.clinicalTrajectory.length > 20, "Clinical trajectory must be present");
-      assert.ok(summary.biometricAndFluidControl.length > 20, "Biometric & fluid control must be present");
-      assert.ok(summary.renalMetabolicPanel.length > 20, "Renal metabolic panel must be present");
-      assert.ok(summary.treatmentAdherence.length > 20, "Treatment adherence must be present");
-      assert.ok(summary.careCircleEscalations.length > 20, "Care circle escalations must be present");
-      assert.ok(summary.crossDoctorReconciliation.length > 20, "Cross-doctor reconciliation must be present");
+      // One headline, a handful of short key points, and what to discuss
+      assert.ok(summary.executiveSummary.length > 20 && summary.executiveSummary.length < 200, "one-line headline");
+      assert.ok(summary.bullets && summary.bullets.length >= 3 && summary.bullets.length <= 8, "3-8 key points");
       assert.ok(Array.isArray(summary.consultationDiscussionPoints), "Discussion points must be an array");
-      assert.ok(summary.consultationDiscussionPoints.length >= 3, "At least 3 discussion points must be provided");
 
-      // Check clinical content grounding
-      assert.match(summary.biometricAndFluidControl, /fluid|weight|BP|kg/i);
-      assert.match(summary.renalMetabolicPanel, /creatinine|potassium|eGFR|renal/i);
-      assert.match(summary.crossDoctorReconciliation, /Dr\.|Prizide|Manoj Shah|medicine/i);
+      // Grounded in the record: kidney labs, weight and fluids appear
+      const text = summary.bullets.join(" ");
+      assert.match(text, /creatinine/i);
+      assert.match(text, /fluid|weight/i);
     });
   });
 

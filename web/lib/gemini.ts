@@ -1,5 +1,6 @@
 // Gemini API integration: Clinical summarization, WhatsApp NL comprehension, and Vision OCR.
 // Powered by gemini-3.8-flash via the official @google/genai SDK.
+import { createHash } from "node:crypto";
 import { all, get, getSetting, setSetting } from "./db";
 import { now } from "./clock";
 import { getPatient, getUser, latestVisit, listPatients } from "./engine";
@@ -41,6 +42,10 @@ export interface ClinicalSummaryResult {
   careCircleEscalations: string;
   crossDoctorReconciliation: string;
   consultationDiscussionPoints: string[];
+  /** Short key points (newer summaries); older stored summaries only have the paragraph fields above. */
+  bullets?: string[];
+  /** Set when nothing in the record changed since this summary was made, so it was reused instead of regenerated. */
+  reusedFrom?: number;
   rawText?: string;
 }
 
@@ -140,48 +145,58 @@ export async function generateClinicalSummary(patientId: string): Promise<Clinic
         : null,
     };
 
-    const systemInstruction = `You are a Senior Consultant Physician and Nephrologist reviewing between-visit remote monitoring telemetry before a patient consultation.
-Produce a comprehensive, medically rigorous, structured pre-consultation summary.
-Your tone must be clinical, objective, quantitative, and clear. Ground every observation in the provided data.
-You must return a valid JSON object matching the following schema:
+    const systemInstruction = `You are a senior consultant physician preparing a doctor for a consultation, from the patient's between-visit monitoring data (JSON). Be brief and specific: the doctor has 30 seconds to read it.
+Return JSON:
 {
-  "executiveSummary": "2-3 sentences overview of patient control and primary issues",
-  "clinicalTrajectory": "Detailed assessment of disease stability (cardiorenal / metabolic / cardiac)",
-  "biometricAndFluidControl": "Specific quantitative analysis of BP, weight vs dry weight, sugars, fluids",
-  "renalMetabolicPanel": "Analysis of creatinine deltas, eGFR, potassium, electrolytes and safety",
-  "treatmentAdherence": "Analysis of adherence percentage, specific missed medications, and patterns",
-  "careCircleEscalations": "Summary of alerts triggered, escalation levels (Level 1 Mom vs Level 2 Durai / caregivers), and actions taken",
-  "crossDoctorReconciliation": "Status of medicine adjustments made by consulting specialists (e.g. Dr Manoj Shah, Dr Satish)",
-  "consultationDiscussionPoints": ["3-5 prioritized clinical discussion points for today's visit"]
-}`;
+  "headline": "ONE sentence, at most 25 words: overall control and the single most important issue",
+  "bullets": ["4-7 key points, most important first, each at most 20 words, starting with the topic and quoting numbers and dates from the data, e.g. 'Creatinine: 2.59 → 3.01 mg/dL (+0.42) on 10 Sep'"],
+  "discuss": ["2-4 things to decide or check at today's visit, each at most 15 words"]
+}
+Rules: use only values present in the data; never invent numbers, dates, people or events. Leave out anything normal and unremarkable unless it answers an obvious question. No paragraphs, no headings, no filler words.`;
 
+    // Nothing changed since the last summary (same data, same instructions)? Reuse it instead of asking the AI again.
     const modelName = getGeminiModel();
+    const fingerprint = createHash("sha256").update(modelName + "\u0000" + systemInstruction + "\u0000" + JSON.stringify(promptContext)).digest("hex");
+    const cached = getSetting(`aisum:${patientId}`);
+    if (cached) {
+      try {
+        const c = JSON.parse(cached) as { fp: string; summary: ClinicalSummaryResult };
+        if (c.fp === fingerprint) return { ...c.summary, reusedFrom: c.summary.generatedAt };
+      } catch { /* regenerate */ }
+    }
+
     const resp = (await ai.interactions.create({
       model: modelName,
       store: false,
-      input: `Analyze this patient's remote telemetry data and generate the structured clinical summary JSON:\n\n${JSON.stringify(promptContext, null, 2)}`,
+      input: `Monitoring data since the last visit:\n\n${JSON.stringify(promptContext)}`,
       system_instruction: systemInstruction,
       response_format: { type: "text", mime_type: "application/json" },
     } as never)) as { output_text?: string | null };
 
     if (resp.output_text) {
-      const parsed = JSON.parse(resp.output_text);
-      return {
+      const parsed = JSON.parse(resp.output_text) as { headline?: unknown; bullets?: unknown; discuss?: unknown };
+      const list = (x: unknown) => (Array.isArray(x) ? x.map(String).map((b) => b.trim()).filter(Boolean) : []);
+      const summary: ClinicalSummaryResult = {
         source: modelName,
         model: modelName,
         generatedAt: t,
         patientId,
         patientName: p.name,
-        executiveSummary: parsed.executiveSummary || "",
-        clinicalTrajectory: parsed.clinicalTrajectory || "",
-        biometricAndFluidControl: parsed.biometricAndFluidControl || "",
-        renalMetabolicPanel: parsed.renalMetabolicPanel || "",
-        treatmentAdherence: parsed.treatmentAdherence || "",
-        careCircleEscalations: parsed.careCircleEscalations || "",
-        crossDoctorReconciliation: parsed.crossDoctorReconciliation || "",
-        consultationDiscussionPoints: Array.isArray(parsed.consultationDiscussionPoints) ? parsed.consultationDiscussionPoints : [],
+        executiveSummary: typeof parsed.headline === "string" ? parsed.headline.trim() : "",
+        clinicalTrajectory: "",
+        biometricAndFluidControl: "",
+        renalMetabolicPanel: "",
+        treatmentAdherence: "",
+        careCircleEscalations: "",
+        crossDoctorReconciliation: "",
+        bullets: list(parsed.bullets).slice(0, 8),
+        consultationDiscussionPoints: list(parsed.discuss).slice(0, 5),
         rawText: resp.output_text,
       };
+      if (summary.executiveSummary || summary.bullets!.length) {
+        setSetting(`aisum:${patientId}`, JSON.stringify({ fp: fingerprint, summary }));
+        return summary;
+      }
     }
   } catch (err) {
     console.warn("[gemini] Error calling Gemini API for clinical summary:", (err as Error).message, (err as { cause?: unknown })?.cause);
@@ -191,65 +206,41 @@ You must return a valid JSON object matching the following schema:
   return buildRuleBasedClinicalSummary(p, visit, s, t);
 }
 
+/** Without AI: built only from the record's own highlights (the same lines as "Since last visit"), so nothing is invented. */
 function buildRuleBasedClinicalSummary(
   p: ReturnType<typeof getPatient> & {},
   visit: ReturnType<typeof latestVisit> | undefined,
   s: IntervalSummary | null,
   t: number
 ): ClinicalSummaryResult {
-  const isKidney = p.id === "p_gopal" || !!visit?.plan.fluid;
   const days = s?.days.length ?? 0;
-  const medsPct = s?.overall.meds ?? 90;
-  const bp = s?.vitals.find((v) => v.type === "bp");
-
-  const executiveSummary = `${p.name} (${p.age ? `${p.age}yo ` : ""}${p.sex || ""}) monitored over ${days} days since last clinic consultation on ${visit ? fmtDate(visit.visit_at) : "baseline"}. Active conditions: ${p.conditions}. Overall medication adherence is ${medsPct}%, with remote monitoring conducted via family WhatsApp circle.`;
-
-  const clinicalTrajectory = isKidney
-    ? `Patient with CKD Stage 4 and heart failure demonstrates relatively stable hemodynamic control, with dry weight closely maintained around ${visit?.plan.thresholds.dryWeight ?? 59.2} kg. Fluid restriction (${visit?.plan.fluid?.limitMl ?? 1000} ml/day) has been generally observed with occasional mild excursions during family gatherings.`
-    : `Patient demonstrates stable chronic disease control over the ${days}-day monitoring window. Blood pressure has improved from clinic baseline (${visit?.vitals.sys || 150}/${visit?.vitals.dia || 90} mmHg) to an average home reading of ${bp?.avg ? `${bp.avg}/${bp.avgV2 || 85}` : "normal"} mmHg.`;
-
-  const biometricAndFluidControl = isKidney
-    ? `Weight: Target dry weight ${visit?.plan.thresholds.dryWeight ?? 59.2} ± ${visit?.plan.thresholds.weightBand ?? 1.0} kg. Home weights ranged between ${s?.vitals.find((v) => v.type === "weight")?.min ?? 57.9} and ${s?.vitals.find((v) => v.type === "weight")?.max ?? 60.5} kg (${s?.kidney?.weightBand?.pct ?? 88}% within target band). Fluids: 24h intake averaged ${s?.kidney?.avgIn ?? 960} ml/day against 1000 ml limit; urine output averaged ${s?.kidney?.avgOut ?? 840} ml/day.`
-    : `Blood Pressure: Average ${bp?.avg ?? 136}/${bp?.avgV2 ?? 84} mmHg over ${bp?.count ?? 0} home measurements (${bp?.outOfRange ?? 0} excursions above doctor threshold). Blood glucose averaged ${s?.vitals.find((v) => v.type === "glucose")?.avg ?? 138} mg/dL.`;
-
-  const renalMetabolicPanel = isKidney
-    ? `Serum creatinine demonstrated an upward trend from baseline 2.59 mg/dL to a peak of 3.01 mg/dL, with recent repeat at 2.85 mg/dL. Serum potassium remained in a safe range (4.7–4.9 mmol/L; alert limit 5.0). Serum sodium 137–138 mmol/L. Urea 90–96 mg/dL.`
-    : `Metabolic and vital parameters remain within acceptable ranges. No acute organ function decompensation detected in routine home telemetry.`;
-
-  const treatmentAdherence = `Medication compliance confirmed at ${medsPct}%. ${s?.adherence.filter((a) => (a.pct ?? 100) < 90).map((a) => `${a.label} (${a.pct}%)`).join(", ") || "All scheduled daily doses verified on time."}`;
-
-  const careCircleEscalations = `Total of ${s?.escalations.length ?? 0} care-circle notifications generated. Escalation state machine routed alerts to Level 1 (Mom / primary caregiver), with higher-acuity items escalating to Level 2 (Durai / secondary caregiver). Caregiver actions were recorded and all alerts successfully reconciled.`;
-
-  const crossDoctorReconciliation = isKidney
-    ? `Consulting specialist updates logged: Dr. Manoj Shah adjusted Prizide MR (gliclazide) from 60 mg to 30 mg due to improved fasting blood sugars (64–68 mg/dL). Dr. Satish reviewed diuretic plan. Reconciled and ready for primary doctor sign-off.`
-    : `No unconfirmed medication changes from outside prescribers pending. Current regimen verified.`;
-
-  const consultationDiscussionPoints = isKidney
-    ? [
-        "Review repeat renal panel: confirm creatinine stabilization at ~2.8 mg/dL following recent diuretic calibration.",
-        "Assess Prizide dose reduction (60 mg → 30 mg) reported by Dr. Manoj Shah; confirm glycaemic stability.",
-        "Reinforce 1000 ml fluid restriction and sodium limit with Level 1 caregiver (Mom) and Level 2 (Durai).",
-      ]
-    : [
-        "Review home blood pressure trends vs clinic baseline; discuss possible titration of antihypertensives.",
-        "Reinforce physical activity / brisk walk regimen; address joint soreness reported on exercise days.",
-        "Confirm prescription refills and schedule next comprehensive metabolic panel.",
-      ];
-
+  const rank = { bad: 0, warn: 1, info: 2, good: 3 } as const;
+  const lines = (s?.highlights ?? []).slice().sort((a, b) => rank[a.tone] - rank[b.tone]);
+  const meds = s?.overall.meds;
+  const alerts = s?.escalations.length ?? 0;
+  const headline = !visit
+    ? `${p.name}: no visit recorded yet, so there is nothing to summarise.`
+    : `${days} day${days === 1 ? "" : "s"} since the visit on ${fmtDate(visit.visit_at)}${meds != null ? ` · medicines taken ${meds}%` : ""} · ${alerts ? `${alerts} care-circle alert${alerts === 1 ? "" : "s"}` : "no alerts"}.`;
+  const pending = s?.kidney?.medChanges.filter((c) => c.status === "REPORTED") ?? [];
+  const discuss = [
+    ...lines.filter((l) => l.tone === "bad").map((l) => `Review: ${l.text}`),
+    ...(pending.length ? [`Reconcile ${pending.length} medicine change${pending.length === 1 ? "" : "s"} reported by other doctors.`] : []),
+  ].slice(0, 4);
   return {
     source: "clinical-rules-engine",
-    model: "deterministic-v1",
+    model: "deterministic-v2",
     generatedAt: t,
     patientId: p.id,
     patientName: p.name,
-    executiveSummary,
-    clinicalTrajectory,
-    biometricAndFluidControl,
-    renalMetabolicPanel,
-    treatmentAdherence,
-    careCircleEscalations,
-    crossDoctorReconciliation,
-    consultationDiscussionPoints,
+    executiveSummary: headline,
+    clinicalTrajectory: "",
+    biometricAndFluidControl: "",
+    renalMetabolicPanel: "",
+    treatmentAdherence: "",
+    careCircleEscalations: "",
+    crossDoctorReconciliation: "",
+    bullets: lines.map((l) => l.text).slice(0, 8),
+    consultationDiscussionPoints: discuss,
   };
 }
 
@@ -791,7 +782,7 @@ Input JSON: {"body": string, "quick": string[]} where quick are short reply-butt
 /** Answers a doctor's question from one patient's compact record. The reply is a short answer, the facts it rests on,
  *  and a plan for the chart (series names only: the numbers plotted are read from the database, never from here). */
 export async function askRecordAI(context: unknown, question: string): Promise<{ answer?: unknown; facts?: unknown; chart?: unknown; note?: unknown } | null> {
-  const system = `You answer a doctor's question about ONE patient, using ONLY the record given (JSON). The record has dated medicine changes, daily averages of readings, lab values, weekly adherence, alerts, symptoms, visits and the current plan.
+  const system = `You answer a doctor's question about ONE patient, using ONLY the record given (JSON). The record has dated medicine changes, daily averages of readings, daily fluid intake and urine output totals (fluidPerDay: [date, intake ml, urine ml]), daily water-tablet (diuretic) doses (diureticPerDay: [date, total mg, drugs]), lab values, weekly adherence, alerts, symptoms, visits and the current plan.
 
 Return JSON: {"answer": "2-5 plain sentences answering the question, quoting dates and values from the record exactly", "facts": ["up to 5 short facts with date and value that the answer rests on, e.g. 'Creatinine 2.0 on 12 Jun, 3.0 on 4 Oct'"], "chart": {"series": [up to 3 names from availableChartSeries that best show the answer], "days": number of days of history to plot} | null, "note": "one short caution, such as thin data or a gap, or null"}
 

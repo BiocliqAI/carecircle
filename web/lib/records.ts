@@ -271,3 +271,35 @@ export function resendConsent(pid: string, onlyUser: string | null, t: number, a
   if (pending.length) audit(t, actor, "CONSENT_RESENT", "patient", pid, { n: pending.length });
   return pending.length;
 }
+
+/**
+ * Deletes a patient and everything recorded for them: visits, readings, labs, alerts, documents, notes, care circle and
+ * WhatsApp threads. Caregivers who aren't in another patient's circle are removed too. Logged in the audit trail.
+ */
+export function deletePatient(pid: string, t: number, actor: string): { name: string } {
+  const p = getPatient(pid);
+  if (!p) throw new Error("Patient not found");
+  tx(() => {
+    const cgUsers = all<{ user_id: string }>("SELECT user_id FROM caregivers WHERE patient_id = ? AND user_id IS NOT NULL", pid).map((c) => c.user_id);
+    const orphanCgs = cgUsers.filter((u) => !get("SELECT 1 FROM caregivers WHERE user_id = ? AND patient_id != ?", u, pid));
+    const users = [...(p.user_id ? [p.user_id] : []), ...orphanCgs];
+    for (const e of all<{ id: number }>("SELECT id FROM escalations WHERE patient_id = ?", pid)) {
+      run("DELETE FROM escalation_events WHERE escalation_id = ?", e.id);
+      run("DELETE FROM settings WHERE key = ?", `loop:${e.id}`);
+    }
+    for (const table of ["escalations", "observations", "labs", "med_changes", "tasks", "visits", "messages", "patient_baseline", "patient_notes", "patient_documents",
+      "patient_reviews", "plan_drafts", "visit_prep", "outside_visits", "watches", "consents", "care_team", "caregivers", "record_questions"]) {
+      run(`DELETE FROM ${table} WHERE patient_id = ?`, pid);
+    }
+    run("DELETE FROM settings WHERE key LIKE ?", `%${pid}%`);
+    run("DELETE FROM patients WHERE id = ?", pid);
+    for (const u of users) {
+      run("DELETE FROM messages WHERE user_id = ?", u);
+      run("DELETE FROM convo_state WHERE user_id = ?", u);
+      run("DELETE FROM settings WHERE key LIKE ?", `%${u}%`);
+      run("DELETE FROM users WHERE id = ?", u);
+    }
+    audit(t, actor, "PATIENT_DELETED", "patient", pid, { name: p.name, phone: p.phone });
+  });
+  return { name: p.name };
+}

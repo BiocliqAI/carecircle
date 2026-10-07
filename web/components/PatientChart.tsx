@@ -12,7 +12,7 @@ import { ClinicalSummaryCard } from "./ClinicalSummaryCard";
 import { DocumentOcrModal } from "./DocumentOcrModal";
 import { ClinicOutsideVisits } from "./OutsideVisits";
 import { BaselineCard } from "./baseline";
-import { CareCircleCard, DetailsCard, DocumentsTab, NotesTab } from "./PatientRecordTabs";
+import { CareCircleCard, DeletePatientCard, DetailsCard, DocumentsTab, NotesTab } from "./PatientRecordTabs";
 import { PlanTab, Timeline, type Data, type TL } from "./PatientView";
 import { Icon } from "./Icon";
 import { Spark } from "./Spark";
@@ -218,7 +218,10 @@ export function PatientChart({ id }: { id: string }) {
 
           {sec === "profile" && (
             <div className="v2-grid12">
-              <div className="span7"><DetailsCard p={d.patient} onChange={changed} /></div>
+              <div className="span7 stack gap16">
+                <DetailsCard p={d.patient} onChange={changed} />
+                {isDoctor && d.patient.doctor_id === d.viewer.id && <DeletePatientCard p={d.patient} />}
+              </div>
               <div className="span5"><BaselineCard b={d.baseline} pid={id} canEdit now={d.now} /></div>
             </div>
           )}

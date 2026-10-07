@@ -47,4 +47,29 @@ describe("live clinic: the sample kidney patient (A Gopal)", () => {
     assert.equal(count("SELECT COUNT(*) AS n FROM visits WHERE patient_id = 'p_hand'"), 7);
     assert.equal(count("SELECT COUNT(*) AS n FROM patients"), 2, "the earlier sample stays, no third patient");
   });
+
+  it("tops up fluid days missing from an earlier import, once, without touching other days", async () => {
+    const { topUpAppaFluids } = await import("../lib/import_appa");
+    const fluidDays = () => count("SELECT COUNT(DISTINCT date(observed_at / 1000, 'unixepoch', '+330 minutes')) AS n FROM observations WHERE patient_id = 'p_hand' AND type IN ('fluid_in','urine_out')");
+    const full = fluidDays();
+    run("DELETE FROM observations WHERE patient_id = 'p_hand' AND type IN ('fluid_in','urine_out') AND observed_at < ?", Date.parse("2025-09-01T00:00:00+05:30")); // as imported before the fluid IO sheet
+    run("DELETE FROM settings WHERE key = 'sample:appa:fluids-v2'");
+    assert.ok(fluidDays() < full);
+    assert.ok(topUpAppaFluids() > 0);
+    assert.equal(fluidDays(), full);
+    assert.equal(topUpAppaFluids(), 0, "runs once");
+  });
+
+  it("Ask the record can chart and read fluid intake, urine output and water-tablet doses", async () => {
+    const ask = await import("../lib/askrecord");
+    assert.deepEqual(ask.questionSeries("How has fluid input and output been?"), ["fluid_in", "urine_out"]);
+    assert.deepEqual(ask.questionSeries("weight against the Lasix dose"), ["diuretic", "weight"]);
+    const t = Date.parse("2026-09-15T12:00:00+05:30");
+    const chart = ask.buildChart("p_hand", ["fluid_in", "urine_out", "diuretic"], 730, t)!;
+    assert.deepEqual(chart.panels.map((p) => p.name), ["fluid_in", "urine_out", "diuretic"]);
+    assert.ok(chart.panels[0].points.length > 200);
+    const ctx = ask.buildContext("p_hand", t) as { fluidPerDay: [string, number | null, number | null][]; diureticPerDay: unknown[] };
+    assert.ok(ctx.fluidPerDay.length > 30);
+    assert.deepEqual(ctx.fluidPerDay.at(-1), ["2026-09-10", 850, 650]);
+  });
 });
