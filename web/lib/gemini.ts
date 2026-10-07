@@ -145,14 +145,20 @@ export async function generateClinicalSummary(patientId: string): Promise<Clinic
         : null,
     };
 
-    const systemInstruction = `You are a senior consultant physician preparing a doctor for a consultation, from the patient's between-visit monitoring data (JSON). Be brief and specific: the doctor has 30 seconds to read it.
-Return JSON:
+    const systemInstruction = `You are a Senior Consultant Physician and Nephrologist reviewing between-visit remote monitoring telemetry before a patient consultation.
+Produce a comprehensive, medically rigorous, structured pre-consultation summary.
+Your tone must be clinical, objective, quantitative, and clear. Ground every observation in the provided data; never invent values, dates, people or events.
+You must return a valid JSON object matching the following schema:
 {
-  "headline": "ONE sentence, at most 25 words: overall control and the single most important issue",
-  "bullets": ["4-7 key points, most important first, each at most 20 words, starting with the topic and quoting numbers and dates from the data, e.g. 'Creatinine: 2.59 → 3.01 mg/dL (+0.42) on 10 Sep'"],
-  "discuss": ["2-4 things to decide or check at today's visit, each at most 15 words"]
-}
-Rules: use only values present in the data; never invent numbers, dates, people or events. Leave out anything normal and unremarkable unless it answers an obvious question. No paragraphs, no headings, no filler words.`;
+  "executiveSummary": "2-3 sentences overview of patient control and primary issues",
+  "clinicalTrajectory": "Detailed assessment of disease stability (cardiorenal / metabolic / cardiac)",
+  "biometricAndFluidControl": "Specific quantitative analysis of BP, weight vs dry weight, sugars, fluids",
+  "renalMetabolicPanel": "Analysis of creatinine deltas, eGFR, potassium, electrolytes and safety",
+  "treatmentAdherence": "Analysis of adherence percentage, specific missed medications, and patterns",
+  "careCircleEscalations": "Summary of alerts triggered, escalation levels (Level 1 vs Level 2 caregivers, by name when given), and actions taken",
+  "crossDoctorReconciliation": "Status of medicine adjustments made by consulting specialists named in the data",
+  "consultationDiscussionPoints": ["3-5 prioritized clinical discussion points for today's visit"]
+}`;
 
     // Nothing changed since the last summary (same data, same instructions)? Reuse it instead of asking the AI again.
     const modelName = getGeminiModel();
@@ -168,32 +174,30 @@ Rules: use only values present in the data; never invent numbers, dates, people 
     const resp = (await ai.interactions.create({
       model: modelName,
       store: false,
-      input: `Monitoring data since the last visit:\n\n${JSON.stringify(promptContext)}`,
+      input: `Analyze this patient's remote telemetry data and generate the structured clinical summary JSON:\n\n${JSON.stringify(promptContext, null, 2)}`,
       system_instruction: systemInstruction,
       response_format: { type: "text", mime_type: "application/json" },
     } as never)) as { output_text?: string | null };
 
     if (resp.output_text) {
-      const parsed = JSON.parse(resp.output_text) as { headline?: unknown; bullets?: unknown; discuss?: unknown };
-      const list = (x: unknown) => (Array.isArray(x) ? x.map(String).map((b) => b.trim()).filter(Boolean) : []);
+      const parsed = JSON.parse(resp.output_text);
       const summary: ClinicalSummaryResult = {
         source: modelName,
         model: modelName,
         generatedAt: t,
         patientId,
         patientName: p.name,
-        executiveSummary: typeof parsed.headline === "string" ? parsed.headline.trim() : "",
-        clinicalTrajectory: "",
-        biometricAndFluidControl: "",
-        renalMetabolicPanel: "",
-        treatmentAdherence: "",
-        careCircleEscalations: "",
-        crossDoctorReconciliation: "",
-        bullets: list(parsed.bullets).slice(0, 8),
-        consultationDiscussionPoints: list(parsed.discuss).slice(0, 5),
+        executiveSummary: parsed.executiveSummary || "",
+        clinicalTrajectory: parsed.clinicalTrajectory || "",
+        biometricAndFluidControl: parsed.biometricAndFluidControl || "",
+        renalMetabolicPanel: parsed.renalMetabolicPanel || "",
+        treatmentAdherence: parsed.treatmentAdherence || "",
+        careCircleEscalations: parsed.careCircleEscalations || "",
+        crossDoctorReconciliation: parsed.crossDoctorReconciliation || "",
+        consultationDiscussionPoints: Array.isArray(parsed.consultationDiscussionPoints) ? parsed.consultationDiscussionPoints : [],
         rawText: resp.output_text,
       };
-      if (summary.executiveSummary || summary.bullets!.length) {
+      if (summary.executiveSummary) {
         setSetting(`aisum:${patientId}`, JSON.stringify({ fp: fingerprint, summary }));
         return summary;
       }
