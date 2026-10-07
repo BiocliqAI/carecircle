@@ -7,7 +7,7 @@ import { api, avatarColor, initials, useSession } from "./client";
 import { medMarkers } from "./charts";
 import { AskRecord } from "./AskRecord";
 import { AdherenceHeatmap, EscalationCard, VitalCharts, visitDayKeys } from "./interval";
-import { KidneyTab } from "./kidney";
+import { KidneyTab, RANGES } from "./kidney";
 import { ClinicalSummaryCard } from "./ClinicalSummaryCard";
 import { DocumentOcrModal } from "./DocumentOcrModal";
 import { ClinicOutsideVisits } from "./OutsideVisits";
@@ -31,12 +31,22 @@ export function PatientChart({ id }: { id: string }) {
   const [sec, setSec] = useState<Section>("overview");
   const [showOcr, setShowOcr] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  // One time range for every chart on Vitals & labs; 90 days unless the doctor picks another.
+  const [range, setRange] = useState("90");
+  const [vs, setVs] = useState<IntervalSummary | null>(null);
 
   const load = () => api<Data>(`/api/patients/${id}`).then((x) => { setD(x); setErr(null); }).catch((e) => setErr(e.message));
   useEffect(() => {
     if (!loading) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, bump, loading, user?.id]);
+  useEffect(() => {
+    if (loading || sec !== "vitals" || range === "visit") return;
+    let live = true;
+    setVs(null);
+    api<{ summary: IntervalSummary }>(`/api/patients/${id}/vitals?range=${range}`).then((r) => { if (live) setVs(r.summary); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [id, bump, loading, sec, range]);
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
     const map: Record<string, Section> = { documents: "documents", profile: "profile", notes: "visits", alerts: "alerts", meds: "meds", vitals: "vitals" };
@@ -50,6 +60,7 @@ export function PatientChart({ id }: { id: string }) {
   const isDoctor = d.viewer.role === "DOCTOR";
   const cur = d.current;
   const s = d.summary;
+  const vranged = range === "visit" ? null : vs; // until the chosen range arrives, the charts show since the last visit
   const allergy = d.baseline?.allergies && !/^(none|nil|nkda|no)/i.test(d.baseline.allergies) ? d.baseline.allergies : null;
   const conditions = (d.patient.conditions || "").split(/,\s*|\s+·\s+/).map((c) => c.replace(/\s*\([^)]*\)/g, "").trim()).filter(Boolean);
   const primary = d.caregivers.find((c) => c.level === 1);
@@ -146,8 +157,12 @@ export function PatientChart({ id }: { id: string }) {
           {sec === "vitals" && (
             cur && s ? (
               <div className="stack gap16">
-                <section className="v2-card pad"><VitalCharts s={s} plan={cur.plan} base={cur.vitals} markers={[...d.visits.map((v, i) => ({ t: v.visit_at, label: `Visit ${i + 1}` })), ...medMarkers(d.medChanges, s.from, s.to)]} /></section>
-                {d.kidney ? <KidneyTab lr={d.kidney} plan={cur.plan} sinceVisit={cur.visit_at} now={d.now} clinician pid={id} medChanges={d.medChanges} team={d.careTeam} onChange={changed} /> : <LabsCard d={d} />}
+                <div className="row" role="group" aria-label="Time range for all charts">
+                  {RANGES.map(([k, l]) => <button key={k} className={`check ${range === k ? "on" : ""}`} onClick={() => setRange(k)} aria-pressed={range === k}>{l}</button>)}
+                  {range !== "visit" && !vs && <span className="spin" aria-label="Loading" />}
+                </div>
+                {(() => { const vrange = vranged ?? s; return <section className="v2-card pad"><VitalCharts s={vrange} plan={cur.plan} base={cur.vitals} markers={[...d.visits.filter((v) => v.visit_at >= vrange.from).map((v) => ({ t: v.visit_at, label: `Visit ${d.visits.indexOf(v) + 1}` })), ...medMarkers(d.medChanges, vrange.from, vrange.to)]} /></section>; })()}
+                {d.kidney ? <KidneyTab lr={d.kidney} plan={cur.plan} sinceVisit={cur.visit_at} now={d.now} clinician pid={id} medChanges={d.medChanges} team={d.careTeam} onChange={changed} range={range} /> : <LabsCard d={d} />}
               </div>
             ) : <Empty text="Vitals appear here once Visit 1 sets the care plan and readings start coming in." extra={<LabsCard d={d} />} />
           )}
