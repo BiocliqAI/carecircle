@@ -36,4 +36,15 @@ describe("live clinic: the sample kidney patient (A Gopal)", () => {
     await ensureSeeded();
     assert.equal(count("SELECT COUNT(*) AS n FROM patients"), 1, "never added twice");
   });
+
+  it("fills in an A Gopal created by hand instead of adding a second one", async () => {
+    run("DELETE FROM settings WHERE key = 'sample:appa'");
+    run("DELETE FROM audit WHERE action = 'HISTORY_IMPORTED'");
+    run("INSERT INTO users(id, name, role, phone, title) VALUES('u_hand','A Gopal','PATIENT','+91 98000 00001','Patient')");
+    run("INSERT INTO patients(id, user_id, name, phone, doctor_id, created_at) VALUES('p_hand','u_hand','A Gopal','+91 98000 00001','u_doc',0)");
+    (globalThis as { __ccAppaDone?: boolean }).__ccAppaDone = false;
+    await ensureSeeded();
+    assert.equal(count("SELECT COUNT(*) AS n FROM visits WHERE patient_id = 'p_hand'"), 7);
+    assert.equal(count("SELECT COUNT(*) AS n FROM patients"), 2, "the earlier sample stays, no third patient");
+  });
 });

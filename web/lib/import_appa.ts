@@ -129,7 +129,8 @@ export function importAppa(pid: string, now: number): ImportSummary {
 
 /**
  * Live clinic: adds "A Gopal" with the spreadsheet history, once per database, as soon as the clinic has a doctor
- * (so a fresh deployment shows real trends without any manual step). Skipped if a history import was already done
+ * (so a fresh deployment shows real trends without any manual step). A Gopal created by hand with no readings yet is
+ * filled in instead of adding a second one. Skipped if a history import was already done
  * (e.g. into a patient of your choice) and never repeated after that. Turn off with CARECIRCLE_SAMPLE_PATIENT=off.
  */
 export function ensureAppaSample(now: number): string | null {
@@ -137,6 +138,14 @@ export function ensureAppaSample(now: number): string | null {
   if (get("SELECT 1 FROM audit WHERE action = 'HISTORY_IMPORTED'")) {
     setSetting("sample:appa", "imported earlier");
     return null;
+  }
+  // A Gopal already created by hand (with no readings yet): fill in that record rather than adding a second one.
+  const existing = get<{ id: string }>(
+    "SELECT p.id FROM patients p WHERE lower(p.name) LIKE '%gopal%' AND NOT EXISTS (SELECT 1 FROM observations o WHERE o.patient_id = p.id) ORDER BY p.created_at LIMIT 1");
+  if (existing) {
+    importAppa(existing.id, now);
+    setSetting("sample:appa", existing.id);
+    return existing.id;
   }
   const doctor = get<{ id: string }>("SELECT id FROM users WHERE role = 'DOCTOR' ORDER BY (name LIKE '%Dileep%') DESC, rowid LIMIT 1");
   if (!doctor) return null; // the clinic isn't set up yet: try again on a later request
