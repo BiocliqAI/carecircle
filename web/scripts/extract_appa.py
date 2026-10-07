@@ -26,9 +26,23 @@ def sheet(name):
                         continue
                     col = re.match(r"[A-Z]+", c.get("r")).group(0)
                     cells[col] = ss[int(v.text)] if c.get("t") == "s" else v.text
+                    cells["_s" + col] = int(c.get("s", 0))
                 out.append(cells)
             return out
     raise KeyError(name)
+
+
+# Cell colours the family used on the lab sheet: red text and/or yellow highlight.
+_st = ET.fromstring(z.read("xl/styles.xml"))
+_fills = [(f.find("m:patternFill/m:fgColor", NS).get("rgb") if f.find("m:patternFill/m:fgColor", NS) is not None else None) for f in _st.find("m:fills", NS)]
+_fonts = [(f.find("m:color", NS).get("rgb") if f.find("m:color", NS) is not None else None) for f in _st.find("m:fonts", NS)]
+_xfs = [(int(x.get("fillId", 0)), int(x.get("fontId", 0))) for x in _st.find("m:cellXfs", NS)]
+
+
+def mark(style):
+    fill, font = _xfs[style]
+    m = [x for x, on in (("red", _fonts[font] == "FFFF0000"), ("yellow", _fills[fill] == "FFFFFF00")) if on]
+    return ",".join(m) or None
 
 
 def d(serial):
@@ -95,7 +109,7 @@ MARKERS = {
 SANE = {"phosphorus": (0.5, 15), "hb": (4, 20), "creatinine": (0.2, 15)}
 rows = sheet("lab tests summary")
 header = rows[1]
-dates = {col: d(v) for col, v in header.items() if col != "B" and f(v)}
+dates = {col: d(v) for col, v in header.items() if col != "B" and not col.startswith("_s") and f(v)}
 seen = {(x["d"], x["m"]) for x in data["labs"]}
 for r in rows[2:]:
     key = MARKERS.get((r.get("B") or "").strip())
@@ -110,7 +124,10 @@ for r in rows[2:]:
             continue
         if (day, key) in seen:
             data["labs"] = [x for x in data["labs"] if not (x["d"] == day and x["m"] == key)]
-        data["labs"].append({"d": day, "m": key, "v": v})
+        lab = {"d": day, "m": key, "v": v}
+        if mark(r.get("_s" + col, 0)):
+            lab["c"] = mark(r["_s" + col])
+        data["labs"].append(lab)
 data["labs"].sort(key=lambda x: (x["d"], x["m"]))
 json.dump(data, open(sys.argv[2], "w"), separators=(",", ":"))
 print({k: len(v) for k, v in data.items()}, "labs dates:", len({x["d"] for x in data["labs"]}))

@@ -189,7 +189,7 @@ export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChange
         {labCharts.map(({ marker, lines }) => {
           const ls = lr.labs.find((l) => l.marker === marker);
           if (!ls) return null;
-          const pts = ls.series.filter((p) => inR(p.t)).map((p) => ({ t: p.t, v1: p.v, flag: p.flag }));
+          const pts = ls.series.filter((p) => inR(p.t)).map((p) => ({ t: p.t, v1: p.v, flag: p.source === "import" || p.source === "BASELINE" ? (p.mark?.includes("red") ? "sheet" : null) : p.flag }));
           return (
             <ChartCard key={marker} label={ls.label}>
               <div className="card-head"><h3>{ls.label}</h3><small>{ls.unit}{ls.latest ? ` · latest ${fmtLab(marker, ls.latest.v)}` : ""}</small></div>
@@ -212,12 +212,17 @@ export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChange
                       <td style={{ whiteSpace: "nowrap" }}>{fmtDate(dayMs(d))}</td>
                       {markersShown.map((m) => {
                         const p = allLabs.filter((x) => x.marker === m && dayKey(x.t) === d).pop();
-                        return <td key={m} className={p?.flag ? "delta bad" : ""} title={p ? `source: ${p.source}` : ""}>{p ? fmtLab(m, p.v) : ""}</td>;
+                        // Values from the family's sheet keep its colours (red text, yellow highlight); others use the app's own range flag.
+                        const sheet = p && (p.source === "import" || p.source === "BASELINE");
+                        const red = p && (sheet ? !!p.mark?.includes("red") : !!p.flag);
+                        const yellow = p && sheet && !!p.mark?.includes("yellow");
+                        return <td key={m} className={`${red ? "lab-red" : ""}${yellow ? " lab-yellow" : ""}`} title={p ? `${sheet ? "From the family's lab sheet" : `Source: ${p.source}`}${red ? " · marked out of range" : ""}${yellow ? " · highlighted" : ""}` : ""}>{p ? fmtLab(m, p.v) : ""}</td>;
                       })}
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <div className="lab-legend"><span className="lab-red">Red</span> out of range · <span className="lab-yellow">Yellow</span> highlighted — as marked in the family&rsquo;s lab sheet (newer results: the clinic&rsquo;s ranges)</div>
             </div>
           ) : <div className="empty">No lab results in this range</div>}
         </div>

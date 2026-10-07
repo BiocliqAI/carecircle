@@ -147,6 +147,7 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["messages", "wa_status", "TEXT"],
   ["messages", "wa_sid", "TEXT"],
   ["messages", "wa_error", "TEXT"],
+  ["labs", "mark", "TEXT"], // colour from the source sheet: "red" (out of range), "yellow" (highlighted), or both
   ["record_questions", "ctx_hash", "TEXT"],
   ["med_changes", "outside_visit_id", "INTEGER"],
   ["med_changes", "med_key", "TEXT"],

@@ -905,3 +905,8 @@ body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; backg
 .chart-legend { display: flex; gap: 14px; margin-top: 4px; font-size: 12px; color: var(--c-mute, #667); }
 .chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .chart-legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+/* lab results: colours carried over from the source sheet */
+td.lab-red, .lab-legend .lab-red { color: #dc2626; font-weight: 600; }
+td.lab-yellow, .lab-legend .lab-yellow { background: #fef08a; }
+.lab-legend .lab-red, .lab-legend .lab-yellow { padding: 0 4px; border-radius: 3px; }
+.lab-legend { margin-top: 8px; font-size: 12px; color: var(--c-mute, #667); }
