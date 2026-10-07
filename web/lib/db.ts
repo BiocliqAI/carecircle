@@ -139,6 +139,9 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["patient_documents", "extract", "TEXT"],
   ["messages", "body_en", "TEXT"],
   ["messages", "quick_en", "TEXT"],
+  ["messages", "wa_status", "TEXT"],
+  ["messages", "wa_sid", "TEXT"],
+  ["messages", "wa_error", "TEXT"],
   ["med_changes", "outside_visit_id", "INTEGER"],
   ["med_changes", "med_key", "TEXT"],
   ["med_changes", "new_dose", "TEXT"],
@@ -151,6 +154,7 @@ function migrate(db: DatabaseSyncT) {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
     if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
   }
+  db.exec("CREATE INDEX IF NOT EXISTS messages_wa_sid ON messages(wa_sid)");
 }
 
 const g = globalThis as unknown as { __ccDb?: DatabaseSyncT; __ccSchema?: string };

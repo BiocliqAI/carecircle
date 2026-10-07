@@ -26,6 +26,15 @@ describe("Parser - Vitals & Measurements", () => {
     const p4 = parseRules("sys 135 dia 88", SAMPLE_MEDS);
     assert.deepEqual(p4.vitals.find((v) => v.type === "bp"), { type: "bp", v1: 135, v2: 88 });
   });
+  it("parses BP written without a slash, but only right after the word BP", () => {
+    for (const t of ["BP 130 80", "bp: 130-80", "Blood pressure 130,80 today", "BP 130\\80", "bp is 130 and 80"]) {
+      assert.deepEqual(parseRules(t, SAMPLE_MEDS).vitals.find((v) => v.type === "bp"), { type: "bp", v1: 130, v2: 80 }, t);
+    }
+    const both = parseRules("BP 130 80, weight 72", SAMPLE_MEDS).vitals;
+    assert.deepEqual(both.find((v) => v.type === "weight"), { type: "weight", v1: 72 });
+    assert.equal(parseRules("weight 72 sugar 110", SAMPLE_MEDS).vitals.find((v) => v.type === "bp"), undefined);
+    assert.equal(parseRules("BP 80 130", SAMPLE_MEDS).vitals.find((v) => v.type === "bp"), undefined); // top number must be higher
+  });
 
   it("parses body weight accurately without false positives", () => {
     const p1 = parseRules("Weight 72.4 kg", SAMPLE_MEDS);

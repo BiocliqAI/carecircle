@@ -750,8 +750,13 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
 
   // --- caregiver conversational flows: ACK / outcome / note
   if (user.role === "CAREGIVER") {
-    // Joining the care circle: a plain YES / NO answers the consent request, unless an alert is waiting (then YES = ACK).
-    if (pendingConsent(p.id, userId) && (YES_RE.test(body) || NO_RE.test(body)) && !get("SELECT 1 FROM escalations WHERE patient_id = ? AND state = 'NOTIFIED'", p.id)) {
+    // Joining the care circle: a plain YES / NO answers the consent request, unless this caregiver was sent an alert
+    // that is still waiting (then YES = ACK). An alert that went to someone else (or never reached them) doesn't count.
+    const alertSentToMe = !!get(
+      `SELECT 1 FROM escalations e JOIN messages m ON m.patient_id = e.patient_id AND m.user_id = ? AND m.kind = 'escalation'
+         AND m.created_at >= e.started_at AND COALESCE(m.wa_status, '') NOT IN ('skipped','failed','expired')
+       WHERE e.patient_id = ? AND e.state = 'NOTIFIED'`, userId, p.id);
+    if (pendingConsent(p.id, userId) && (YES_RE.test(body) || NO_RE.test(body)) && !alertSentToMe) {
       if (YES_RE.test(body)) {
         respondConsent(p.id, userId, "GIVEN", msgId, t);
         return void reply(`Thank you, ${first(user.name)}! ✅ You're now in ${first(p.name)}'s care circle. I'll message you only if something needs attention. You can also log readings for ${first(p.name)} here anytime.`);
