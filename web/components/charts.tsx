@@ -77,12 +77,16 @@ interface Props {
   unit?: string;
   color?: string;
   color2?: string;
+  /** Names for the two lines of a dual chart, shown under it (e.g. ["Intake", "Urine"]). */
+  legend?: [string, string];
+  /** For daily logs: leave a gap in the line where this many days or more have nothing, instead of bridging it. */
+  breakGapDays?: number;
 }
 
-export function LineChart({ series, from, to, lines = [], markers = [], dual, height = 200, unit = "", color = "#0f766e", color2 = "#7c3aed" }: Props) {
+export function LineChart({ series, from, to, lines = [], markers = [], dual, height = 200, unit = "", color = "#0f766e", color2 = "#7c3aed", legend, breakGapDays }: Props) {
   const zoom = useContext(ChartZoom);
   const W = 760, H = zoom ? Math.round(height * ZOOM_H) : height, L = 44, R = 12, T = 14, B = 26;
-  const vals = [...series.map((p) => p.v1), ...(dual ? series.map((p) => p.v2 ?? p.v1) : []), ...lines.map((l) => l.y)];
+  const vals = [...series.map((p) => p.v1), ...(dual ? series.filter((p) => p.v2 != null).map((p) => p.v2!) : []), ...lines.map((l) => l.y)];
   if (!series.length) return <div className="empty">No readings in this period</div>;
   let lo = Math.min(...vals), hi = Math.max(...vals);
   const pad = Math.max((hi - lo) * 0.12, 1);
@@ -90,14 +94,15 @@ export function LineChart({ series, from, to, lines = [], markers = [], dual, he
   hi = Math.ceil(hi + pad);
   const x = (t: number) => L + ((t - from) / Math.max(1, to - from)) * (W - L - R);
   const y = (v: number) => T + (1 - (v - lo) / Math.max(1e-6, hi - lo)) * (H - T - B);
-  const path = (get: (p: Pt) => number) => series.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(get(p)).toFixed(1)}`).join(" ");
+  const gap = breakGapDays ? breakGapDays * 86400000 : Infinity;
+  const path = (get: (p: Pt) => number, pts: Pt[] = series) => pts.map((p, i) => `${i && p.t - pts[i - 1].t < gap ? "L" : "M"}${x(p.t).toFixed(1)},${y(get(p)).toFixed(1)}`).join(" ");
   const ticks = 4;
   const yTicks = Array.from({ length: ticks + 1 }, (_, i) => lo + ((hi - lo) * i) / ticks);
   const days = Math.max(1, Math.round((to - from) / 86400000));
-  const step = days > 40 ? 14 : days > 14 ? 7 : days > 6 ? 2 : 1;
+  const step = days > 300 ? 60 : days > 120 ? 30 : days > 40 ? 14 : days > 14 ? 7 : days > 6 ? 2 : 1; // about 8 date labels, never crowded
   const xTicks: number[] = [];
   for (let t = from; t <= to; t += step * 86400000) xTicks.push(t);
-  return (
+  const chart = (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block" }} role="img">
       {yTicks.map((v, i) => (
         <g key={i}>
@@ -130,16 +135,28 @@ export function LineChart({ series, from, to, lines = [], markers = [], dual, he
         </g>
       ))}
       <path d={path((p) => p.v1)} fill="none" stroke={color} strokeWidth="2" />
-      {dual && <path d={path((p) => p.v2 ?? p.v1)} fill="none" stroke={color2} strokeWidth="2" />}
+      {dual && <path d={path((p) => p.v2!, series.filter((p) => p.v2 != null))} fill="none" stroke={color2} strokeWidth="2" />}
       {series.map((p, i) => (
         <g key={i}>
           <circle cx={x(p.t)} cy={y(p.v1)} r={p.flag ? 4.5 : 2.6} fill={p.flag ? "#ef4444" : color}>
-            <title>{`${fmtDate(p.t, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}: ${p.v1}${dual && p.v2 != null ? "/" + p.v2 : ""} ${unit}`}</title>
+            <title>{legend
+              ? `${fmtDate(p.t, { day: "numeric", month: "short" })}: ${legend[0]} ${p.v1}${p.v2 != null ? `, ${legend[1]} ${p.v2}` : ""} ${unit}`
+              : `${fmtDate(p.t, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}: ${p.v1}${dual && p.v2 != null ? "/" + p.v2 : ""} ${unit}`}</title>
           </circle>
-          {dual && p.v2 != null && <circle cx={x(p.t)} cy={y(p.v2)} r={p.flag ? 4 : 2.3} fill={p.flag ? "#ef4444" : color2} />}
+          {dual && p.v2 != null && <circle cx={x(p.t)} cy={y(p.v2)} r={p.flag ? 4 : 2.3} fill={p.flag ? "#ef4444" : color2}><title>{`${fmtDate(p.t, { day: "numeric", month: "short" })}: ${legend ? `${legend[1]} ` : ""}${p.v2} ${unit}`}</title></circle>}
         </g>
       ))}
     </svg>
+  );
+  if (!legend) return chart;
+  return (
+    <div>
+      {chart}
+      <div className="chart-legend">
+        <span><i style={{ background: color }} />{legend[0]}</span>
+        <span><i style={{ background: color2 }} />{legend[1]}</span>
+      </div>
+    </div>
   );
 }
 

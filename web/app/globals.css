@@ -902,3 +902,6 @@ body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; backg
 @keyframes chart-pop-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
 @media (max-width: 640px) { .chart-pop { padding: 8px; } .chart-pop-box { padding: 14px 12px; } }
 @media (prefers-reduced-motion: reduce) { .chart-pop { animation: none; } .chart-card { transition: none; } }
+.chart-legend { display: flex; gap: 14px; margin-top: 4px; font-size: 12px; color: var(--c-mute, #667); }
+.chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.chart-legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }

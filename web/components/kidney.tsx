@@ -124,12 +124,15 @@ function Mini({ label, value, sub, tone }: { label: string; value: string; sub?:
 
 /* ------------------------------------------------------------------ long-range tab */
 
-const RANGES: [string, string][] = [["visit", "Since last visit"], ["90", "90 days"], ["365", "1 year"], ["all", "All history"]];
+export const RANGES: [string, string][] = [["visit", "Since last visit"], ["90", "90 days"], ["365", "1 year"], ["all", "All history"]];
 
-export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChanges, team, onChange }: {
+export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChanges, team, onChange, range: rangeIn }: {
   lr: LongRange; plan: CarePlan; sinceVisit: number; now: number; clinician: boolean; pid: string; medChanges: MedChangeRow[]; team: CareTeamRow[]; onChange: () => void;
+  /** Set by the page's own range selector; without it the tab shows its own buttons. */
+  range?: string;
 }) {
-  const [range, setRange] = useState("all");
+  const [rangeOwn, setRange] = useState("90");
+  const range = rangeIn ?? rangeOwn;
   const earliest = Math.min(now - 30 * DAY, ...lr.labs.flatMap((l) => l.series.map((p) => p.t)), ...lr.weight.map((w) => w.t), ...lr.visits.map((v) => v.t));
   const from = range === "visit" ? sinceVisit - DAY / 2 : range === "all" ? earliest - 3 * DAY : now - Number(range) * DAY;
   const to = now + DAY / 2;
@@ -160,7 +163,7 @@ export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChange
     <div className="stack gap16">
       <div className="row between">
         <div className="row">
-          {RANGES.map(([k, l]) => (
+          {rangeIn === undefined && RANGES.map(([k, l]) => (
             <button key={k} className={`check ${range === k ? "on" : ""}`} onClick={() => setRange(k)}>{l}</button>
           ))}
         </div>
@@ -176,12 +179,9 @@ export function KidneyTab({ lr, plan, sinceVisit, now, clinician, pid, medChange
         </ChartCard>
         <ChartCard label="Fluid intake vs urine output">
           <div className="card-head"><h3>Fluid intake vs urine output</h3><small>{lr.limit ? `limit ${lr.limit} ml/day` : ""}</small></div>
-          <ComboChart from={from} to={to} markers={markers}
-            bars={[
-              { pts: fluid.filter((f) => f.in != null).map((f) => ({ t: dayMs(f.d), v: f.in! })), unit: "ml", color: "#3b82f6", label: "Intake ml" },
-              { pts: fluid.filter((f) => f.out != null).map((f) => ({ t: dayMs(f.d), v: f.out! })), unit: "ml", color: "#a855f7", label: "Urine ml" },
-            ]}
-            barLines={lr.limit ? [{ y: lr.limit, label: `limit ${lr.limit}` }] : []} />
+          <LineChart dual unit="ml" height={210} from={from} to={to} markers={markers} color="#2563eb" color2="#a855f7" legend={["Intake", "Urine"]} breakGapDays={4}
+            series={fluid.filter((f) => f.in != null).map((f) => ({ t: dayMs(f.d), v1: f.in!, v2: f.out }))}
+            lines={lr.limit ? [{ y: lr.limit, label: `limit ${lr.limit} ml` }] : []} />
         </ChartCard>
       </div>
 

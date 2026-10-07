@@ -107,7 +107,7 @@ function Row({ label, cols, byDay, pct, title, visitDays }: { label: string; col
 
 export function VitalCharts({ s, plan, base, markers = [] }: { s: IntervalSummary; plan?: CarePlan; base?: ClinicVitals; markers?: { t: number; label: string; color?: string }[] }) {
   const th = plan?.thresholds;
-  if (!s.vitals.length) return <div className="empty">No readings logged yet.</div>;
+  if (!s.vitals.length) return <div className="empty">No BP, weight, sugar or other readings in this period. Choose a longer range to see earlier ones.</div>;
   const alertMarkers = s.escalations.filter((e) => e.type !== "COMPLIANCE").map((e) => ({ t: e.started_at, label: "⚠", color: "#f59e0b" }));
   return (
     <div className="grid g2">
