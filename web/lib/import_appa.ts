@@ -6,7 +6,7 @@
 // Nothing is sent and no alert is raised: past readings are written directly, and reminders start from `now`.
 // Re-running replaces what an earlier import (or test messages) left in the patient's record; the WhatsApp thread,
 // consents and care circle are kept.
-import { all, audit, get, run, setSetting, tx } from "./db";
+import { all, audit, get, getSetting, run, setSetting, tx } from "./db";
 import { addLab, addMedChange, getPatient } from "./engine";
 import { atLocal, dayStart } from "./time";
 import { LAB_META, type Baseline, type BaselineMed, type Medication } from "./types";
@@ -125,4 +125,27 @@ export function importAppa(pid: string, now: number): ImportSummary {
     const days = [...APPA.weight, ...APPA.glucose, ...APPA.bp, ...APPA.spo2, ...APPA.fluid, ...APPA.diuretic].map((x) => x.d).sort();
     return { visits: all_.length, readings, labs, medChanges: GOPAL_CHANGES.length, firstReading: days[0], lastReading: days.at(-1)! };
   });
+}
+
+/**
+ * Live clinic: adds "A Gopal" with the spreadsheet history, once per database, as soon as the clinic has a doctor
+ * (so a fresh deployment shows real trends without any manual step). Skipped if a history import was already done
+ * (e.g. into a patient of your choice) and never repeated after that. Turn off with CARECIRCLE_SAMPLE_PATIENT=off.
+ */
+export function ensureAppaSample(now: number): string | null {
+  if (process.env.CARECIRCLE_SAMPLE_PATIENT === "off" || getSetting("sample:appa")) return null;
+  if (get("SELECT 1 FROM audit WHERE action = 'HISTORY_IMPORTED'")) {
+    setSetting("sample:appa", "imported earlier");
+    return null;
+  }
+  const doctor = get<{ id: string }>("SELECT id FROM users WHERE role = 'DOCTOR' ORDER BY (name LIKE '%Dileep%') DESC, rowid LIMIT 1");
+  if (!doctor) return null; // the clinic isn't set up yet: try again on a later request
+  const pid = "p_appa", uid = "u_appa";
+  let phone = "+91 90000 50001";
+  for (let n = 2; get("SELECT 1 FROM patients WHERE phone = ?", phone); n++) phone = `+91 90000 5${String(n).padStart(4, "0")}`;
+  run("INSERT INTO users(id, name, role, phone, title) VALUES(?,?,?,?,?)", uid, "A Gopal", "PATIENT", phone, "Patient");
+  run("INSERT INTO patients(id, user_id, name, age, sex, phone, conditions, address, doctor_id, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", pid, uid, "A Gopal", 78, "M", phone, "", "", doctor.id, now);
+  importAppa(pid, now);
+  setSetting("sample:appa", pid);
+  return pid;
 }

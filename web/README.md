@@ -80,7 +80,7 @@ Notes:
 - **Replicas:** keep exactly 1. The database is a single SQLite file on the volume.
 - **Scheduler:** a background timer (`instrumentation.ts`) runs it every minute, so reminders and escalations fire without traffic.
 - **Backups:** run `npm run clinic:backup` from a Railway shell, or download `/data/clinic.db`.
-- **Importing A Gopal's history** (anonymised spreadsheet, baseline 13 Aug 2025) into a patient created in the app: from a Railway shell, `npm run clinic:backup`, then `npm run clinic:import-appa -- <patient-id>` (the id is in the patient's page URL, `/patients/<id>`). Re-running replaces the earlier import. Nothing is sent; reminders follow the current plan from then on.
+- **Sample kidney patient:** once the clinic has a doctor, the app adds **A Gopal** with real (anonymised) history: baseline / Visit 1 on 13 Aug 2025, later prescriptions as visits, home readings, labs and medicine changes. It happens once per database; nothing is sent. Set `CARECIRCLE_SAMPLE_PATIENT=off` to skip it. To import the same history into another patient instead: `npm run clinic:import-appa -- <patient-id>`.
 - **Data:** synthetic data only. There are no per-user accounts, and everyone who has the password sees everything.
 
 ## Demo script (≈10 min)
