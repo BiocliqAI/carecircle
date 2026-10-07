@@ -288,7 +288,7 @@ export function deletePatient(pid: string, t: number, actor: string): { name: st
       run("DELETE FROM settings WHERE key = ?", `loop:${e.id}`);
     }
     for (const table of ["escalations", "observations", "labs", "med_changes", "tasks", "visits", "messages", "patient_baseline", "patient_notes", "patient_documents",
-      "patient_reviews", "plan_drafts", "visit_prep", "outside_visits", "watches", "consents", "care_team", "caregivers"]) {
+      "patient_reviews", "plan_drafts", "visit_prep", "outside_visits", "watches", "consents", "care_team", "caregivers", "record_questions"]) {
       run(`DELETE FROM ${table} WHERE patient_id = ?`, pid);
     }
     run("DELETE FROM settings WHERE key LIKE ?", `%${pid}%`);

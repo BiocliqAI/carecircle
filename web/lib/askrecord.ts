@@ -2,7 +2,8 @@
 // Lasix dose") and gets a short answer from this patient's own record, with the chart. The AI reads a compact
 // summary of the record and may only choose which series to show; every plotted point comes from the database.
 // Without AI, a keyword match picks the series and the answer is plain statistics.
-import { all, get } from "./db";
+import { createHash } from "node:crypto";
+import { all, get, run } from "./db";
 import { getBaseline } from "./clinic";
 import { getVisits, getPatient } from "./engine";
 import { DAY, dayKey, dayStart, fmtDate } from "./time";
@@ -11,7 +12,7 @@ import { medChanges } from "./summary";
 
 export interface Panel { name: string; label: string; unit: string; dual: boolean; points: { t: number; v1: number; v2?: number }[] }
 export interface ChartData { from: number; to: number; panels: Panel[]; changes: { at: number; med_name: string; change: string; new_dose: string | null; prescriber: string | null; status: string }[] }
-export interface Answer { via: "ai" | "rules"; answer: string; facts: string[]; chart: ChartData | null; note: string | null }
+export interface Answer { via: "ai" | "rules"; answer: string; facts: string[]; chart: ChartData | null; note: string | null; reusedFrom?: number; ctxHash?: string }
 
 const VITALS: VitalType[] = ["bp", "weight", "glucose", "hr", "spo2"];
 // Day totals: fluid intake and urine output (a logged "total" replaces the running sum, as in dayFluid), water tablets.
@@ -134,10 +135,17 @@ export async function askRecord(pid: string, question: string, t: number): Promi
   const { isGeminiConfigured, askRecordAI } = await import("./gemini");
   const aiOn = isGeminiConfigured();
   if (aiOn) {
-    const ai = await Promise.race([askRecordAI(buildContext(pid, t), q), new Promise<null>((r) => setTimeout(() => r(null), 50_000))]).catch(() => null);
+    const context = buildContext(pid, t);
+    // The same question about an unchanged record has the same answer: reuse it instead of asking the AI again.
+    const ctxHash = createHash("sha256").update(q.toLowerCase().replace(/\s+/g, " ").replace(/[?.!\s]+$/, "") + "\u0000" + JSON.stringify(context)).digest("hex");
+    const prev = get<{ id: number; at: number }>("SELECT id, at FROM record_questions WHERE patient_id = ? AND ctx_hash = ? AND via = 'ai' ORDER BY at DESC LIMIT 1", pid, ctxHash);
+    const saved = prev ? getQuestion(pid, prev.id) : null;
+    if (saved) return { via: "ai", answer: saved.answer, facts: saved.facts, chart: saved.chart, note: saved.note, reusedFrom: saved.at, ctxHash };
+    const ai = await Promise.race([askRecordAI(context, q), new Promise<null>((r) => setTimeout(() => r(null), 50_000))]).catch(() => null);
     if (ai && typeof ai.answer === "string" && ai.answer.trim()) {
       const spec = cleanSpec(ai.chart) ?? (questionSeries(q).length ? { series: questionSeries(q), days: questionDays(q) } : null);
       return {
+        ctxHash,
         via: "ai", answer: ai.answer.trim().slice(0, 900),
         facts: Array.isArray(ai.facts) ? (ai.facts as unknown[]).map(String).slice(0, 6) : [],
         chart: spec ? buildChart(pid, spec.series, spec.days, t) : null,
@@ -151,4 +159,30 @@ export async function askRecord(pid: string, question: string, t: number): Promi
   return { via: "rules", answer: aiOn ? "The AI did not answer in time, so here are the numbers and the chart for what you asked about. You can ask again, or ask something narrower." : "AI is off, so here are the numbers and the chart for what you asked about.", facts: statsFor(chart), chart, note: null };
 }
 
-void get;
+
+// ---------------------------------------------------------------- the record of questions asked
+export interface AskedQuestion { id: number; at: number; by: string; question: string; answer: string; facts: string[]; note: string | null; via: string; chart: ChartData | null }
+
+/** Keeps the question and answer. The chart is kept as which series over how many days, and redrawn from the record as of then. */
+export function saveQuestion(pid: string, userId: string, question: string, a: Answer, t: number): number {
+  const spec = a.chart ? { series: a.chart.panels.map((p) => p.name), days: Math.round((a.chart.to - a.chart.from) / DAY) } : null;
+  return run("INSERT INTO record_questions(patient_id, user_id, at, question, answer, facts, note, via, chart, ctx_hash) VALUES(?,?,?,?,?,?,?,?,?,?)",
+    pid, userId, t, question, a.answer, JSON.stringify(a.facts), a.note, a.via, spec ? JSON.stringify(spec) : null, a.ctxHash ?? null).lastInsertRowid;
+}
+
+type QRow = { id: number; at: number; by: string | null; question: string; answer: string; facts: string | null; note: string | null; via: string; chart: string | null };
+const QSELECT = "SELECT q.id, q.at, u.name AS by, q.question, q.answer, q.facts, q.note, q.via, q.chart FROM record_questions q LEFT JOIN users u ON u.id = q.user_id";
+
+/** Everything asked about this patient, newest first (charts are drawn when one is opened). */
+export function listQuestions(pid: string, limit = 100): AskedQuestion[] {
+  return all<QRow>(`${QSELECT} WHERE q.patient_id = ? ORDER BY q.at DESC, q.id DESC LIMIT ?`, pid, limit).map((r) => ({ ...fromRow(r), chart: null }));
+}
+
+export function getQuestion(pid: string, id: number): AskedQuestion | null {
+  const r = get<QRow>(`${QSELECT} WHERE q.patient_id = ? AND q.id = ?`, pid, id);
+  if (!r) return null;
+  const spec = r.chart ? (JSON.parse(r.chart) as { series: string[]; days: number }) : null;
+  return { ...fromRow(r), chart: spec ? buildChart(pid, spec.series, spec.days, r.at) : null };
+}
+
+const fromRow = (r: QRow) => ({ id: r.id, at: r.at, by: r.by ?? "Someone", question: r.question, answer: r.answer, facts: r.facts ? (JSON.parse(r.facts) as string[]) : [], note: r.note, via: r.via });
