@@ -874,8 +874,11 @@ body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; backg
 .ask-chart-t { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
 .ask-note { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--c-amber-soft); color: var(--c-amber); font-size: 12.5px; font-weight: 600; }
 .ask-history { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--c-line2); }
-.ask-history h3 { font-size: 13px; font-weight: 700; margin: 0 0 6px; }
-.ask-history ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ask-hist-toggle { border: 0; background: none; padding: 2px 0; font: inherit; font-size: 13px; font-weight: 700; color: var(--c-ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.ask-hist-toggle:hover { color: var(--c-brand); }
+.ask-chev { display: inline-block; font-size: 11px; transition: transform 0.15s; }
+.ask-chev.open { transform: rotate(90deg); }
+.ask-history ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
 .ask-past { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; border: 1px solid transparent; background: #F7F9F8; border-radius: 8px; padding: 7px 10px; font: inherit; cursor: pointer; }
 .ask-past:hover, .ask-past.on { border-color: var(--c-line); background: #fff; }
 .ask-past-q { font-size: 13.5px; font-weight: 600; color: var(--c-ink); }

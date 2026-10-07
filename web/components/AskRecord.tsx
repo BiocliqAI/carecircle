@@ -15,6 +15,7 @@ export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: st
   const [a, setA] = useState<{ q: string; res: Answer; at: number; by?: string } | null>(null);
   const [past, setPast] = useState<AskedQuestion[]>([]);
   const [all, setAll] = useState(false);
+  const [histOpen, setHistOpen] = useState(false); // earlier questions start folded away
   const [open, setOpen] = useState<AskedQuestion | null>(null);
   const [opening, setOpening] = useState<number | null>(null);
 
@@ -71,10 +72,12 @@ export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: st
       {earlier.length > 0 && (
         <div className="ask-history">
           <div className="row between" style={{ alignItems: "baseline" }}>
-            <h3>Earlier questions <span className="v2-sub">({earlier.length})</span></h3>
-            {earlier.length > 5 && <button type="button" className="ask-more" onClick={() => setAll(!all)}>{all ? "Show fewer" : "Show all"}</button>}
+            <button type="button" className="ask-hist-toggle" onClick={() => setHistOpen(!histOpen)} aria-expanded={histOpen}>
+              <span className={`ask-chev${histOpen ? " open" : ""}`} aria-hidden>▸</span> Earlier questions <span className="v2-sub">({earlier.length})</span>
+            </button>
+            {histOpen && earlier.length > 5 && <button type="button" className="ask-more" onClick={() => setAll(!all)}>{all ? "Show fewer" : "Show all"}</button>}
           </div>
-          <ul>
+          {histOpen && <ul>
             {shown.map((x) => (
               <li key={x.id}>
                 <button type="button" className={`ask-past${open?.id === x.id ? " on" : ""}`} onClick={() => reopen(x)} aria-expanded={open?.id === x.id}>
@@ -84,7 +87,7 @@ export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: st
                 {open?.id === x.id && <AnswerView q={open.question} res={open} at={open.at} by={open.by} past />}
               </li>
             ))}
-          </ul>
+          </ul>}
         </div>
       )}
     </section>
