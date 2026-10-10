@@ -12,6 +12,7 @@ const SUGGESTIONS = ["When did creatinine start rising?", "Weight against the wa
 export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: string }) {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
+  const [byVoice, setByVoice] = useState(false); // the current question was spoken, so say what was heard
   const [err, setErr] = useState<string | null>(null);
   const [a, setA] = useState<{ q: string; res: Answer; at: number; by?: string } | null>(null);
   const [past, setPast] = useState<AskedQuestion[]>([]);
@@ -41,6 +42,13 @@ export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: st
     }
   }
 
+  function heard(t: string) {
+    const text = t.replace(/\s+/g, " ").trim().slice(0, 400);
+    setQ(text);
+    setByVoice(true);
+    ask(text);
+  }
+
   async function reopen(x: AskedQuestion) {
     if (open?.id === x.id) return setOpen(null);
     setOpening(x.id);
@@ -63,11 +71,12 @@ export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: st
         <span className="v2-sub">Answers come only from this record</span>
       </div>
       <form className="ask-form" onSubmit={(e) => { e.preventDefault(); ask(q); }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. When did creatinine start rising?" aria-label="Question about this patient's record" maxLength={400} />
+        <input value={q} onChange={(e) => { setQ(e.target.value); setByVoice(false); }} placeholder="e.g. When did creatinine start rising?" aria-label="Question about this patient's record" maxLength={400} />
         <button className="v2-btn primary" disabled={busy || q.trim().length < 3}>{busy ? <><span className="spin" /> Reading the record…</> : "Ask"}</button>
       </form>
-      {/* Speak the question: the transcript lands in the box for the doctor to check, then they press Ask. */}
-      <div style={{ marginTop: 8 }}><Dictate patientId={pid} label="Speak your question" onText={(t) => setQ(t.replace(/\s+/g, " ").trim().slice(0, 400))} /></div>
+      {/* Speak the question: stopping the recording asks it. What was heard stays in the box to edit and re-ask. */}
+      <div style={{ marginTop: 8 }}><Dictate patientId={pid} label="Speak your question" onText={heard} /></div>
+      {byVoice && !busy && a && <div className="v2-sub" style={{ marginTop: 6 }}>Heard: “{a.q}”. If that isn't what you said, correct it in the box above and press Ask.</div>}
       {!a && !busy && <div className="ask-chips">{SUGGESTIONS.map((s) => <button key={s} type="button" onClick={() => { setQ(s); ask(s); }}>{s}</button>)}</div>}
       {busy && <div className="v2-sub" style={{ marginTop: 8 }}>Reading the whole record carefully. This can take up to half a minute.</div>}
       {err && <div className="alert bad" style={{ marginTop: 10 }}>{err}</div>}
