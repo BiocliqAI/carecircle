@@ -2,6 +2,7 @@
 // "Ask the record": a question about this patient, answered from their own record, with the chart.
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./client";
+import { Dictate } from "./Dictate";
 import { LineChart, medMarkers } from "./charts";
 import { fmtDateTime } from "@/lib/time";
 import type { Answer, AskedQuestion, ChartData } from "@/lib/askrecord";
@@ -65,6 +66,8 @@ export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: st
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="e.g. When did creatinine start rising?" aria-label="Question about this patient's record" maxLength={400} />
         <button className="v2-btn primary" disabled={busy || q.trim().length < 3}>{busy ? <><span className="spin" /> Reading the record…</> : "Ask"}</button>
       </form>
+      {/* Speak the question: the transcript lands in the box for the doctor to check, then they press Ask. */}
+      <div style={{ marginTop: 8 }}><Dictate patientId={pid} label="Speak your question" onText={(t) => setQ(t.replace(/\s+/g, " ").trim().slice(0, 400))} /></div>
       {!a && !busy && <div className="ask-chips">{SUGGESTIONS.map((s) => <button key={s} type="button" onClick={() => { setQ(s); ask(s); }}>{s}</button>)}</div>}
       {busy && <div className="v2-sub" style={{ marginTop: 8 }}>Reading the whole record carefully. This can take up to half a minute.</div>}
       {err && <div className="alert bad" style={{ marginTop: 10 }}>{err}</div>}
