@@ -54,7 +54,7 @@ export default function EditBaseline({ params }: { params: Promise<{ id: string 
         </div>
       </div>
       {err && <div className="alert bad" style={{ marginBottom: 12 }}>{err}</div>}
-      <BaselineForm value={b} onChange={setB} />
+      <BaselineForm value={b} onChange={setB} pid={id} />
     </main>
   );
 }

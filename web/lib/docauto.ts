@@ -4,7 +4,8 @@
 import { get, run } from "./db";
 import { audit } from "./db";
 import { enterLabs, getPatient } from "./engine";
-import { analyzeDocumentOCR, isGeminiConfigured } from "./gemini";
+import { analyzeDocumentOCR, isGeminiConfigured, type OCROutput } from "./gemini";
+import { addDocument, MAX_DOC_BYTES } from "./records";
 import { fmtDate } from "./time";
 import { LAB_META } from "./types";
 
@@ -20,7 +21,7 @@ export interface DocExtract {
   reread?: boolean; // read again on request (e.g. a document filed before it could be read); shown for confirmation even if filed
   done?: boolean; // the checker has confirmed or rejected this reading
 }
-const CAT: Record<string, string> = { handwritten_prescription: "prescription", lab_report: "lab", discharge_summary: "discharge", vitals_diary: "other", other: "other" };
+export const DOC_TYPE_CATEGORY: Record<string, string> = { handwritten_prescription: "prescription", lab_report: "lab", discharge_summary: "discharge", vitals_diary: "other", other: "other" };
 
 export function readExtract(raw: string | null | undefined): DocExtract | null {
   if (!raw) return null;
@@ -43,7 +44,7 @@ export async function extractDocument(docId: number, opts: { reread?: boolean } 
     if (!r.source || /sample|simulator/i.test(r.source)) return null; // never present the simulated reader's output as a real reading (it is what a failed AI call falls back to)
     const labs = r.extracted.labs.filter((l) => LAB_META[l.marker] && Number.isFinite(l.value)).map((l) => ({ marker: l.marker, value: l.value, unit: l.unit }));
     const date = r.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(r.documentDate) ? r.documentDate : null;
-    const x: DocExtract = { category: CAT[r.documentType] ?? "other", title: (r.documentTypeName || "Medical document").slice(0, 90), date, prescriber: r.prescriber, labs, meds: r.extracted.medications.length, medList: r.extracted.medications.slice(0, 12).map((m) => `${m.name} ${m.dose ?? ""}`.trim().slice(0, 80)), note: r.doctorNotes?.slice(0, 300) ?? null, ...(opts.reread ? { reread: true } : {}) };
+    const x: DocExtract = { category: DOC_TYPE_CATEGORY[r.documentType] ?? "other", title: (r.documentTypeName || "Medical document").slice(0, 90), date, prescriber: r.prescriber, labs, meds: r.extracted.medications.length, medList: r.extracted.medications.slice(0, 12).map((m) => `${m.name} ${m.dose ?? ""}`.trim().slice(0, 80)), note: r.doctorNotes?.slice(0, 300) ?? null, ...(opts.reread ? { reread: true } : {}) };
     run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify(x), docId);
     return x;
   } catch {
@@ -107,4 +108,25 @@ export function autoFile(docId: number, userId: string, t: number, edit: ReadEdi
   }
   audit(t, userId, "DOCUMENT_AUTOFILED", "patient", p.id, { document: docId, category: x.category, labs, edited });
   return { filed: title, labs };
+}
+
+/** When a report's values were taken: its own date (never in the future), else now. */
+export function reportTime(date: string | null | undefined, t: number): number {
+  const at = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? Date.parse(`${date}T09:00:00+05:30`) : NaN;
+  return Number.isFinite(at) ? Math.min(at, t) : t;
+}
+
+/**
+ * A report read and charted from the "Read with AI" window: keep the file under Documents, already filed by the
+ * person who reviewed the values, with what was read attached. Returns the document id.
+ */
+export function keepChartedDocument(pid: string, userId: string, r: OCROutput, mime: string, base64: string, t: number): number {
+  if (Buffer.byteLength(base64.replace(/^data:[^;]+;base64,/, ""), "base64") > MAX_DOC_BYTES) throw new Error("Files are limited to 5 MB");
+  const category = DOC_TYPE_CATEGORY[r.documentType] ?? "other";
+  const date = r.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(r.documentDate) ? r.documentDate : null;
+  const docId = addDocument(pid, { title: (r.documentTypeName || "Medical document").slice(0, 120), category, mime, base64, notes: r.doctorNotes?.slice(0, 300) || undefined }, t, userId);
+  const x: DocExtract = { category, title: r.documentTypeName, date, prescriber: r.prescriber, labs: r.extracted.labs.map((l) => ({ marker: l.marker, value: l.value, unit: l.unit })), meds: r.extracted.medications.length, note: r.doctorNotes ?? null, done: true };
+  run("UPDATE patient_documents SET extract = ?, filed_at = ?, filed_by = ? WHERE id = ?", JSON.stringify(x), t, userId, docId);
+  audit(t, userId, "DOCUMENT_READ_AND_CHARTED", "patient", pid, { document: docId, labs: x.labs.length });
+  return docId;
 }
