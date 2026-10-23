@@ -475,6 +475,16 @@ Evening (9:00 PM):
  * rough live transcript, which may contain mistakes. Returns null when Gemini isn't configured or fails.
  */
 export let lastTranscribeError: string | null = null;
+/** The API's own reason ("API key not valid", "quota exceeded"...): the SDK's message often hides it in the body. */
+export function geminiError(e: unknown): string {
+  const x = e as { message?: string; body?: unknown; status?: number };
+  try {
+    const raw = typeof x.body === "string" ? JSON.parse(x.body) : x.body;
+    const msg = (Array.isArray(raw) ? raw[0] : raw)?.error?.message;
+    if (typeof msg === "string" && msg) return `${x.status ? `${x.status}: ` : ""}${msg}`.slice(0, 300);
+  } catch { /* not JSON: use the message */ }
+  return x.message?.slice(0, 300) || "unknown error";
+}
 export async function transcribeAudio(base64: string, mimeType: string, ctx: { meds?: string[]; hint?: string | null } = {}): Promise<string | null> {
   lastTranscribeError = null;
   const apiKey = getGeminiApiKey();
@@ -503,7 +513,7 @@ export async function transcribeAudio(base64: string, mimeType: string, ctx: { m
     const text = resp.output_text?.trim().replace(/^["“]|["”]$/g, "") || null;
     return text;
   } catch (e) {
-    lastTranscribeError = (e as Error).message?.slice(0, 300) ?? "unknown error";
+    lastTranscribeError = geminiError(e);
     console.error("[gemini] voice transcription failed:", lastTranscribeError);
     return null;
   }
@@ -541,7 +551,7 @@ export async function transcribeDictation(base64: string, mimeType: string, ctx:
     } as never)) as { output_text?: string | null };
     return resp.output_text?.trim().replace(/^["“]|["”]$/g, "") || null;
   } catch (e) {
-    lastTranscribeError = (e as Error).message?.slice(0, 300) ?? "unknown error";
+    lastTranscribeError = geminiError(e);
     console.error("[gemini] dictation failed:", lastTranscribeError);
     return null;
   }
@@ -560,7 +570,7 @@ async function geminiCall(system: string, input: unknown[], json = false): Promi
     } as never)) as { output_text?: string | null };
     return resp.output_text?.trim() || null;
   } catch (e) {
-    lastTranscribeError = (e as Error).message?.slice(0, 300) ?? "unknown error";
+    lastTranscribeError = geminiError(e);
     console.error("[gemini]", lastTranscribeError);
     return null;
   }

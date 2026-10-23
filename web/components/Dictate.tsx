@@ -8,7 +8,7 @@ import { blobToDataUrl, speechCtor, type SpeechRec } from "./speech";
 
 type State = "idle" | "recording" | "transcribing";
 
-export function Dictate({ patientId, onText, label = "Dictate" }: { patientId: string; onText: (text: string) => void; label?: string }) {
+export function Dictate({ patientId, onText, label = "Dictate", noun = "note" }: { patientId: string; onText: (text: string) => void; label?: string; noun?: string }) {
   const [state, setState] = useState<State>("idle");
   const [secs, setSecs] = useState(0);
   const [preview, setPreview] = useState("");
@@ -17,6 +17,7 @@ export function Dictate({ patientId, onText, label = "Dictate" }: { patientId: s
   const chunks = useRef<Blob[]>([]);
   const speech = useRef<SpeechRec | null>(null);
   const finalText = useRef("");
+  const heard = useRef(""); // everything shown in the preview, final or not: the fallback if the server can't transcribe
   const started = useRef(0);
 
   useEffect(() => {
@@ -30,11 +31,12 @@ export function Dictate({ patientId, onText, label = "Dictate" }: { patientId: s
     setErr(null);
     setPreview("");
     finalText.current = "";
+    heard.current = "";
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
-      setErr("Microphone not available. Allow microphone access for this site, or type the note.");
+      setErr(`Microphone not available. Allow microphone access for this site, or type the ${noun}.`);
       return;
     }
     let mr: MediaRecorder;
@@ -42,7 +44,7 @@ export function Dictate({ patientId, onText, label = "Dictate" }: { patientId: s
       mr = new MediaRecorder(stream);
     } catch {
       stream.getTracks().forEach((t) => t.stop());
-      setErr("Couldn't start recording on this device. Please type the note.");
+      setErr(`Couldn't start recording on this device. Please type the ${noun}.`);
       return;
     }
     chunks.current = [];
@@ -66,7 +68,8 @@ export function Dictate({ patientId, onText, label = "Dictate" }: { patientId: s
           if (res.isFinal) finalText.current = `${finalText.current} ${res[0].transcript}`.trim();
           else interim += res[0].transcript;
         }
-        setPreview(`${finalText.current} ${interim}`.trim());
+        heard.current = `${finalText.current} ${interim}`.trim();
+        setPreview(heard.current);
       };
       r.onerror = () => undefined;
       r.onend = () => undefined;
@@ -94,9 +97,11 @@ export function Dictate({ patientId, onText, label = "Dictate" }: { patientId: s
     try {
       const blob = new Blob(chunks.current, { type: mime });
       const base64 = await blobToDataUrl(blob);
-      const r = await api<{ text: string; via: string | null; aiError?: string }>(`/api/patients/${patientId}/dictate`, { body: { base64, mime, hint: finalText.current || preview } });
+      // Not `preview`: this runs from the recorder's stop handler, which still sees the preview from when recording began.
+      const r = await api<{ text: string; via: string | null; aiError?: string }>(`/api/patients/${patientId}/dictate`, { body: { base64, mime, hint: heard.current || finalText.current } });
       if (r.text) onText(r.text);
-      else setErr(r.aiError ? "Couldn't transcribe the dictation. Please type the note." : "No speech was detected.");
+      else if (r.aiError) setErr(`Couldn't transcribe (${/not configured/i.test(r.aiError) ? "AI transcription is off: no Gemini key is set" : r.aiError.slice(0, 160)}). Please type the ${noun}.`);
+      else setErr("No speech was detected.");
     } catch (e) {
       setErr((e as Error).message);
     } finally {

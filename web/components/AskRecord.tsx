@@ -75,7 +75,7 @@ export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: st
         <button className="v2-btn primary" disabled={busy || q.trim().length < 3}>{busy ? <><span className="spin" /> Reading the record…</> : "Ask"}</button>
       </form>
       {/* Speak the question: stopping the recording asks it. What was heard stays in the box to edit and re-ask. */}
-      <div style={{ marginTop: 8 }}><Dictate patientId={pid} label="Speak your question" onText={heard} /></div>
+      <div style={{ marginTop: 8 }}><Dictate patientId={pid} label="Speak your question" noun="question" onText={heard} /></div>
       {byVoice && !busy && a && <div className="v2-sub" style={{ marginTop: 6 }}>Heard: “{a.q}”. If that isn't what you said, correct it in the box above and press Ask.</div>}
       {!a && !busy && <div className="ask-chips">{SUGGESTIONS.map((s) => <button key={s} type="button" onClick={() => { setQ(s); ask(s); }}>{s}</button>)}</div>}
       {busy && <div className="v2-sub" style={{ marginTop: 8 }}>Reading the whole record carefully. This can take up to half a minute.</div>}
