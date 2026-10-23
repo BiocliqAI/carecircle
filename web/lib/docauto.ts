@@ -57,7 +57,7 @@ export function autoFile(docId: number, userId: string, t: number): { filed: str
   const p = getPatient(d.patient_id);
   if (!p) throw new Error("Patient not found");
   const title = `${x.title}${x.date ? ` · ${fmtDate(Date.parse(`${x.date}T12:00:00+05:30`), { day: "numeric", month: "short", year: "numeric" })}` : ""}`.slice(0, 120);
-  run("UPDATE patient_documents SET title = ?, category = ?, notes = COALESCE(notes, ?), filed_at = COALESCE(filed_at, ?) WHERE id = ?", title, x.category, x.note, t, docId);
+  run("UPDATE patient_documents SET title = ?, category = ?, notes = COALESCE(notes, ?), filed_at = COALESCE(filed_at, ?), filed_by = COALESCE(filed_by, ?) WHERE id = ?", title, x.category, x.note, t, userId, docId);
   let labs = 0;
   if (x.labs.length) {
     const at = x.date ? Date.parse(`${x.date}T09:00:00+05:30`) : t;

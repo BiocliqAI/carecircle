@@ -167,7 +167,8 @@ export const MAX_DOC_BYTES = 5 * 1024 * 1024;
 
 export interface DocumentRow {
   id: number;
-  filed_at: number | null;
+  filed_at: number | null; // null = uploaded but not yet checked by a person
+  filed_by_name: string | null;
   patient_id: string;
   title: string;
   category: string;
@@ -182,7 +183,7 @@ export interface DocumentRow {
 
 export const listDocuments = (pid: string) =>
   all<DocumentRow>(
-    "SELECT d.id, d.filed_at, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
+    "SELECT d.id, d.filed_at, f.name AS filed_by_name, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by LEFT JOIN users f ON f.id = d.filed_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
     pid,
   );
 
@@ -201,7 +202,6 @@ export function addDocument(pid: string, d: { title: string; category: string; m
     "INSERT INTO patient_documents(patient_id, title, category, mime, size, data, notes, source, uploaded_by, uploaded_at, message_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
     pid, title, category, (d.mime || "application/octet-stream").slice(0, 100), bytes.length, new Uint8Array(bytes), d.notes?.trim() || null, d.source || "clinic", actor, t, d.messageId ?? null,
   ).lastInsertRowid;
-  if ((d.source || "clinic") === "clinic") run("UPDATE patient_documents SET filed_at = ? WHERE id = ?", t, id);
   audit(t, actor, "DOCUMENT_ADDED", "patient", pid, { document: id, category, source: d.source || "clinic" });
   return id;
 }
@@ -210,8 +210,17 @@ export function updateDocument(id: number, e: { title?: string; category?: strin
   const d = get<{ patient_id: string; title: string; category: string; notes: string | null }>("SELECT patient_id, title, category, notes FROM patient_documents WHERE id = ?", id);
   if (!d) throw new Error("Document not found");
   const category = e.category && (DOC_CATEGORIES as readonly string[]).includes(e.category) ? e.category : d.category;
-  run("UPDATE patient_documents SET title = ?, category = ?, notes = ?, filed_at = COALESCE(filed_at, ?) WHERE id = ?", e.title?.trim().slice(0, 120) || d.title, category, e.notes !== undefined ? e.notes.trim() || null : d.notes, t, id);
+  run("UPDATE patient_documents SET title = ?, category = ?, notes = ? WHERE id = ?", e.title?.trim().slice(0, 120) || d.title, category, e.notes !== undefined ? e.notes.trim() || null : d.notes, id);
   audit(t, actor, "DOCUMENT_UPDATED", "patient", d.patient_id, { document: id });
+}
+
+/** The mandatory manual check: a person has opened the document, compared it with what was entered, and files it. */
+export function verifyDocument(id: number, t: number, actor: string) {
+  const d = get<{ patient_id: string; filed_at: number | null }>("SELECT patient_id, filed_at FROM patient_documents WHERE id = ?", id);
+  if (!d) throw new Error("Document not found");
+  if (d.filed_at) return;
+  run("UPDATE patient_documents SET filed_at = ?, filed_by = ? WHERE id = ?", t, actor, id);
+  audit(t, actor, "DOCUMENT_VERIFIED", "patient", d.patient_id, { document: id });
 }
 
 export function deleteDocument(id: number, t: number, actor: string) {

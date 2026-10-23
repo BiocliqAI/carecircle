@@ -10,7 +10,7 @@ import { MAX_CAREGIVERS } from "@/lib/types";
 export interface ProfilePatient { id: string; name: string; age: number | null; sex: string; phone: string; conditions: string; address: string; user_id?: string | null; doctor_id?: string }
 export interface ProfileCaregiver { id: string; name: string; relation: string | null; phone: string; level: number; user_id: string | null; dashboard?: number }
 export interface NoteItem { id: number; author_id: string; author_name: string | null; author_role: string | null; kind: string; body: string; created_at: number; updated_at: number }
-export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number }
+export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null }
 
 const CATS: [string, string][] = [["prescription", "Prescription"], ["lab", "Lab report"], ["discharge", "Discharge summary"], ["imaging", "Imaging"], ["voice", "Voice note"], ["other", "Other"]];
 const catLabel = (c: string) => CATS.find((x) => x[0] === c)?.[1] ?? "Other";
@@ -331,7 +331,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
     <div className="stack gap16">
       {canEdit && (
         <section className="card">
-          <div className="card-head"><h3>Add a document</h3><small>Photos, PDFs or scans up to 5 MB</small></div>
+          <div className="card-head"><h3>Add a document</h3><small>Photos, PDFs or scans up to 5 MB. Every upload must be checked by a person before it counts as filed.</small></div>
           <div className="grid g4" style={{ alignItems: "end" }}>
             <label className="f">File<input type="file" accept="image/*,application/pdf,audio/*" onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !meta.title) setMeta((m) => ({ ...m, title: f.name.replace(/\.[^.]+$/, "") })); }} /></label>
             <label className="f">Title<input value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} placeholder="e.g. RFT 20 Sep" /></label>
@@ -358,7 +358,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
                   </div>
                 ) : (
                   <>
-                    <b>{d.title}</b> <span className="badge">{catLabel(d.category)}</span> {d.source === "whatsapp" && <span className="badge good">via WhatsApp</span>}
+                    <b>{d.title}</b> <span className="badge">{catLabel(d.category)}</span> {d.source === "whatsapp" && <span className="badge good">via WhatsApp</span>} {d.filed_at ? <span className="badge good" title={fmtDateTime(d.filed_at)}>Checked{d.filed_by_name ? ` by ${d.filed_by_name.split(" ").slice(0, 2).join(" ")}` : ""}</span> : <span className="badge warn">Needs check</span>}
                     <div className="muted">{fmtDateTime(d.uploaded_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ""} · {kb(d.size)}</div>
                     {d.notes && <div style={{ marginTop: 2 }}>{d.notes}</div>}
                     {d.mime.startsWith("audio/") && <audio src={`/api/documents/${d.id}`} controls preload="none" style={{ marginTop: 6, height: 32 }} />}
@@ -374,6 +374,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
                 ) : (
                   <>
                     <a className="btn sm" href={`/api/documents/${d.id}`} target="_blank" rel="noreferrer">View</a>
+                    {canEdit && !d.filed_at && <button className="btn sm primary" disabled={busy} title="I have opened the original and the details are right" onClick={() => act({ action: "verify", id: d.id })}>Mark checked</button>}
                     {canEdit && <button className="btn sm ghost" onClick={() => setEditing({ id: d.id, title: d.title, category: d.category, notes: d.notes ?? "" })}>Edit</button>}
                     {canEdit && <button className="btn sm ghost" onClick={() => window.confirm(`Delete “${d.title}”?`) && act({ action: "delete", id: d.id })}>Delete</button>}
                   </>
