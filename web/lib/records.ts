@@ -169,6 +169,7 @@ export interface DocumentRow {
   id: number;
   filed_at: number | null; // null = uploaded but not yet checked by a person
   filed_by_name: string | null;
+  extract: string | null; // what the AI read from the file (JSON), for the checker to confirm
   patient_id: string;
   title: string;
   category: string;
@@ -183,7 +184,7 @@ export interface DocumentRow {
 
 export const listDocuments = (pid: string) =>
   all<DocumentRow>(
-    "SELECT d.id, d.filed_at, f.name AS filed_by_name, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by LEFT JOIN users f ON f.id = d.filed_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
+    "SELECT d.id, d.filed_at, f.name AS filed_by_name, d.extract, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by LEFT JOIN users f ON f.id = d.filed_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
     pid,
   );
 

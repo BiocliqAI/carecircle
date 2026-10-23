@@ -15,7 +15,10 @@ export interface DocExtract {
   prescriber: string | null;
   labs: { marker: string; value: number; unit: string }[];
   meds: number;
+  medList?: string[]; // names and doses, shown to the checker (medicines are never entered from here)
   note: string | null;
+  reread?: boolean; // read again on request (e.g. a document filed before it could be read); shown for confirmation even if filed
+  done?: boolean; // the checker has confirmed or rejected this reading
 }
 const CAT: Record<string, string> = { handwritten_prescription: "prescription", lab_report: "lab", discharge_summary: "discharge", vitals_diary: "other", other: "other" };
 
@@ -31,16 +34,16 @@ export function extractLine(x: DocExtract): string {
 }
 
 /** Reads one stored document in the background. Never throws; leaves nothing behind if the read fails. */
-export async function extractDocument(docId: number): Promise<DocExtract | null> {
+export async function extractDocument(docId: number, opts: { reread?: boolean } = {}): Promise<DocExtract | null> {
   if (!isGeminiConfigured()) return null;
   const d = get<{ patient_id: string; mime: string; data: Uint8Array; category: string }>("SELECT patient_id, mime, data, category FROM patient_documents WHERE id = ?", docId);
-  if (!d || !/^image\//.test(d.mime)) return null;
+  if (!d || !/^(image\/|application\/pdf$)/.test(d.mime)) return null;
   try {
     const r = await analyzeDocumentOCR({ imageBase64: Buffer.from(d.data).toString("base64"), mimeType: d.mime, patientId: d.patient_id });
-    if (!r.source || /sample/i.test(r.source)) return null; // never present the simulated reader's output as a real reading
+    if (!r.source || /sample|simulator/i.test(r.source)) return null; // never present the simulated reader's output as a real reading (it is what a failed AI call falls back to)
     const labs = r.extracted.labs.filter((l) => LAB_META[l.marker] && Number.isFinite(l.value)).map((l) => ({ marker: l.marker, value: l.value, unit: l.unit }));
     const date = r.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(r.documentDate) ? r.documentDate : null;
-    const x: DocExtract = { category: CAT[r.documentType] ?? "other", title: (r.documentTypeName || "Medical document").slice(0, 90), date, prescriber: r.prescriber, labs, meds: r.extracted.medications.length, note: r.doctorNotes?.slice(0, 300) ?? null };
+    const x: DocExtract = { category: CAT[r.documentType] ?? "other", title: (r.documentTypeName || "Medical document").slice(0, 90), date, prescriber: r.prescriber, labs, meds: r.extracted.medications.length, medList: r.extracted.medications.slice(0, 12).map((m) => `${m.name} ${m.dose ?? ""}`.trim().slice(0, 80)), note: r.doctorNotes?.slice(0, 300) ?? null, ...(opts.reread ? { reread: true } : {}) };
     run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify(x), docId);
     return x;
   } catch {
@@ -48,22 +51,60 @@ export async function extractDocument(docId: number): Promise<DocExtract | null>
   }
 }
 
-/** The assistant confirms: file the document with the read title and category, and enter its lab values. */
-export function autoFile(docId: number, userId: string, t: number): { filed: string; labs: number } {
-  const d = get<{ patient_id: string; extract: string | null }>("SELECT patient_id, extract FROM patient_documents WHERE id = ?", docId);
+/** Whether a reading is still waiting for a person to confirm or reject it. */
+export const awaitingCheck = (filedAt: number | null, x: DocExtract | null) => !!x && !x.done && (!filedAt || !!x.reread);
+
+export interface ReadEdit {
+  labs?: { marker: string; value: number }[]; // the checker's corrected values; replaces what was read
+  date?: string | null; // YYYY-MM-DD the samples were taken
+  reject?: boolean; // the reading is wrong: file the document and enter nothing
+}
+
+/**
+ * The checker confirms the reading, optionally corrected, and the lab values enter the lab history; or rejects it
+ * and nothing is entered. A document that was already filed keeps its title and category.
+ */
+export function autoFile(docId: number, userId: string, t: number, edit: ReadEdit = {}): { filed: string; labs: number } {
+  const d = get<{ patient_id: string; extract: string | null; filed_at: number | null; title: string; category: string }>("SELECT patient_id, extract, filed_at, title, category FROM patient_documents WHERE id = ?", docId);
   if (!d) throw new Error("Document not found");
   const x = readExtract(d.extract);
   if (!x) throw new Error("This document has not been read yet. Review and file it by hand.");
   const p = getPatient(d.patient_id);
   if (!p) throw new Error("Patient not found");
-  const title = `${x.title}${x.date ? ` · ${fmtDate(Date.parse(`${x.date}T12:00:00+05:30`), { day: "numeric", month: "short", year: "numeric" })}` : ""}`.slice(0, 120);
-  run("UPDATE patient_documents SET title = ?, category = ?, notes = COALESCE(notes, ?), filed_at = COALESCE(filed_at, ?), filed_by = COALESCE(filed_by, ?) WHERE id = ?", title, x.category, x.note, t, userId, docId);
-  let labs = 0;
-  if (x.labs.length) {
-    const at = x.date ? Date.parse(`${x.date}T09:00:00+05:30`) : t;
-    const fresh = x.labs.filter((l) => !get("SELECT 1 FROM labs WHERE patient_id = ? AND marker = ? AND taken_at = ?", p.id, l.marker, at));
-    if (fresh.length) { enterLabs(p.id, fresh.map((l) => ({ marker: l.marker, value: l.value })), Math.min(at, t), userId, t); labs = fresh.length; }
+  if (edit.reject) {
+    run("UPDATE patient_documents SET extract = ?, filed_at = COALESCE(filed_at, ?), filed_by = COALESCE(filed_by, ?) WHERE id = ?", JSON.stringify({ ...x, done: true }), t, userId, docId);
+    audit(t, userId, "DOCUMENT_READING_REJECTED", "patient", p.id, { document: docId });
+    return { filed: d.title, labs: 0 };
   }
-  audit(t, userId, "DOCUMENT_AUTOFILED", "patient", p.id, { document: docId, category: x.category, labs });
+  let labsIn = x.labs.map((l) => ({ marker: l.marker, value: l.value }));
+  if (edit.labs) {
+    const seen = new Set<string>();
+    labsIn = [];
+    for (const l of edit.labs) {
+      if (!LAB_META[l.marker]) throw new Error(`Unknown lab test: ${l.marker}`);
+      if (!Number.isFinite(l.value) || l.value < 0) throw new Error(`Enter a valid number for ${LAB_META[l.marker].label}`);
+      if (seen.has(l.marker)) throw new Error(`${LAB_META[l.marker].label} is listed twice`);
+      seen.add(l.marker);
+      labsIn.push({ marker: l.marker, value: l.value });
+    }
+  }
+  let date = x.date;
+  if (edit.date !== undefined) {
+    if (edit.date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(edit.date)) throw new Error("Enter the report date as a date");
+    date = edit.date;
+  }
+  const at = date ? Date.parse(`${date}T09:00:00+05:30`) : t;
+  if (date && (!Number.isFinite(at) || at > t + 86_400_000)) throw new Error("The report date can't be in the future");
+  const edited = !!edit.labs || (edit.date !== undefined && edit.date !== x.date);
+  const kept: DocExtract = { ...x, date, labs: labsIn.map((l) => ({ ...l, unit: x.labs.find((o) => o.marker === l.marker)?.unit ?? LAB_META[l.marker].unit })), done: true };
+  const title = d.filed_at ? d.title : `${x.title}${date ? ` · ${fmtDate(Date.parse(`${date}T12:00:00+05:30`), { day: "numeric", month: "short", year: "numeric" })}` : ""}`.slice(0, 120);
+  run("UPDATE patient_documents SET title = ?, category = ?, notes = COALESCE(notes, ?), extract = ?, filed_at = COALESCE(filed_at, ?), filed_by = COALESCE(filed_by, ?) WHERE id = ?", title, d.filed_at ? d.category : x.category, x.note, JSON.stringify(kept), t, userId, docId);
+  let labs = 0;
+  if (labsIn.length) {
+    const takenAt = Math.min(at, t);
+    const fresh = labsIn.filter((l) => !get("SELECT 1 FROM labs WHERE patient_id = ? AND marker = ? AND taken_at = ?", p.id, l.marker, takenAt));
+    if (fresh.length) { enterLabs(p.id, fresh, takenAt, userId, t); labs = fresh.length; }
+  }
+  audit(t, userId, "DOCUMENT_AUTOFILED", "patient", p.id, { document: docId, category: x.category, labs, edited });
   return { filed: title, labs };
 }

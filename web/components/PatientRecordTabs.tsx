@@ -5,12 +5,12 @@ import { api } from "./client";
 import { ConsentList, type ConsentView } from "./baseline";
 import { Dictate } from "./Dictate";
 import { fmtDateTime } from "@/lib/time";
-import { MAX_CAREGIVERS } from "@/lib/types";
+import { LAB_META, MAX_CAREGIVERS } from "@/lib/types";
 
 export interface ProfilePatient { id: string; name: string; age: number | null; sex: string; phone: string; conditions: string; address: string; user_id?: string | null; doctor_id?: string }
 export interface ProfileCaregiver { id: string; name: string; relation: string | null; phone: string; level: number; user_id: string | null; dashboard?: number }
 export interface NoteItem { id: number; author_id: string; author_name: string | null; author_role: string | null; kind: string; body: string; created_at: number; updated_at: number }
-export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null }
+export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null; extract: string | null }
 
 const CATS: [string, string][] = [["prescription", "Prescription"], ["lab", "Lab report"], ["discharge", "Discharge summary"], ["imaging", "Imaging"], ["voice", "Voice note"], ["other", "Other"]];
 const catLabel = (c: string) => CATS.find((x) => x[0] === c)?.[1] ?? "Other";
@@ -296,12 +296,68 @@ export function NotesTab({ pid, notes, viewerId, viewerRole, onChange }: { pid: 
 }
 
 // ---------------------------------------------------------------- documents
+
+interface ReadOut { title: string; date: string | null; prescriber: string | null; labs: { marker: string; value: number; unit: string }[]; meds: number; medList?: string[]; note: string | null; reread?: boolean; done?: boolean }
+const readOut = (raw: string | null): ReadOut | null => { try { return raw ? (JSON.parse(raw) as ReadOut) : null; } catch { return null; } };
+const READ_WINDOW_MS = 3 * 60_000; // after this, an unread document is treated as "couldn't be read"
+const readable = (d: DocItem) => d.mime.startsWith("image/") || d.mime === "application/pdf";
+/** A reading still waiting for a person: on an unchecked document, or one read again on request. */
+const awaitingCheck = (d: DocItem) => { const x = readOut(d.extract); return !d.filed_at || (!!x && !!x.reread && !x.done); };
+
+/** What the AI read, for the checker to compare with the original, correct, and confirm or reject. */
+function ReadPanel({ d, busy, act, refresh }: { d: DocItem; busy: boolean; act: (b: Record<string, unknown>) => Promise<boolean>; refresh: () => void }) {
+  const x = readOut(d.extract);
+  const waiting = !x && !d.filed_at && Date.now() - d.uploaded_at < READ_WINDOW_MS;
+  useEffect(() => { if (!waiting) return; const i = setInterval(refresh, 5000); return () => clearInterval(i); }, [waiting, refresh]);
+  const [rows, setRows] = useState<{ marker: string; value: string }[]>([]);
+  const [date, setDate] = useState("");
+  const [adding, setAdding] = useState("");
+  useEffect(() => { setRows(x?.labs.map((l) => ({ marker: l.marker, value: String(l.value) })) ?? []); setDate(x?.date ?? ""); }, [d.extract]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (waiting) return <div className="callout" style={{ marginTop: 8 }}><span className="spin" /> Reading the document…</div>;
+  if (!x) return <div className="callout" style={{ marginTop: 8 }}>The document couldn't be read automatically. Press Read again, or open it, enter any values by hand, then press Mark checked.</div>;
+  const unit = (m: string) => x.labs.find((l) => l.marker === m)?.unit || LAB_META[m]?.unit || "";
+  const bad = rows.some((r) => r.value.trim() === "" || !Number.isFinite(Number(r.value)) || Number(r.value) < 0);
+  const changed = date !== (x.date ?? "") || rows.length !== x.labs.length || rows.some((r, i) => r.marker !== x.labs[i]?.marker || Number(r.value) !== x.labs[i]?.value);
+  const unused = Object.keys(LAB_META).filter((m) => !rows.some((r) => r.marker === m));
+  return (
+    <div className="callout" style={{ marginTop: 8 }}>
+      <b>Read by AI. Compare with the original, correct anything wrong, then confirm.</b>
+      <div>{x.title}{x.prescriber ? ` · ${x.prescriber}` : ""}</div>
+      <label className="f" style={{ maxWidth: 220, marginTop: 6 }}>Report date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
+      {rows.length === 0 && <div className="muted" style={{ marginTop: 4 }}>No lab values found. Add any that are on the report.</div>}
+      {rows.map((r, i) => (
+        <div key={r.marker} className="row" style={{ gap: 6, marginTop: 4, flexWrap: "nowrap", alignItems: "center" }}>
+          <span style={{ minWidth: 130 }}>{LAB_META[r.marker]?.label ?? r.marker}</span>
+          <input className="num" inputMode="decimal" aria-label={`${LAB_META[r.marker]?.label ?? r.marker} value`} value={r.value} style={{ width: 90 }} onChange={(e) => setRows(rows.map((o, k) => (k === i ? { ...o, value: e.target.value } : o)))} />
+          <span className="muted">{unit(r.marker)}</span>
+          <button type="button" className="btn sm ghost" aria-label={`Remove ${LAB_META[r.marker]?.label ?? r.marker}`} onClick={() => setRows(rows.filter((_, k) => k !== i))}>✕</button>
+        </div>
+      ))}
+      {unused.length > 0 && (
+        <div className="row" style={{ gap: 6, marginTop: 6 }}>
+          <select value={adding} onChange={(e) => setAdding(e.target.value)} aria-label="Add a lab value"><option value="">+ Add a value the AI missed…</option>{unused.map((m) => <option key={m} value={m}>{LAB_META[m].label}</option>)}</select>
+          {adding && <button type="button" className="btn sm" onClick={() => { setRows([...rows, { marker: adding, value: "" }]); setAdding(""); }}>Add</button>}
+        </div>
+      )}
+      {x.medList && x.medList.length > 0 && <div className="muted" style={{ marginTop: 6 }}>Medicines seen (not entered from here): {x.medList.join("; ")}</div>}
+      {x.note && <div className="muted" style={{ marginTop: 4 }}>Note: {x.note}</div>}
+      <div className="row" style={{ gap: 6, marginTop: 8 }}>
+        <button className="btn sm primary" disabled={busy || bad} title={bad ? "Every value needs a number" : undefined} onClick={() => act({ action: "autofile", id: d.id, date: date || null, labs: rows.map((r) => ({ marker: r.marker, value: Number(r.value) })) })}>
+          ✓ {changed ? "Save corrections" : "Reading is correct"}: file{rows.length ? ` and enter ${rows.length} value${rows.length > 1 ? "s" : ""}` : ""}
+        </button>
+        <button className="btn sm" disabled={busy} title="Files the document and enters nothing; add the values by hand" onClick={() => act({ action: "autofile", id: d.id, reject: true })}>✗ Not usable: file without values</button>
+      </div>
+    </div>
+  );
+}
+
 export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; docs: DocItem[]; canEdit: boolean; onChange: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [meta, setMeta] = useState({ title: "", category: "lab", notes: "" });
   const [editing, setEditing] = useState<{ id: number; title: string; category: string; notes: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rereading, setRereading] = useState<number | null>(null);
 
   async function act(body: Record<string, unknown>) {
     setBusy(true);
@@ -361,6 +417,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
                     <b>{d.title}</b> <span className="badge">{catLabel(d.category)}</span> {d.source === "whatsapp" && <span className="badge good">via WhatsApp</span>} {d.filed_at ? <span className="badge good" title={fmtDateTime(d.filed_at)}>Checked{d.filed_by_name ? ` by ${d.filed_by_name.split(" ").slice(0, 2).join(" ")}` : ""}</span> : <span className="badge warn">Needs check</span>}
                     <div className="muted">{fmtDateTime(d.uploaded_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ""} · {kb(d.size)}</div>
                     {d.notes && <div style={{ marginTop: 2 }}>{d.notes}</div>}
+                    {canEdit && readable(d) && awaitingCheck(d) && <ReadPanel d={d} busy={busy} act={act} refresh={onChange} />}
                     {d.mime.startsWith("audio/") && <audio src={`/api/documents/${d.id}`} controls preload="none" style={{ marginTop: 6, height: 32 }} />}
                   </>
                 )}
@@ -374,6 +431,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
                 ) : (
                   <>
                     <a className="btn sm" href={`/api/documents/${d.id}`} target="_blank" rel="noreferrer">View</a>
+                    {canEdit && readable(d) && <button className="btn sm ghost" disabled={busy} title="Have the AI read this document again and show what it finds for checking" onClick={async () => { setRereading(d.id); await act({ action: "reread", id: d.id }); setRereading(null); }}>{rereading === d.id ? <><span className="spin" /> Reading…</> : "↻ Read again"}</button>}
                     {canEdit && !d.filed_at && <button className="btn sm primary" disabled={busy} title="I have opened the original and the details are right" onClick={() => act({ action: "verify", id: d.id })}>Mark checked</button>}
                     {canEdit && <button className="btn sm ghost" onClick={() => setEditing({ id: d.id, title: d.title, category: d.category, notes: d.notes ?? "" })}>Edit</button>}
                     {canEdit && <button className="btn sm ghost" onClick={() => window.confirm(`Delete “${d.title}”?`) && act({ action: "delete", id: d.id })}>Delete</button>}

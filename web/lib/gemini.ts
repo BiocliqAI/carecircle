@@ -308,7 +308,7 @@ Extract all structured clinical entities conforming strictly to this JSON schema
             text: "Extract all handwritten and printed medical information from this clinical document image into structured JSON.",
           },
           {
-            type: "image",
+            type: opts.mimeType === "application/pdf" ? "document" : "image",
             data: cleanBase64,
             mime_type: opts.mimeType || "image/png",
           },
