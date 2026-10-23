@@ -101,12 +101,12 @@ export function DocumentOcrModal({ open, onClose, patientId, patientName, onComm
         patientId,
         commit: true,
       };
-      const res = await api<{ ok: boolean; committed: { labs: number; observations: number; medChanges: number } }>("/api/ocr", {
+      const res = await api<{ ok: boolean; committed: { labs: number; observations: number; medChanges: number; documentId: number | null } }>("/api/ocr", {
         body: payload,
       });
       const c = res.committed;
       setCommittedMsg(
-        `✅ Successfully charted to ${patientName}'s record: ${c.labs} labs, ${c.observations} vitals, and ${c.medChanges} medication adjustments!`
+        `✅ Charted to ${patientName}'s record: ${c.labs} labs, ${c.observations} vitals, and ${c.medChanges} medication adjustments.${c.documentId ? " The report is saved under Documents." : ""}`
       );
       if (onCommitted) onCommitted();
     } catch (e) {

@@ -16,7 +16,7 @@ const LAB_PANELS: [string, string[]][] = [
 ];
 const today = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
 
-export function BaselineForm({ value, onChange }: { value: Baseline; onChange: (b: Baseline) => void }) {
+export function BaselineForm({ value, onChange, pid }: { value: Baseline; onChange: (b: Baseline) => void; pid?: string }) {
   const b = value;
   const set = (patch: Partial<Baseline>) => onChange({ ...b, ...patch });
   const [bp, setBp] = useState(b.vitals.sys ? `${b.vitals.sys}/${b.vitals.dia ?? ""}` : "");
@@ -38,7 +38,7 @@ export function BaselineForm({ value, onChange }: { value: Baseline; onChange: (
 
   return (
     <div className="stack gap16">
-      <FillFromDocuments value={b} onChange={onChange} />
+      <FillFromDocuments value={b} onChange={onChange} pid={pid} />
       <div className="card">
         <div className="card-head"><div><h3>Profile</h3><small>Used to personalise WhatsApp messages and to read results in context.</small></div></div>
         <div className="grid g4">
@@ -337,7 +337,7 @@ const fileToPayload = (f: File): Promise<{ base64: string; mime: string }> =>
     r.readAsDataURL(f);
   });
 
-function FillFromDocuments({ value, onChange }: { value: Baseline; onChange: (b: Baseline) => void }) {
+function FillFromDocuments({ value, onChange, pid }: { value: Baseline; onChange: (b: Baseline) => void; pid?: string }) {
   const input = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -355,8 +355,9 @@ function FillFromDocuments({ value, onChange }: { value: Baseline; onChange: (b:
     setBusy(true);
     setErr(null);
     try {
-      const payload = await Promise.all(files.map(fileToPayload));
-      const r = await api<{ baseline: Extracted; warnings: string[] }>("/api/baseline/extract", { body: { files: payload } });
+      const payload = (await Promise.all(files.map(fileToPayload))).map((p, i) => ({ ...p, name: files[i].name }));
+      // For an existing patient the files are also kept under Documents; during onboarding there is no record yet.
+      const r = await api<{ baseline: Extracted; warnings: string[] }>("/api/baseline/extract", { body: { files: payload, patientId: pid } });
       const { next, added } = mergeExtraction(value, r.baseline);
       onChange(next);
       setResult({ added, warnings: r.warnings, before: value });
@@ -373,7 +374,7 @@ function FillFromDocuments({ value, onChange }: { value: Baseline; onChange: (b:
       <div className="card-head">
         <div>
           <h3>✨ Fill from documents</h3>
-          <small>Add old prescriptions, discharge summaries or lab reports (photos or PDFs). The form fills in below and you check it. Nothing is saved until you save.</small>
+          <small>Add old prescriptions, discharge summaries or lab reports (photos or PDFs). The form fills in below and you check it. The form isn't saved until you save{pid ? "; the documents themselves are kept under Documents" : ""}.</small>
         </div>
       </div>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>

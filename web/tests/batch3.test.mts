@@ -14,7 +14,8 @@ const da = await import("../lib/docauto");
 const br = await import("../lib/briefs");
 const av = await import("../lib/aftervisit");
 const { paToday } = await import("../lib/patasks");
-const { addDocument } = await import("../lib/records");
+const records = await import("../lib/records");
+const { addDocument } = records;
 const { now } = await import("../lib/clock");
 const { DAY, HOUR, dayKey } = await import("../lib/time");
 
@@ -232,6 +233,30 @@ describe("AI errors say why", () => {
     assert.equal(geminiError(sdk), "400: API key not valid. Please pass a valid API key.");
     assert.equal(geminiError(new Error("socket hang up")), "socket hang up");
     assert.equal(geminiError({}), "unknown error");
+  });
+});
+
+describe("reports read with AI are kept under Documents", () => {
+  before(async () => { await seedDemo(); });
+  const ocr = { source: "gemini-3.8-flash", documentType: "lab_report", documentTypeName: "Renal Function Test", transcription: "", prescriber: null, documentDate: "2026-09-25", doctorNotes: null, extracted: { vitals: [], labs: [{ marker: "creatinine", label: "Creatinine", value: 1.7, unit: "mg/dL", flag: "high" }], medications: [], symptoms: [] } } as unknown as import("../lib/gemini").OCROutput;
+  it("saves the file where the doctor sees it, filed by the person who charted it", () => {
+    const { listDocuments } = records;
+    const id = da.keepChartedDocument("p_ramesh", "u_pa_priya", ocr, "image/png", "data:image/png;base64," + Buffer.from("png").toString("base64"), now());
+    const d = listDocuments("p_ramesh").find((x) => x.id === id)!;
+    assert.equal(d.title, "Renal Function Test");
+    assert.equal(d.category, "lab");
+    assert.ok(d.filed_at, "already reviewed in the window, so filed");
+    assert.equal(da.awaitingCheck(d.filed_at, da.readExtract(d.extract)), false, "no second check asked for");
+  });
+  it("refuses files over 5 MB", () => {
+    assert.throws(() => da.keepChartedDocument("p_ramesh", "u_pa_priya", ocr, "image/png", Buffer.alloc(6 * 1024 * 1024).toString("base64"), now()), /5 MB/);
+  });
+  it("dates values by the report, never in the future", () => {
+    const t = Date.parse("2026-10-01T12:00:00+05:30");
+    assert.equal(da.reportTime("2026-09-25", t), Date.parse("2026-09-25T09:00:00+05:30"));
+    assert.equal(da.reportTime("2027-01-01", t), t);
+    assert.equal(da.reportTime(null, t), t);
+    assert.equal(da.reportTime("25/09/2026", t), t);
   });
 });
 void setSetting;

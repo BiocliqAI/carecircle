@@ -2,7 +2,9 @@ import { analyzeDocumentOCR } from "@/lib/gemini";
 import { addLab, addMedChange, getPatient, runScheduler } from "@/lib/engine";
 import { get, run } from "@/lib/db";
 import { now } from "@/lib/clock";
-import { canView, err, json, ready, sessionUser } from "@/lib/server";
+import { keepChartedDocument, reportTime } from "@/lib/docauto";
+import { LIVE } from "@/lib/mode";
+import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,13 @@ export async function POST(req: Request) {
     }
   }
 
+  // Who is asking. The live clinic only lets the care team read documents into a record. The demo's WhatsApp
+  // simulator sends its sample documents without a clinic login, so the demo keeps allowing that.
+  const user = await sessionUser();
+  if (patientId && user && !canView(user, patientId)) return err("No access to this patient", 403);
+  if (LIVE && (!isClinician(user) || !patientId)) return err("Only the care team can read documents into a record", 403);
+
+  const sample = !body.imageBase64; // one of the demo's built-in sample documents
   const base64 = body.imageBase64 || `SAMPLE_${body.sampleId || "DEFAULT"}`;
   const mimeType = body.mimeType || "image/png";
 
@@ -41,18 +50,25 @@ export async function POST(req: Request) {
       mimeType,
       patientId,
     });
+    // A failed AI read falls back to the demo reader, whose values are made up. Never show or chart them for a real file.
+    if (!sample && /sample|simulator/i.test(ocrResult.source)) {
+      return err("Couldn't read this document: the AI reader is unavailable (check the Gemini key in Settings). Nothing was charted.", 422);
+    }
 
-    const committed = { labs: 0, observations: 0, medChanges: 0 };
+    const committed = { labs: 0, observations: 0, medChanges: 0, documentId: null as number | null };
 
     if (body.commit && patientId) {
-      const user = await sessionUser();
       const p = getPatient(patientId);
-      if (p && (!user || canView(user, patientId))) {
+      if (p) {
         const t = now();
+        const labsAt = reportTime(ocrResult.documentDate, t); // the day the report was taken, not the day it was uploaded
+
+        // Keep the file itself in the patient's documents, filed by the person who reviewed and charted it.
+        if (!sample && user && isClinician(user)) committed.documentId = keepChartedDocument(p.id, user.id, ocrResult, mimeType, body.imageBase64!, t);
 
         // 1. Commit Labs
         for (const l of ocrResult.extracted.labs) {
-          addLab(p.id, l.marker, l.value, t, "ocr", user?.id || null, null);
+          addLab(p.id, l.marker, l.value, labsAt, "ocr", user?.id || null, null);
           committed.labs++;
         }
 
