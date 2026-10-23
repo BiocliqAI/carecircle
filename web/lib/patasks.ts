@@ -74,17 +74,17 @@ export function paToday(t: number, userId: string) {
     }
   }
 
-  for (const d of all<{ id: number; patient_id: string; title: string; uploaded_by: string | null; uploaded_at: number; extract: string | null }>("SELECT id, patient_id, title, uploaded_by, uploaded_at, extract FROM patient_documents WHERE source = 'whatsapp' AND filed_at IS NULL AND outside_visit_id IS NULL ORDER BY uploaded_at")) {
+  for (const d of all<{ id: number; patient_id: string; title: string; uploaded_by: string | null; uploaded_at: number; extract: string | null; source: string }>("SELECT id, patient_id, title, uploaded_by, uploaded_at, extract, source FROM patient_documents WHERE filed_at IS NULL AND outside_visit_id IS NULL ORDER BY uploaded_at")) {
     const p = getPatient(d.patient_id);
     if (!p) continue;
     const x = readExtract(d.extract);
-    const from = `sent on WhatsApp${d.uploaded_by ? ` by ${shortName(getUser(d.uploaded_by)?.name ?? "")}` : ""}, ${fmtDate(d.uploaded_at, { day: "numeric", month: "short" })}`;
+    const from = `${d.source === "whatsapp" ? "sent on WhatsApp" : "uploaded"}${d.uploaded_by ? ` by ${shortName(getUser(d.uploaded_by)?.name ?? "")}` : ""}, ${fmtDate(d.uploaded_at, { day: "numeric", month: "short" })}`;
     tasks.push({
       id: `doc:${d.id}`, kind: "document", label: x ? "Document read, confirm to file" : "Document to file", patient: p.name, patientId: p.id, at: d.uploaded_at,
-      detail: x ? `Read automatically: ${extractLine(x)}. ${from}. Check it against the original, then confirm.` : `“${d.title}” ${from} · not yet filed`,
+      detail: x ? `Read automatically: ${extractLine(x)}. ${from}. Check it against the original, then confirm.` : `“${d.title}” ${from} · not yet checked`,
       actions: [
         ...(x ? [{ label: "Confirm & file", api: { path: `/api/patients/${p.id}/documents`, body: { action: "autofile", id: d.id } }, primary: true, done: `Filed${x.labs.length ? " and lab values entered" : ""} for ${shortName(p.name)}.` }] : []),
-        { label: x ? "Open" : "Review & file", href: `/patients/${p.id}?tab=documents`, primary: !x },
+        { label: x ? "Open" : "Check & file", href: `/patients/${p.id}?tab=documents`, primary: !x },
       ],
     });
   }

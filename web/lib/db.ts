@@ -140,6 +140,7 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["users", "reg_no", "TEXT"],
   ["users", "created_at", "INTEGER"],
   ["patient_documents", "filed_at", "INTEGER"],
+  ["patient_documents", "filed_by", "TEXT"], // who checked it against the original and filed it
   ["patient_documents", "outside_visit_id", "INTEGER"],
   ["patient_documents", "extract", "TEXT"],
   ["messages", "body_en", "TEXT"],

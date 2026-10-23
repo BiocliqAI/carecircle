@@ -228,6 +228,11 @@ describe("Live clinic onboarding", () => {
     const list = records.listDocuments(pid);
     assert.equal(list[0].title, "RFT report");
     assert.equal(list[0].size, "fake-png-bytes".length);
+    assert.equal(list[0].filed_at, null, "an upload is not filed until a person checks it");
+    records.updateDocument(id, { notes: "edited" }, now(), paId);
+    assert.equal(records.listDocuments(pid)[0].filed_at, null, "editing does not count as the check");
+    records.verifyDocument(id, now(), paId);
+    assert.ok(records.listDocuments(pid)[0].filed_at, "marking checked files it");
     assert.equal(Buffer.from(records.getDocumentFile(id)!.data).toString(), "fake-png-bytes");
     records.updateDocument(id, { title: "RFT Sept", category: "nonsense" }, now(), paId);
     assert.equal(records.listDocuments(pid)[0].title, "RFT Sept");
