@@ -5,12 +5,12 @@ import { api } from "./client";
 import { ConsentList, type ConsentView } from "./baseline";
 import { Dictate } from "./Dictate";
 import { fmtDateTime } from "@/lib/time";
-import { MAX_CAREGIVERS } from "@/lib/types";
+import { LAB_META, MAX_CAREGIVERS } from "@/lib/types";
 
 export interface ProfilePatient { id: string; name: string; age: number | null; sex: string; phone: string; conditions: string; address: string; user_id?: string | null; doctor_id?: string }
 export interface ProfileCaregiver { id: string; name: string; relation: string | null; phone: string; level: number; user_id: string | null; dashboard?: number }
 export interface NoteItem { id: number; author_id: string; author_name: string | null; author_role: string | null; kind: string; body: string; created_at: number; updated_at: number }
-export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null }
+export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null; extract: string | null }
 
 const CATS: [string, string][] = [["prescription", "Prescription"], ["lab", "Lab report"], ["discharge", "Discharge summary"], ["imaging", "Imaging"], ["voice", "Voice note"], ["other", "Other"]];
 const catLabel = (c: string) => CATS.find((x) => x[0] === c)?.[1] ?? "Other";
@@ -296,6 +296,34 @@ export function NotesTab({ pid, notes, viewerId, viewerRole, onChange }: { pid: 
 }
 
 // ---------------------------------------------------------------- documents
+
+interface ReadOut { title: string; date: string | null; prescriber: string | null; labs: { marker: string; value: number; unit: string }[]; meds: number; medList?: string[]; note: string | null }
+const readOut = (raw: string | null): ReadOut | null => { try { return raw ? (JSON.parse(raw) as ReadOut) : null; } catch { return null; } };
+const READ_WINDOW_MS = 3 * 60_000; // after this, an unread document is treated as "couldn't be read"
+
+/** What the AI read from an unchecked document, for the checker to confirm against the original. */
+function ReadPanel({ d, busy, act, refresh }: { d: DocItem; busy: boolean; act: (b: Record<string, unknown>) => Promise<boolean>; refresh: () => void }) {
+  const x = readOut(d.extract);
+  const readable = d.mime.startsWith("image/") || d.mime === "application/pdf";
+  const waiting = !x && readable && Date.now() - d.uploaded_at < READ_WINDOW_MS;
+  useEffect(() => { if (!waiting) return; const i = setInterval(refresh, 5000); return () => clearInterval(i); }, [waiting, refresh]);
+  if (!readable) return null;
+  if (waiting) return <div className="callout" style={{ marginTop: 8 }}><span className="spin" /> Reading the document…</div>;
+  if (!x) return <div className="callout" style={{ marginTop: 8 }}>The document couldn't be read automatically. Open it, enter any values by hand, then press Mark checked.</div>;
+  return (
+    <div className="callout" style={{ marginTop: 8 }}>
+      <b>Read by AI. Compare with the original before confirming.</b>
+      <div>{x.title}{x.date ? ` · ${x.date}` : ""}{x.prescriber ? ` · ${x.prescriber}` : ""}</div>
+      {x.labs.length > 0 ? <ul style={{ margin: "4px 0 0 18px" }}>{x.labs.map((l) => <li key={l.marker}>{LAB_META[l.marker]?.label ?? l.marker}: <b className="num">{l.value}</b> {l.unit}</li>)}</ul> : <div className="muted">No lab values found.</div>}
+      {x.medList && x.medList.length > 0 && <div className="muted" style={{ marginTop: 4 }}>Medicines seen (not entered from here): {x.medList.join("; ")}</div>}
+      {x.note && <div className="muted" style={{ marginTop: 4 }}>Note: {x.note}</div>}
+      <div className="row" style={{ gap: 6, marginTop: 8 }}>
+        <button className="btn sm primary" disabled={busy} onClick={() => act({ action: "autofile", id: d.id })}>✓ Reading is correct: file{x.labs.length ? " and enter values" : ""}</button>
+        <button className="btn sm" disabled={busy} title="Files the document and enters nothing; add the values by hand" onClick={() => act({ action: "verify", id: d.id })}>✗ Not correct: file without values</button>
+      </div>
+    </div>
+  );
+}
 export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; docs: DocItem[]; canEdit: boolean; onChange: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [meta, setMeta] = useState({ title: "", category: "lab", notes: "" });
@@ -361,6 +389,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
                     <b>{d.title}</b> <span className="badge">{catLabel(d.category)}</span> {d.source === "whatsapp" && <span className="badge good">via WhatsApp</span>} {d.filed_at ? <span className="badge good" title={fmtDateTime(d.filed_at)}>Checked{d.filed_by_name ? ` by ${d.filed_by_name.split(" ").slice(0, 2).join(" ")}` : ""}</span> : <span className="badge warn">Needs check</span>}
                     <div className="muted">{fmtDateTime(d.uploaded_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ""} · {kb(d.size)}</div>
                     {d.notes && <div style={{ marginTop: 2 }}>{d.notes}</div>}
+                    {!d.filed_at && canEdit && <ReadPanel d={d} busy={busy} act={act} refresh={onChange} />}
                     {d.mime.startsWith("audio/") && <audio src={`/api/documents/${d.id}`} controls preload="none" style={{ marginTop: 6, height: 32 }} />}
                   </>
                 )}

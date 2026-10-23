@@ -165,4 +165,20 @@ describe("after-visit summary", () => {
     assert.ok(msgs("u_lakshmi").some((b) => /care plan was updated[\s\S]*Lasix is now 20 mg/.test(b)));
   });
 });
+
+describe("a failed AI read never becomes an extraction", () => {
+  before(async () => { await seedDemo(); });
+  it("stores nothing when the AI call fails, for images and PDFs alike", async () => {
+    setSetting("gemini_api_key", "not-a-real-key"); // a configured key whose call fails falls back to the built-in demo reader
+    try {
+      for (const mime of ["image/jpeg", "application/pdf"]) {
+        const id = addDocument("p_ramesh", { title: "lab.pdf", category: "lab", mime, base64: Buffer.from("fake").toString("base64") }, now(), "u_pa_priya");
+        assert.equal(await da.extractDocument(id), null, `${mime}: the demo reader's values are not presented as a reading`);
+        assert.equal(get<{ extract: string | null }>("SELECT extract FROM patient_documents WHERE id = ?", id)!.extract, null);
+      }
+    } finally {
+      setSetting("gemini_api_key", "");
+    }
+  });
+});
 void setSetting;

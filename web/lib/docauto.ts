@@ -15,6 +15,7 @@ export interface DocExtract {
   prescriber: string | null;
   labs: { marker: string; value: number; unit: string }[];
   meds: number;
+  medList?: string[]; // names and doses, shown to the checker (medicines are never entered from here)
   note: string | null;
 }
 const CAT: Record<string, string> = { handwritten_prescription: "prescription", lab_report: "lab", discharge_summary: "discharge", vitals_diary: "other", other: "other" };
@@ -34,13 +35,13 @@ export function extractLine(x: DocExtract): string {
 export async function extractDocument(docId: number): Promise<DocExtract | null> {
   if (!isGeminiConfigured()) return null;
   const d = get<{ patient_id: string; mime: string; data: Uint8Array; category: string }>("SELECT patient_id, mime, data, category FROM patient_documents WHERE id = ?", docId);
-  if (!d || !/^image\//.test(d.mime)) return null;
+  if (!d || !/^(image\/|application\/pdf$)/.test(d.mime)) return null;
   try {
     const r = await analyzeDocumentOCR({ imageBase64: Buffer.from(d.data).toString("base64"), mimeType: d.mime, patientId: d.patient_id });
-    if (!r.source || /sample/i.test(r.source)) return null; // never present the simulated reader's output as a real reading
+    if (!r.source || /sample|simulator/i.test(r.source)) return null; // never present the simulated reader's output as a real reading (it is what a failed AI call falls back to)
     const labs = r.extracted.labs.filter((l) => LAB_META[l.marker] && Number.isFinite(l.value)).map((l) => ({ marker: l.marker, value: l.value, unit: l.unit }));
     const date = r.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(r.documentDate) ? r.documentDate : null;
-    const x: DocExtract = { category: CAT[r.documentType] ?? "other", title: (r.documentTypeName || "Medical document").slice(0, 90), date, prescriber: r.prescriber, labs, meds: r.extracted.medications.length, note: r.doctorNotes?.slice(0, 300) ?? null };
+    const x: DocExtract = { category: CAT[r.documentType] ?? "other", title: (r.documentTypeName || "Medical document").slice(0, 90), date, prescriber: r.prescriber, labs, meds: r.extracted.medications.length, medList: r.extracted.medications.slice(0, 12).map((m) => `${m.name} ${m.dose ?? ""}`.trim().slice(0, 80)), note: r.doctorNotes?.slice(0, 300) ?? null };
     run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify(x), docId);
     return x;
   } catch {

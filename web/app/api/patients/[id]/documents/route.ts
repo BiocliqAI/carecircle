@@ -1,6 +1,6 @@
 import { now } from "@/lib/clock";
 import { addDocument, deleteDocument, listDocuments, updateDocument, verifyDocument } from "@/lib/records";
-import { autoFile } from "@/lib/docauto";
+import { autoFile, extractDocument } from "@/lib/docauto";
 import { get } from "@/lib/db";
 import { canView, err, json, ready, sessionUser } from "@/lib/server";
 
@@ -25,7 +25,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     if (body.action === "add") {
       if (!body.base64) return err("Choose a file to upload");
-      return json({ id: addDocument(id, { title: body.title ?? "Document", category: body.category ?? "other", mime: body.mime ?? "application/octet-stream", base64: body.base64, notes: body.notes }, t, user.id) });
+      const docId = addDocument(id, { title: body.title ?? "Document", category: body.category ?? "other", mime: body.mime ?? "application/octet-stream", base64: body.base64, notes: body.notes }, t, user.id);
+      void extractDocument(docId); // read in the background; the checker confirms the reading before anything is entered
+      return json({ id: docId });
     }
     if (!body.id || !get("SELECT 1 FROM patient_documents WHERE id = ? AND patient_id = ?", body.id, id)) return err("Document not found", 404);
     if (body.action === "autofile") return json({ ok: true, ...autoFile(body.id, user.id, t) });
