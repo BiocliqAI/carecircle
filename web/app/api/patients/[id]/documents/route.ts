@@ -20,7 +20,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const user = await sessionUser();
   if (!user || (user.role !== "DOCTOR" && user.role !== "PA") || !canView(user, id)) return err("Only the care team can manage documents", 403);
-  const body = (await req.json()) as { action: "add" | "update" | "delete" | "autofile" | "verify"; id?: number; title?: string; category?: string; notes?: string; mime?: string; base64?: string };
+  const body = (await req.json()) as { action: "add" | "update" | "delete" | "autofile" | "verify" | "reread"; id?: number; labs?: { marker: string; value: number }[]; date?: string | null; reject?: boolean; title?: string; category?: string; notes?: string; mime?: string; base64?: string };
   const t = now();
   try {
     if (body.action === "add") {
@@ -30,7 +30,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       return json({ id: docId });
     }
     if (!body.id || !get("SELECT 1 FROM patient_documents WHERE id = ? AND patient_id = ?", body.id, id)) return err("Document not found", 404);
-    if (body.action === "autofile") return json({ ok: true, ...autoFile(body.id, user.id, t) });
+    if (body.action === "autofile") return json({ ok: true, ...autoFile(body.id, user.id, t, { labs: body.labs, date: body.date, reject: body.reject }) });
+    if (body.action === "reread") {
+      if (!(await extractDocument(body.id, { reread: true }))) return err("Couldn't read the document this time. Check that AI is switched on, or enter the values by hand.", 422);
+      return json({ ok: true });
+    }
     if (body.action === "verify") verifyDocument(body.id, t, user.id);
     else if (body.action === "update") updateDocument(body.id, { title: body.title, category: body.category, notes: body.notes }, t, user.id);
     else if (body.action === "delete") deleteDocument(body.id, t, user.id);

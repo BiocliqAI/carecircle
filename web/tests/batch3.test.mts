@@ -95,6 +95,49 @@ describe("documents read on arrival", () => {
   it("refuses to auto-file a document that was never read", () => {
     assert.throws(() => da.autoFile(mk("IMG_5.jpg"), "u_pa_priya", now()), /not been read/);
   });
+  const read = (id: number, extra: Record<string, unknown> = {}) => run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify({ category: "lab", title: "Renal Function Test", date: "2026-09-21", prescriber: null, labs: [{ marker: "creatinine", value: 9.9, unit: "mg/dL" }, { marker: "potassium", value: 4.1, unit: "mmol/L" }], meds: 0, note: null, ...extra }), id);
+  const lab = (marker: string, value: number) => get("SELECT 1 FROM labs WHERE patient_id = 'p_ramesh' AND marker = ? AND value = ?", marker, value);
+  it("enters the checker's corrections, not what was read", () => {
+    const id = mk("IMG_6.jpg");
+    read(id);
+    const r = da.autoFile(id, "u_pa_priya", now(), { date: "2026-09-22", labs: [{ marker: "creatinine", value: 1.9 }, { marker: "urea", value: 61 }] });
+    assert.equal(r.labs, 2);
+    assert.ok(lab("creatinine", 1.9), "corrected value entered");
+    assert.equal(lab("creatinine", 9.9), undefined, "misread value not entered");
+    assert.equal(lab("potassium", 4.1), undefined, "a value the checker removed is not entered");
+    assert.ok(lab("urea", 61), "a value the checker added is entered");
+    const x = da.readExtract(get<{ extract: string }>("SELECT extract FROM patient_documents WHERE id = ?", id)!.extract)!;
+    assert.equal(x.done, true);
+    assert.equal(x.date, "2026-09-22");
+    assert.ok(get("SELECT 1 FROM audit WHERE action = 'DOCUMENT_AUTOFILED' AND detail LIKE '%\"edited\":true%'"), "the correction is audited");
+  });
+  it("rejecting a reading files the document and enters nothing", () => {
+    const id = mk("IMG_7.jpg");
+    read(id, { labs: [{ marker: "sodium", value: 999, unit: "mmol/L" }] });
+    assert.equal(da.autoFile(id, "u_pa_priya", now(), { reject: true }).labs, 0);
+    assert.equal(lab("sodium", 999), undefined);
+    assert.ok(get<{ filed_at: number | null }>("SELECT filed_at FROM patient_documents WHERE id = ?", id)!.filed_at);
+  });
+  it("refuses unusable corrections", () => {
+    const id = mk("IMG_8.jpg");
+    read(id);
+    assert.throws(() => da.autoFile(id, "u_pa_priya", now(), { labs: [{ marker: "nonsense", value: 1 }] }), /Unknown lab/);
+    assert.throws(() => da.autoFile(id, "u_pa_priya", now(), { labs: [{ marker: "creatinine", value: Number.NaN }] }), /valid number/);
+    assert.throws(() => da.autoFile(id, "u_pa_priya", now(), { labs: [{ marker: "creatinine", value: 1 }, { marker: "creatinine", value: 2 }] }), /twice/);
+    assert.throws(() => da.autoFile(id, "u_pa_priya", now(), { date: "2099-01-01" }), /future/);
+  });
+  it("a document filed before it was read can be read again and confirmed, keeping its title", () => {
+    const id = addDocument("p_ramesh", { title: "Aruna RFT 14 Oct", category: "lab", mime: "application/pdf", base64: Buffer.from("%PDF-fake").toString("base64") }, now(), "u_pa_priya");
+    run("UPDATE patient_documents SET filed_at = ?, filed_by = 'u_pa_priya' WHERE id = ?", now(), id); // filed the old way, never read
+    assert.equal(da.awaitingCheck(now(), null), false);
+    read(id, { reread: true, labs: [{ marker: "hb", value: 10.4, unit: "g/dL" }] });
+    const x = () => da.readExtract(get<{ extract: string }>("SELECT extract FROM patient_documents WHERE id = ?", id)!.extract);
+    assert.equal(da.awaitingCheck(now(), x()), true, "a re-read of a filed document waits for the checker");
+    assert.equal(da.autoFile(id, "u_pa_priya", now()).labs, 1);
+    assert.ok(lab("hb", 10.4));
+    assert.equal(get<{ title: string }>("SELECT title FROM patient_documents WHERE id = ?", id)!.title, "Aruna RFT 14 Oct", "an already-filed document keeps its title");
+    assert.equal(da.awaitingCheck(now(), x()), false, "confirmed, so nothing left to check");
+  });
 });
 
 describe("brief prepared before the visit", () => {
