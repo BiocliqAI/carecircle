@@ -224,4 +224,14 @@ describe("a failed AI read never becomes an extraction", () => {
     }
   });
 });
+
+describe("AI errors say why", () => {
+  it("shows the API's reason, not the SDK's empty wrapper", async () => {
+    const { geminiError } = await import("../lib/gemini");
+    const sdk = Object.assign(new Error('400 API error occurred: {"httpMeta":{}}'), { status: 400, body: '[{"error":{"code":400,"message":"API key not valid. Please pass a valid API key."}}]' });
+    assert.equal(geminiError(sdk), "400: API key not valid. Please pass a valid API key.");
+    assert.equal(geminiError(new Error("socket hang up")), "socket hang up");
+    assert.equal(geminiError({}), "unknown error");
+  });
+});
 void setSetting;
