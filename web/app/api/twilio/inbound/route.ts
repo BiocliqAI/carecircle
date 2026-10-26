@@ -14,7 +14,9 @@ export async function POST(req: Request) {
   const cfg = twilioConfig();
   if (!cfg) return new Response("WhatsApp gateway is not configured", { status: 503 });
   const params: Record<string, string> = {};
-  for (const [k, v] of await req.formData()) if (typeof v === "string") params[k] = v;
+  const form = await req.formData().catch(() => null); // Twilio always posts a form; anything else is not Twilio
+  if (!form) return new Response("Expected a form post from Twilio", { status: 400 });
+  for (const [k, v] of form) if (typeof v === "string") params[k] = v;
   if (!validSignature(cfg, req.headers.get("x-twilio-signature"), signedUrl(cfg, req), params)) return new Response("Invalid signature", { status: 403 });
   await ready();
   const user = userByPhone(params.From ?? "");

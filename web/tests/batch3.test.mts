@@ -259,4 +259,20 @@ describe("reports read with AI are kept under Documents", () => {
     assert.equal(da.reportTime("25/09/2026", t), t);
   });
 });
+
+describe("settings pasted with quotes", () => {
+  it("strips one pair of surrounding quotes from the app's own settings only", async () => {
+    const { unquote, unquoteEnv } = await import("../lib/envclean");
+    assert.equal(unquote('"abc"'), "abc");
+    assert.equal(unquote("'abc'"), "abc");
+    assert.equal(unquote(' "abc" '), "abc");
+    assert.equal(unquote('"abc'), '"abc', "unmatched quotes are left alone");
+    assert.equal(unquote('ab"c"'), 'ab"c"');
+    const env: Record<string, string | undefined> = { TWILIO_AUTH_TOKEN: '"tok"', PUBLIC_BASE_URL: '"https://x.app"', CARECIRCLE_DB: '"/data/clinic.db"', APP_PASSWORD: "plain", PATH: '"/usr/bin"' };
+    assert.deepEqual(unquoteEnv(env).sort(), ["CARECIRCLE_DB", "PUBLIC_BASE_URL", "TWILIO_AUTH_TOKEN"]);
+    assert.equal(env.TWILIO_AUTH_TOKEN, "tok");
+    assert.equal(env.CARECIRCLE_DB, "/data/clinic.db");
+    assert.equal(env.PATH, '"/usr/bin"', "other programs' settings are not touched");
+  });
+});
 void setSetting;
