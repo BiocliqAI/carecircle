@@ -4,7 +4,7 @@
 import { all, audit, get, getSetting, run, setSetting, tx } from "./db";
 import { now, setSimNow } from "./clock";
 import { parseMessage } from "./parser";
-import { sendWhatsApp } from "./whatsapp";
+import { sendWhatsApp, templateLine } from "./whatsapp";
 import { DAY, HOUR, MIN, atLocal, dayKey, dayStart, fmtDate, fmtTime, localDow, localHHMM } from "./time";
 import { clarify, pickOption, type ClarifyOption } from "./clarify";
 import { buildDigest } from "./digest";
@@ -369,7 +369,19 @@ function notifyLevel(p: PatientRow, esc: EscalationRow, level: number, t: number
   if (!cg || !cg.user_id) return;
   const timer = TIMER_MIN(latestVisit(p.id, t)?.plan, esc.type);
   const backup = getCaregivers(p.id).find((c) => c.level === level + 1);
-  sendWhatsApp({ userId: cg.user_id, patientId: p.id, body: escalationText(p, esc, prev, timer, passed), quick: backup ? ["I'll handle it", `Pass to ${first(backup.name)}`] : ["I'll handle it"], kind: "escalation", alert: esc.title, at: t });
+  const sentence = (s: string, max: number) => templateLine(s, max).replace(/[.\s]+$/, "");
+  const card = {
+    backup: !!backup,
+    vars: {
+      "1": first(cg.name),
+      "2": clinicLabel() || `${doctorName(p)}'s clinic`,
+      "3": first(p.name),
+      "4": sentence(`${esc.title}. ${esc.detail ?? ""}`, 200),
+      "5": sentence(esc.advice ?? "Please check on them", 250),
+      "6": p.phone || "the number on file",
+    },
+  };
+  sendWhatsApp({ userId: cg.user_id, patientId: p.id, body: escalationText(p, esc, prev, timer, passed), quick: backup ? ["I'll handle it", `Pass to ${first(backup.name)}`] : ["I'll handle it"], kind: "escalation", alert: esc.title, card, at: t });
   escEvent(esc.id, t, "NOTIFIED", level, cg.name);
 }
 
