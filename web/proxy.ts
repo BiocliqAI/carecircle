@@ -2,11 +2,12 @@
 // HTTP Basic auth on every page and API route. Unset (local use) = no gate. Twilio webhooks are exempt: they
 // carry Twilio's signature instead, which the routes check.
 import { NextResponse, type NextRequest } from "next/server";
+import { unquote } from "./lib/envclean";
 
 export function proxy(req: NextRequest) {
-  const password = process.env.APP_PASSWORD;
+  const password = unquote(process.env.APP_PASSWORD ?? "");
   if (!password) return NextResponse.next();
-  const user = process.env.APP_USER || "carecircle";
+  const user = unquote(process.env.APP_USER ?? "") || "carecircle";
   const header = req.headers.get("authorization") ?? "";
   if (header.startsWith("Basic ")) {
     const [u, ...rest] = atob(header.slice(6)).split(":");
