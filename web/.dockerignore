@@ -1,0 +1,9 @@
+node_modules
+.next
+.next-clinic
+data
+backups
+.env*.local
+*.tsbuildinfo
+next-env.d.ts
+tests

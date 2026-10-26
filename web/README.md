@@ -57,7 +57,7 @@ Rules for baseline data:
 
 ## Deploy to Railway (public test instance)
 
-The repo root contains `docs/` and `web/`; the app lives in `web/`. `web/railway.json` sets the build and start commands, a single replica (SQLite) and a health check.
+The repo root contains `docs/` and `web/`; the app lives in `web/`. `web/railway.json` builds with `web/Dockerfile` (Node 22, no build-cache mounts, which Railway's builder has failed to mount) and sets the start command, a single replica (SQLite) and a health check.
 
 1. Railway → **New project → Deploy from GitHub repo**, and pick this repo.
 2. Service **Settings → Source → Root directory**: `web`.
