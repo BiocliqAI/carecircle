@@ -170,7 +170,7 @@ async function hold(cfg: TwilioConfig, row: Row, to: string) {
   const { shortName } = await import("./types");
   const name = shortName(getUser(row.user_id)?.name ?? "there");
   const variables: Record<string, string> = alert
-    ? { "1": name, "2": shortName((row.patient_id && getPatient(row.patient_id)?.name) || "your family member"), "3": templateLine(lang === "en" && row.wa_alert ? row.wa_alert : row.body) }
+    ? { "1": name, "2": shortName((row.patient_id && getPatient(row.patient_id)?.name) || "your family member"), "3": templateLine(lang === "en" && row.wa_alert ? row.wa_alert : row.body), "4": clinicLabel() || "your clinic" }
     : { "1": name, "2": clinicLabel() || "your clinic" };
   try {
     await twilioSend(cfg, to, { contentSid: tpl, variables });

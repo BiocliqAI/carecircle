@@ -20,21 +20,24 @@ Each outbound message records its delivery state in `messages.wa_status` (`pendi
 
 ## 1. Create the two templates (Twilio → Messaging → Content Template Builder)
 
-Create both as **Quick reply** type, category **Utility**, language **English**, then **Save and submit for WhatsApp approval**. Approval usually takes minutes to a day.
+Create both as **Quick reply** type, category **Utility**, language **English**, then **Save and submit for WhatsApp approval**. Approval usually takes minutes to a day. A template can't start or end with a variable.
 
-**`carecircle_update`**
+**`carecircle_update_v2`**
 
-> Hello {{1}}, you have a new message from {{2}} about your care. Tap *Show message* below to read it.
+> Hello {{1}}, {{2}} has sent an update on the care plan. Tap *Show message* to read it.
 
 - Button: **Show message**, button ID **`cc_show`**
 - Sample values for the submission: `{{1}}` = `Ramesh`, `{{2}}` = `Rao Family Clinic`
 
-**`carecircle_alert`**
+**`carecircle_alert_v2`**
 
-> Hello {{1}}, there is a care alert about {{2}}: {{3}}. Tap *Show alert* below to see the details and respond.
+> Care alert for {{1}}: {{2}}'s care needs attention: {{3}}. This was raised by {{4}} under the care plan. Tap *Show alert* to see the advice and respond.
 
 - Button: **Show alert**, button ID **`cc_show`**
-- Sample values: `{{1}}` = `Lakshmi`, `{{2}}` = `Ramesh`, `{{3}}` = `BP 182/110, higher than his usual range`
+- Sample values: `{{1}}` = `Lakshmi`, `{{2}}` = `Ramesh`, `{{3}}` = `BP above doctor's limit`, `{{4}}` = `Rao Family Clinic`
+- `{{3}}` is the alert's title (for people set to another language, the translated alert text).
+
+Meta may re-classify a template as **Marketing**, which costs more and can be capped or turned off by the recipient. Don't use a Marketing-classed alert template; reword it to be more specific, or appeal the category in WhatsApp Manager.
 
 Copy each approved template's **Content SID** (starts with `HX`).
 

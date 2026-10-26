@@ -138,7 +138,10 @@ describe("twilio: delivery", () => {
     await wa.deliveriesSettled();
     const vars = JSON.parse(sends()[0].form!.get("ContentVariables")!);
     assert.equal(sends()[0].form!.get("ContentSid"), "HXalert");
-    assert.deepEqual(vars, { "1": "Lakshmi", "2": "Ramesh", "3": "BP above doctor's limit" });
+    assert.equal(vars["1"], "Lakshmi");
+    assert.equal(vars["2"], "Ramesh");
+    assert.equal(vars["3"], "BP above doctor's limit");
+    assert.ok(vars["4"], "the clinic's name");
     assert.equal(status(id).wa_status, "waiting");
   });
 
