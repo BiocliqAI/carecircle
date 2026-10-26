@@ -369,7 +369,7 @@ function notifyLevel(p: PatientRow, esc: EscalationRow, level: number, t: number
   if (!cg || !cg.user_id) return;
   const timer = TIMER_MIN(latestVisit(p.id, t)?.plan, esc.type);
   const backup = getCaregivers(p.id).find((c) => c.level === level + 1);
-  sendWhatsApp({ userId: cg.user_id, patientId: p.id, body: escalationText(p, esc, prev, timer, passed), quick: backup ? ["I'll handle it", `Pass to ${first(backup.name)}`] : ["I'll handle it"], kind: "escalation", at: t });
+  sendWhatsApp({ userId: cg.user_id, patientId: p.id, body: escalationText(p, esc, prev, timer, passed), quick: backup ? ["I'll handle it", `Pass to ${first(backup.name)}`] : ["I'll handle it"], kind: "escalation", alert: esc.title, at: t });
   escEvent(esc.id, t, "NOTIFIED", level, cg.name);
 }
 
@@ -402,8 +402,8 @@ export function timeoutCaregiver(escId: number, t: number, via: "whatsapp" | "da
     escEvent(esc.id, t, "EXHAUSTED", esc.level, "system", `No caregiver acknowledged at any level${via === "whatsapp" ? " (simulated miss)" : ""}`);
     audit(t, "system", "ESCALATION_EXHAUSTED", "escalation", esc.id, { via });
     const msg = `❗ Nobody in ${first(p.name)}'s care circle acknowledged: ${esc.title}.\nPlease act now — contact ${doctorName(p)}'s clinic or seek medical attention if needed.`;
-    for (const c of cgs) if (c.user_id) sendWhatsApp({ userId: c.user_id, patientId: p.id, body: msg, kind: "escalation", at: t });
-    sendWhatsApp({ userId: p.user_id!, patientId: p.id, body: `❗ We couldn't reach your care circle about: ${esc.title}. If you feel unwell, please contact ${doctorName(p)}'s clinic or go to the nearest hospital.`, kind: "escalation", at: t });
+    for (const c of cgs) if (c.user_id) sendWhatsApp({ userId: c.user_id, patientId: p.id, body: msg, kind: "escalation", alert: `nobody has responded to "${esc.title}"`, at: t });
+    sendWhatsApp({ userId: p.user_id!, patientId: p.id, body: `❗ We couldn't reach your care circle about: ${esc.title}. If you feel unwell, please contact ${doctorName(p)}'s clinic or go to the nearest hospital.`, kind: "escalation", alert: `your care circle could not be reached about "${esc.title}"`, at: t });
   }
   return null;
 }

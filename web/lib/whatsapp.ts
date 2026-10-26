@@ -3,7 +3,7 @@
 //
 // WhatsApp only allows free-form messages within 24 hours of the person's last message. Outside that window a message
 // waits, and an approved template ("you have a new message — Show message") is sent instead; when they reply or tap,
-// the waiting messages are delivered. Alerts use their own template that carries the alert's first line.
+// the waiting messages are delivered. Alerts use their own template that carries the alert's title.
 import { get, getSetting, run, setSetting, all } from "./db";
 import { now } from "./clock";
 import { langOf, scheduleTranslation } from "./lang";
@@ -15,13 +15,14 @@ export interface OutboundMessage {
   body: string;
   quick?: string[]; // quick-reply buttons (WhatsApp interactive replies)
   kind?: string; // prompt | reminder | reply | escalation | info
+  alert?: string; // escalations: the alert's title, shown in the alert template outside the 24-hour window
   at: number;
 }
 
 export function sendWhatsApp(m: OutboundMessage): number {
   const cfg = twilioConfig();
   const r = run(
-    "INSERT INTO messages(patient_id, user_id, direction, body, quick, created_at, kind, wa_status) VALUES(?,?,?,?,?,?,?,?)",
+    "INSERT INTO messages(patient_id, user_id, direction, body, quick, created_at, kind, wa_status, wa_alert) VALUES(?,?,?,?,?,?,?,?,?)",
     m.patientId,
     m.userId,
     "OUT",
@@ -30,6 +31,7 @@ export function sendWhatsApp(m: OutboundMessage): number {
     m.at,
     m.kind || "info",
     cfg ? "pending" : null,
+    m.alert ?? null,
   );
   // In the person's own language: translated in the background right after it is stored, and delivered once
   // translated. The English stays in body_en.
@@ -59,7 +61,7 @@ export async function deliveriesSettled() {
   while (chains.size) await Promise.all([...chains.values()]);
 }
 
-type Row = { id: number; user_id: string; patient_id: string | null; body: string; quick: string | null; created_at: number; kind: string | null; wa_status: string | null };
+type Row = { id: number; user_id: string; patient_id: string | null; body: string; quick: string | null; created_at: number; kind: string | null; wa_status: string | null; wa_alert: string | null };
 const mark = (id: number, status: string, sid: string | null = null, error: string | null = null) =>
   run("UPDATE messages SET wa_status = ?, wa_sid = COALESCE(?, wa_sid), wa_error = ? WHERE id = ?", status, sid, error, id);
 
@@ -91,7 +93,7 @@ export function strangerWrote(from: string) {
 }
 
 async function deliver(cfg: TwilioConfig, id: number) {
-  const row = get<Row>("SELECT id, user_id, patient_id, body, quick, created_at, kind, wa_status FROM messages WHERE id = ?", id);
+  const row = get<Row>("SELECT id, user_id, patient_id, body, quick, created_at, kind, wa_status, wa_alert FROM messages WHERE id = ?", id);
   if (!row || row.wa_status !== "pending") return;
   const to = phoneOf(row.user_id);
   if (!to) return void mark(id, "failed", null, "No valid WhatsApp number on file");
@@ -158,7 +160,8 @@ export function templateLine(text: string, max = 160): string {
 /** Outside the window: the message waits, and the person gets an approved template asking them to open it. */
 async function hold(cfg: TwilioConfig, row: Row, to: string) {
   const alert = row.kind === "escalation";
-  const tpl = templateFor(cfg, alert ? "alert" : "update", langOf(row.user_id));
+  const lang = langOf(row.user_id);
+  const tpl = templateFor(cfg, alert ? "alert" : "update", lang);
   if (!tpl) return void mark(row.id, "waiting", null, `Outside the 24-hour window and no ${alert ? "TWILIO_TEMPLATE_ALERT" : "TWILIO_TEMPLATE_UPDATE"} is set`);
   mark(row.id, "waiting");
   const key = `wa:nudge:${row.user_id}`;
@@ -167,7 +170,7 @@ async function hold(cfg: TwilioConfig, row: Row, to: string) {
   const { shortName } = await import("./types");
   const name = shortName(getUser(row.user_id)?.name ?? "there");
   const variables: Record<string, string> = alert
-    ? { "1": name, "2": shortName((row.patient_id && getPatient(row.patient_id)?.name) || "your family member"), "3": templateLine(row.body) }
+    ? { "1": name, "2": shortName((row.patient_id && getPatient(row.patient_id)?.name) || "your family member"), "3": templateLine(lang === "en" && row.wa_alert ? row.wa_alert : row.body) }
     : { "1": name, "2": clinicLabel() || "your clinic" };
   try {
     await twilioSend(cfg, to, { contentSid: tpl, variables });
@@ -201,7 +204,7 @@ export function inboundReceived(userId: string): number {
 }
 
 async function deliverWaiting(cfg: TwilioConfig, id: number) {
-  const row = get<Row>("SELECT id, user_id, patient_id, body, quick, created_at, kind, wa_status FROM messages WHERE id = ?", id);
+  const row = get<Row>("SELECT id, user_id, patient_id, body, quick, created_at, kind, wa_status, wa_alert FROM messages WHERE id = ?", id);
   const to = row && phoneOf(row.user_id);
   if (!row || !to) return;
   try {
@@ -216,7 +219,7 @@ const RANK: Record<string, number> = { pending: 0, queued: 1, accepted: 1, sendi
 
 /** Twilio status callback: sent → delivered → read, or failed/undelivered with Twilio's error code. */
 export function deliveryStatus(sid: string, status: string, errorCode: string | null) {
-  const row = get<Row & { wa_sid: string }>("SELECT id, user_id, patient_id, body, quick, created_at, kind, wa_status, wa_sid FROM messages WHERE wa_sid = ?", sid);
+  const row = get<Row & { wa_sid: string }>("SELECT id, user_id, patient_id, body, quick, created_at, kind, wa_status, wa_alert, wa_sid FROM messages WHERE wa_sid = ?", sid);
   if (!row) return;
   if (status === "failed" || status === "undelivered") {
     if ((RANK[row.wa_status ?? ""] ?? 0) >= 3) return;

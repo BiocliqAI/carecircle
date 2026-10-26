@@ -41,8 +41,8 @@ run("INSERT INTO patients(id, user_id, name, phone, doctor_id, created_at) VALUE
 
 const sends = () => calls.filter((c) => c.url.includes("/Messages.json"));
 const status = (id: number) => get<{ wa_status: string; wa_error: string | null }>("SELECT wa_status, wa_error FROM messages WHERE id = ?", id)!;
-const send = (userId: string, body: string, extra: { quick?: string[]; kind?: string; at?: number } = {}) =>
-  wa.sendWhatsApp({ userId, patientId: "p1", body, quick: extra.quick, kind: extra.kind ?? "reply", at: extra.at ?? now() });
+const send = (userId: string, body: string, extra: { quick?: string[]; kind?: string; alert?: string; at?: number } = {}) =>
+  wa.sendWhatsApp({ userId, patientId: "p1", body, quick: extra.quick, kind: extra.kind ?? "reply", alert: extra.alert, at: extra.at ?? now() });
 const openWindow = (u: string) => setSetting(`wa:lastin:${u}`, String(Date.now()));
 const closeWindow = (u: string) => { run("DELETE FROM settings WHERE key IN (?, ?)", `wa:lastin:${u}`, `wa:nudge:${u}`); };
 
@@ -132,7 +132,29 @@ describe("twilio: delivery", () => {
     run("DELETE FROM settings WHERE key = 'wa:lastin:+919886020002'");
   });
 
-  it("outside the window: an alert always goes out as the alert template, with its first line", async () => {
+  it("outside the window: an alert always goes out as the alert template, with the alert's title", async () => {
+    closeWindow("u_cg");
+    const id = send("u_cg", "⚠️ Care Circle alert — Ramesh Kumar\nBP above doctor's limit: BP 182/110 mmHg", { kind: "escalation", alert: "BP above doctor's limit", quick: ["I'll handle it"] });
+    await wa.deliveriesSettled();
+    const vars = JSON.parse(sends()[0].form!.get("ContentVariables")!);
+    assert.equal(sends()[0].form!.get("ContentSid"), "HXalert");
+    assert.deepEqual(vars, { "1": "Lakshmi", "2": "Ramesh", "3": "BP above doctor's limit" });
+    assert.equal(status(id).wa_status, "waiting");
+  });
+
+  it("an alert in another language keeps its translated text in the template", async () => {
+    closeWindow("u_cg");
+    setSetting("lang:u_cg", "hi");
+    try {
+      send("u_cg", "⚠️ रमेश: BP 182/110", { kind: "escalation", alert: "BP above doctor's limit" });
+      await wa.deliveriesSettled();
+      assert.equal(JSON.parse(sends()[0].form!.get("ContentVariables")!)["3"], "⚠️ रमेश: BP 182/110");
+    } finally {
+      run("DELETE FROM settings WHERE key = 'lang:u_cg'");
+    }
+  });
+
+  it("outside the window: an alert without a title falls back to its text, on one line", async () => {
     closeWindow("u_cg");
     const id = send("u_cg", "⚠️ *Ramesh*: BP 182/110\nPlease check on him now.", { kind: "escalation", quick: ["I'll handle it"] });
     await wa.deliveriesSettled();
