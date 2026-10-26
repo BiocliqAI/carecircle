@@ -3,7 +3,7 @@ import { getSetting, setSetting } from "@/lib/db";
 import { getUser, ingestMessage, runScheduler } from "@/lib/engine";
 import { receiveMedia } from "@/lib/inbox";
 import { ready } from "@/lib/server";
-import { signedUrl, twilioConfig, twilioMedia, validSignature, type TwilioConfig } from "@/lib/twilio";
+import { explainSignatureFailure, signedUrl, twilioConfig, twilioMedia, validSignature, type TwilioConfig } from "@/lib/twilio";
 import { inboundReceived, sendWhatsApp, strangerWrote, userByPhone } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,10 @@ export async function POST(req: Request) {
   const form = await req.formData().catch(() => null); // Twilio always posts a form; anything else is not Twilio
   if (!form) return new Response("Expected a form post from Twilio", { status: 400 });
   for (const [k, v] of form) if (typeof v === "string") params[k] = v;
-  if (!validSignature(cfg, req.headers.get("x-twilio-signature"), signedUrl(cfg, req), params)) return new Response("Invalid signature", { status: 403 });
+  if (!validSignature(cfg, req.headers.get("x-twilio-signature"), signedUrl(cfg, req), params)) {
+    console.warn(`[twilio] rejected ${new URL(req.url).pathname}: ${explainSignatureFailure(cfg, req.headers.get("x-twilio-signature"), req, params)}`);
+    return new Response("Invalid signature", { status: 403 });
+  }
   await ready();
   const user = userByPhone(params.From ?? "");
   if (!user) {

@@ -59,6 +59,30 @@ export function validSignature(cfg: TwilioConfig, signature: string | null, url:
   return want.length === got.length && crypto.timingSafeEqual(want, got);
 }
 
+/**
+ * Why a webhook signature failed, in words for the log. It never prints the token. It retries the check with the URLs
+ * Twilio may have signed (the public host from the proxy headers, http/https, with or without a trailing slash): a
+ * match names the URL to put in PUBLIC_BASE_URL and Twilio; no match points at the token.
+ */
+export function explainSignatureFailure(cfg: TwilioConfig, signature: string | null, req: Request, params: Record<string, string>): string {
+  if (!signature) return "no X-Twilio-Signature header: the request did not come from Twilio (expected when testing with curl)";
+  const u = new URL(req.url);
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? u.host;
+  const path = u.pathname + u.search;
+  const checked = signedUrl(cfg, req);
+  const tried = new Set<string>();
+  for (const origin of [cfg.baseUrl, `https://${host}`, `http://${host}`, u.origin]) {
+    if (!origin) continue;
+    for (const p of [path, path.endsWith("/") ? path.slice(0, -1) : `${path}/`]) tried.add(origin.replace(/\/+$/, "") + p);
+  }
+  for (const url of tried) {
+    if (url !== checked && validSignature(cfg, signature, url, params)) {
+      return `Twilio signed ${url}, but the app checked ${checked}. Make PUBLIC_BASE_URL and Twilio's webhook URL the same (PUBLIC_BASE_URL is ${cfg.baseUrl ?? "not set"})`;
+    }
+  }
+  return `the signature matches none of ${tried.size} URL variants for host ${host}, so TWILIO_AUTH_TOKEN (${cfg.token.length} characters; an Auth Token has 32) is most likely not the Auth Token of the account that owns ${cfg.from}, or it has been rotated. PUBLIC_BASE_URL is ${cfg.baseUrl ?? "not set"}`;
+}
+
 /** The URL Twilio signed: PUBLIC_BASE_URL + path (behind a proxy, req.url carries the internal host). */
 export function signedUrl(cfg: TwilioConfig, req: Request): string {
   const u = new URL(req.url);

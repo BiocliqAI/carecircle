@@ -275,4 +275,20 @@ describe("settings pasted with quotes", () => {
     assert.equal(env.PATH, '"/usr/bin"', "other programs' settings are not touched");
   });
 });
+
+describe("why a Twilio signature failed", () => {
+  it("names the URL mismatch, or points at the token, without printing it", async () => {
+    const tw = await import("../lib/twilio");
+    const cfg = { sid: "AC1", token: "t".repeat(32), from: "+919035913536", baseUrl: "https://app.example", templates: { update: null, alert: null }, allow: null };
+    const params = { Body: "hi", From: "whatsapp:+918888888888" };
+    const req = (sig: string | null) => new Request("http://10.0.0.5:8080/api/twilio/inbound", { method: "POST", headers: { host: "app.example", ...(sig ? { "x-twilio-signature": sig } : {}) } });
+    assert.match(tw.explainSignatureFailure(cfg, null, req(null), params), /did not come from Twilio/);
+    const slash = tw.twilioSignature(cfg.token, "https://app.example/api/twilio/inbound/", params);
+    assert.match(tw.explainSignatureFailure(cfg, slash, req(slash), params), /Twilio signed https:\/\/app\.example\/api\/twilio\/inbound\/, but the app checked https:\/\/app\.example\/api\/twilio\/inbound\./);
+    const other = tw.twilioSignature("x".repeat(32), "https://app.example/api/twilio/inbound", params);
+    const why = tw.explainSignatureFailure(cfg, other, req(other), params);
+    assert.match(why, /TWILIO_AUTH_TOKEN \(32 characters/);
+    assert.ok(!why.includes(cfg.token), "never prints the token");
+  });
+});
 void setSetting;
