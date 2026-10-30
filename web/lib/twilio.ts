@@ -9,7 +9,7 @@ export interface TwilioConfig {
   token: string;
   from: string; // E.164, e.g. +919035913536
   baseUrl: string | null; // public https origin of this app, used for webhook signatures and status callbacks
-  templates: { update: string | null; alert: string | null };
+  templates: { update: string | null; alert: string | null; escalate: string | null; escalateSolo: string | null };
   allow: Set<string> | null; // when set, only these numbers are ever messaged (go-live testing)
 }
 
@@ -23,7 +23,12 @@ export function twilioConfig(): TwilioConfig | null {
     token: e.TWILIO_AUTH_TOKEN,
     from: e164(e.TWILIO_WHATSAPP_FROM) ?? e.TWILIO_WHATSAPP_FROM,
     baseUrl: e.PUBLIC_BASE_URL ? e.PUBLIC_BASE_URL.replace(/\/+$/, "") : null,
-    templates: { update: e.TWILIO_TEMPLATE_UPDATE || null, alert: e.TWILIO_TEMPLATE_ALERT || null },
+    templates: {
+      update: e.TWILIO_TEMPLATE_UPDATE || null,
+      alert: e.TWILIO_TEMPLATE_ALERT || null,
+      escalate: e.TWILIO_TEMPLATE_ESCALATE || null, // [I'll handle it] [Pass to backup]
+      escalateSolo: e.TWILIO_TEMPLATE_ESCALATE_SOLO || null, // [I'll handle it] only: no backup caregiver
+    },
     allow: allow.length ? new Set(allow) : null,
   };
 }

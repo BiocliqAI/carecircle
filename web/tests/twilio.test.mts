@@ -12,6 +12,8 @@ process.env.TWILIO_WHATSAPP_FROM = "+91 90359 13536";
 process.env.PUBLIC_BASE_URL = "https://care.example.com/";
 process.env.TWILIO_TEMPLATE_UPDATE = "HXupdate";
 process.env.TWILIO_TEMPLATE_ALERT = "HXalert";
+process.env.TWILIO_TEMPLATE_ESCALATE = "HXescalate";
+process.env.TWILIO_TEMPLATE_ESCALATE_SOLO = "HXescalateSolo";
 delete process.env.GEMINI_API_KEY;
 delete process.env.WHATSAPP_ALLOWLIST;
 
@@ -41,8 +43,12 @@ run("INSERT INTO patients(id, user_id, name, phone, doctor_id, created_at) VALUE
 
 const sends = () => calls.filter((c) => c.url.includes("/Messages.json"));
 const status = (id: number) => get<{ wa_status: string; wa_error: string | null }>("SELECT wa_status, wa_error FROM messages WHERE id = ?", id)!;
-const send = (userId: string, body: string, extra: { quick?: string[]; kind?: string; at?: number } = {}) =>
-  wa.sendWhatsApp({ userId, patientId: "p1", body, quick: extra.quick, kind: extra.kind ?? "reply", at: extra.at ?? now() });
+const send = (userId: string, body: string, extra: { quick?: string[]; kind?: string; alert?: string; card?: import("../lib/whatsapp").EscalationCard; at?: number } = {}) =>
+  wa.sendWhatsApp({ userId, patientId: "p1", body, quick: extra.quick, kind: extra.kind ?? "reply", alert: extra.alert, card: extra.card, at: extra.at ?? now() });
+const card = (backup: boolean) => ({
+  backup,
+  vars: { "1": "Lakshmi", "2": "Rao Family Clinic", "3": "Ramesh", "4": "BP above doctor's limit. BP 182/110 mmHg (limit 140/90)", "5": "Rest for 15 minutes and recheck", "6": "+91 98860 20001" } as const,
+});
 const openWindow = (u: string) => setSetting(`wa:lastin:${u}`, String(Date.now()));
 const closeWindow = (u: string) => { run("DELETE FROM settings WHERE key IN (?, ?)", `wa:lastin:${u}`, `wa:nudge:${u}`); };
 
@@ -106,21 +112,83 @@ describe("twilio: delivery", () => {
   });
 
   it("outside the window: holds the message, sends one 'new message' template, and delivers on their reply", async () => {
-    closeWindow("u_cg");
-    const a = send("u_cg", "🌙 Evening digest for Ramesh", { kind: "info" });
-    const b = send("u_cg", "Reminder: walk 20 min", { kind: "reminder" });
+    closeWindow("u_pat");
+    const a = send("u_pat", "🌙 Evening digest", { kind: "info" });
+    const b = send("u_pat", "Reminder: walk 20 min", { kind: "reminder" });
     await wa.deliveriesSettled();
     assert.equal(status(a).wa_status, "waiting");
     assert.equal(status(b).wa_status, "waiting");
     assert.equal(sends().length, 1, "one template, not one per message");
     assert.equal(sends()[0].form!.get("ContentSid"), "HXupdate");
-    assert.equal(JSON.parse(sends()[0].form!.get("ContentVariables")!)["1"], "Lakshmi");
+    assert.equal(JSON.parse(sends()[0].form!.get("ContentVariables")!)["1"], "Ramesh");
 
     calls = [];
+    wa.inboundReceived("u_pat");
+    await wa.deliveriesSettled();
+    assert.deepEqual(sends().map((c) => c.form!.get("Body")), ["🌙 Evening digest", "Reminder: walk 20 min"]);
+    assert.equal(status(a).wa_status, "sent");
+  });
+
+  it("a caregiver's update that needs no action waits for their next message, without a template", async () => {
+    closeWindow("u_cg");
+    const id = send("u_cg", "👍 Lakshmi has taken ownership of the alert", { kind: "info" });
+    await wa.deliveriesSettled();
+    assert.equal(sends().length, 0);
+    assert.equal(status(id).wa_status, "waiting");
+
     wa.inboundReceived("u_cg");
     await wa.deliveriesSettled();
-    assert.deepEqual(sends().map((c) => c.form!.get("Body")), ["🌙 Evening digest for Ramesh", "Reminder: walk 20 min"]);
-    assert.equal(status(a).wa_status, "sent");
+    assert.equal(sends()[0].form!.get("Body"), "👍 Lakshmi has taken ownership of the alert");
+  });
+
+  it("a caregiver's message that asks for an answer still sends the 'new message' template", async () => {
+    closeWindow("u_cg");
+    send("u_cg", "Reply YES to join the care circle", { kind: "info", quick: ["YES", "NO"] });
+    await wa.deliveriesSettled();
+    assert.equal(sends()[0].form!.get("ContentSid"), "HXupdate");
+  });
+
+  it("a caregiver's alert outside the window goes out as the actionable escalation template, and is not sent again", async () => {
+    closeWindow("u_cg");
+    const id = send("u_cg", "⚠️ Care Circle alert — Ramesh Kumar", { kind: "escalation", alert: "BP above doctor's limit", card: card(true), quick: ["I'll handle it", "Pass to Suresh"] });
+    await wa.deliveriesSettled();
+    assert.equal(sends().length, 1);
+    assert.equal(sends()[0].form!.get("ContentSid"), "HXescalate");
+    assert.deepEqual(JSON.parse(sends()[0].form!.get("ContentVariables")!), card(true).vars);
+    assert.equal(status(id).wa_status, "sent");
+
+    calls = [];
+    run("UPDATE messages SET wa_status = 'expired' WHERE user_id = 'u_cg' AND wa_status = 'waiting' AND id != ?", id); // earlier tests' leftovers
+    wa.inboundReceived("u_cg");
+    await wa.deliveriesSettled();
+    assert.equal(sends().length, 0, "the template was the alert");
+  });
+
+  it("without a backup caregiver, the escalation template has only [I'll handle it]", async () => {
+    closeWindow("u_cg");
+    send("u_cg", "⚠️ Care Circle alert — Ramesh Kumar", { kind: "escalation", alert: "BP above doctor's limit", card: card(false), quick: ["I'll handle it"] });
+    await wa.deliveriesSettled();
+    assert.equal(sends()[0].form!.get("ContentSid"), "HXescalateSolo");
+  });
+
+  it("falls back to the alert template when the escalation template can't be sent, or the caregiver reads another language", async () => {
+    closeWindow("u_cg");
+    failNext = { code: 63027, message: "Template not approved" };
+    const id = send("u_cg", "⚠️ Care Circle alert — Ramesh Kumar", { kind: "escalation", alert: "BP above doctor's limit", card: card(true) });
+    await wa.deliveriesSettled();
+    assert.deepEqual(sends().map((c) => c.form!.get("ContentSid")), ["HXescalate", "HXalert"]);
+    assert.equal(status(id).wa_status, "waiting");
+
+    calls = [];
+    closeWindow("u_cg");
+    setSetting("lang:u_cg", "hi");
+    try {
+      send("u_cg", "⚠️ रमेश: BP 182/110", { kind: "escalation", alert: "BP above doctor's limit", card: card(true) });
+      await wa.deliveriesSettled();
+      assert.deepEqual(sends().map((c) => c.form!.get("ContentSid")), ["HXalert"]);
+    } finally {
+      run("DELETE FROM settings WHERE key = 'lang:u_cg'");
+    }
   });
 
   it("a message sent before they were onboarded opens the window for their welcome", async () => {
@@ -132,7 +200,32 @@ describe("twilio: delivery", () => {
     run("DELETE FROM settings WHERE key = 'wa:lastin:+919886020002'");
   });
 
-  it("outside the window: an alert always goes out as the alert template, with its first line", async () => {
+  it("outside the window: an alert always goes out as the alert template, with the alert's title", async () => {
+    closeWindow("u_cg");
+    const id = send("u_cg", "⚠️ Care Circle alert — Ramesh Kumar\nBP above doctor's limit: BP 182/110 mmHg", { kind: "escalation", alert: "BP above doctor's limit", quick: ["I'll handle it"] });
+    await wa.deliveriesSettled();
+    const vars = JSON.parse(sends()[0].form!.get("ContentVariables")!);
+    assert.equal(sends()[0].form!.get("ContentSid"), "HXalert");
+    assert.equal(vars["1"], "Lakshmi");
+    assert.equal(vars["2"], "Ramesh");
+    assert.equal(vars["3"], "BP above doctor's limit");
+    assert.ok(vars["4"], "the clinic's name");
+    assert.equal(status(id).wa_status, "waiting");
+  });
+
+  it("an alert in another language keeps its translated text in the template", async () => {
+    closeWindow("u_cg");
+    setSetting("lang:u_cg", "hi");
+    try {
+      send("u_cg", "⚠️ रमेश: BP 182/110", { kind: "escalation", alert: "BP above doctor's limit" });
+      await wa.deliveriesSettled();
+      assert.equal(JSON.parse(sends()[0].form!.get("ContentVariables")!)["3"], "⚠️ रमेश: BP 182/110");
+    } finally {
+      run("DELETE FROM settings WHERE key = 'lang:u_cg'");
+    }
+  });
+
+  it("outside the window: an alert without a title falls back to its text, on one line", async () => {
     closeWindow("u_cg");
     const id = send("u_cg", "⚠️ *Ramesh*: BP 182/110\nPlease check on him now.", { kind: "escalation", quick: ["I'll handle it"] });
     await wa.deliveriesSettled();
