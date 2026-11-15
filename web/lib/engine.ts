@@ -112,6 +112,16 @@ export function latestVisit(pid: string, at = Infinity): Visit | undefined {
   return r ? rowToVisit(r) : undefined;
 }
 
+/**
+ * The care plan is paused while visits are being entered from past records: a past-dated visit that became the latest
+ * visit pauses it, and "Start care plan" (or a visit dated today) restarts it. While paused nothing is scheduled or sent
+ * for the patient, and incoming messages are judged by the fixed emergency rules only. Returns when it was paused.
+ */
+export function planPausedSince(pid: string): number | null {
+  const v = getSetting(`paused:${pid}`);
+  return v ? Number(v) : null;
+}
+
 export function patientIdsForUser(user: UserRow): string[] {
   if (user.role === "PA") return listPatients().map((p) => p.id);
   if (user.role === "DOCTOR") return all<{ id: string }>("SELECT id FROM patients WHERE doctor_id = ? ORDER BY name", user.id).map((r) => r.id);
@@ -201,7 +211,7 @@ export function ensureTasks(pid: string, t: number) {
   const horizon = dayStart(t) + 2 * DAY;
   const genKey = `gen:${pid}`;
   const genUntil = Number(getSetting(genKey) || 0);
-  if (genUntil >= horizon) return;
+  if (genUntil >= horizon || planPausedSince(pid)) return;
   const visits = getVisits(pid);
   for (let i = 0; i < visits.length; i++) {
     const v = visits[i];
@@ -770,7 +780,7 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
 
   // An answer to a symptom follow-up question ("When do you feel breathless?"). Anything that isn't an answer falls through.
   if (get("SELECT 1 FROM convo_state WHERE user_id = ? AND state = 'symptom_q'", userId)) {
-    const sr = answerSymptomQ(user, p, (latestVisit(p.id, t) ?? safetyOnlyVisit(p, t)).plan, body, t);
+    const sr = answerSymptomQ(user, p, ((planPausedSince(p.id) ? undefined : latestVisit(p.id, t)) ?? safetyOnlyVisit(p, t)).plan, body, t);
     if (sr.handled) return void reply(sr.text ?? "Thank you.", sr.quick);
   }
 
@@ -857,7 +867,8 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
 
   // Before Visit 1 there are no doctor's limits yet, but readings and symptoms are still recorded and the
   // fixed emergency rules (BP ≥180/110, SpO₂ <88, sugar <54, chest pain, fainting…) still alert the care circle.
-  const visit = latestVisit(p.id, t) ?? safetyOnlyVisit(p, t);
+  const paused = !!planPausedSince(p.id);
+  const visit = (paused ? undefined : latestVisit(p.id, t)) ?? safetyOnlyVisit(p, t);
   const prePlan = visit.id === "__preplan";
   const plan = visit.plan;
 
@@ -1037,7 +1048,9 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
     if (a.type === "URGENT") text += `\n\n🚨 ${a.detail.replace(/^.*?reported: /, "")}\n${a.advice}${id ? `\nAlerting your care circle now (${cgs[0]?.name ?? "caregiver"}).` : ""}`;
     else text += `\n\n⚠️ ${a.title} — ${a.detail}\n${a.advice}${id ? `\nI've let ${cgs[0]?.name ?? "your caregiver"} in your care circle know.` : ""}`;
   }
-  if (prePlan) text += `\n\nℹ️ ${first(p.name)}'s care plan starts after the first visit with ${doctorName(p)}. Until then, the care circle is alerted only in an emergency.`;
+  if (prePlan) text += paused
+    ? `\n\nℹ️ ${first(p.name)}'s care plan hasn't started yet; ${doctorName(p)}'s clinic will start it. Until then, the care circle is alerted only in an emergency.`
+    : `\n\nℹ️ ${first(p.name)}'s care plan starts after the first visit with ${doctorName(p)}. Until then, the care circle is alerted only in an emergency.`;
   sendWhatsApp({ userId, patientId: p.id, body: text.trim(), quick, kind: "reply", at: t + 1000 });
   if (parsed.vitals.length || parsed.symptoms.length) evaluateWatches(p, t + 2000); // patterns re-check right after a reading
   // If a caregiver logged it, keep the patient informed of alerts.
@@ -1148,12 +1161,17 @@ export function tick(t: number) {
   chaseConsents(t);
   for (const p of listPatients()) {
     if (!p.user_id) continue;
-    ensureTasks(p.id, t);
-    tickTasks(p, t);
-    kidneyMorningCheck(p, t);
+    const paused = !!planPausedSince(p.id);
+    if (!paused) {
+      ensureTasks(p.id, t);
+      tickTasks(p, t);
+      kidneyMorningCheck(p, t);
+    }
     tickEscalations(p, t);
-    tickDigest(p, t);
-    tickWeekly(p, t);
+    if (!paused) {
+      tickDigest(p, t);
+      tickWeekly(p, t);
+    }
   }
   tickRechecks(t);
   tickLoops(t);
@@ -1184,31 +1202,78 @@ export function runScheduler(target = now()) {
 }
 
 // ---------------------------------------------------------------- visits & onboarding
-export function createVisit(pid: string, doctorId: string, data: { vitals: ClinicVitals; diagnosis: string; notes: string; plan: CarePlan; next_visit_at: number | null; answers?: { question: string; answer: string }[]; familySummary?: string }, t: number): string {
+type VisitInput = { vitals: ClinicVitals; diagnosis: string; notes: string; plan: CarePlan; next_visit_at: number | null; answers?: { question: string; answer: string }[]; familySummary?: string };
+
+/** The WhatsApp messages that hand a care plan to the patient and tell the care circle. `when` is null for a visit today. */
+function announcePlan(p: PatientRow, doctorId: string, plan: CarePlan, nextVisitAt: number | null, t: number, when: number | null, extra: { answers?: { question: string; answer: string }[]; familySummary?: string } = {}) {
+  const doc = getUser(doctorId)?.name ?? "Your doctor";
+  const meds = plan.medications.map((m) => `💊 ${m.name} ${describeMed(m)}${m.instructions ? ` (${m.instructions})` : ""}`).join("\n");
+  const mon = plan.monitoring.map((m) => VITAL_META[m.key].label).join(", ");
+  const physio = plan.physio.map((x) => `🏃 ${x.name}: ${x.detail}`).join("\n");
+  const life = plan.lifestyle.map((x) => `🥗 ${x.text}`).join("\n");
+  const fl = plan.fluid ? `\n💧 Fluid limit: ${plan.fluid.limitMl} ml/day (all drinks). Tell me whenever you drink — e.g. “2 glasses water” — and I'll keep the running total. Send urine total in the evening.` : "";
+  const lb = plan.labs ? `\n🧪 Blood tests: ${plan.labs.panel} every ${plan.labs.everyDays} days — just type the values from the report.` : "";
+  const next = nextVisitAt && nextVisitAt > t ? `\n📅 Next visit: ${fmtDate(nextVisitAt, { weekday: "short", day: "numeric", month: "short" })}` : "";
+  const fam = extra.familySummary ? `\n\n📝 In short:\n${extra.familySummary}` : "";
+  const qa = extra.answers?.length ? `\n\n❓ Your questions:\n${extra.answers.map((a) => `• ${a.question.replace(/^doctor,?\s*/i, "")}\n  ${a.answer}`).join("\n")}` : "";
+  const after = when ? `your visit on ${fmtDate(when, { day: "numeric", month: "short" })}` : "today's visit";
+  sendWhatsApp({ userId: p.user_id!, patientId: p.id, body: `👩‍⚕️ ${doc} has set your care plan after ${after}:\n\n${meds}\n\n📏 Please send: ${mon || "—"}${fl}${lb}\n${physio}\n${life}${next}${qa}${fam}\n\nI'll remind you at the right times${when ? ", starting now" : ""}. Just reply here in your own words. 💙`, kind: "info", at: t });
+  const upd = when ? `${first(p.name)}'s care plan from the visit with ${doc} on ${fmtDate(when, { day: "numeric", month: "short" })} starts today.` : `${first(p.name)}'s care plan was updated by ${doc} today.`;
+  for (const c of getCaregivers(p.id)) if (c.user_id) sendWhatsApp({ userId: c.user_id, patientId: p.id, body: `👩‍⚕️ ${upd}${fam} You're Level ${c.level} in the care circle — I'll message you only if something needs attention.${next}`, kind: "info", at: t });
+}
+
+/**
+ * Records a visit. `visitAt` defaults to now. A visit dated before today is history entered from records: nothing is
+ * sent and the running schedule is left alone, except that if it becomes the latest visit the care plan is paused
+ * (pending reminders cancelled) until startCarePlan. A visit dated today starts its plan straight away, as before.
+ */
+export function createVisit(pid: string, doctorId: string, data: VisitInput, t: number, visitAt = t): string {
   const p = getPatient(pid);
   if (!p) throw new Error("Patient not found");
+  if (visitAt > t + 5 * MIN) throw new Error("The visit date can't be in the future");
+  const pastDated = dayKey(visitAt) < dayKey(t);
   const id = `v_${pid}_${t}`;
   tx(() => {
-    run("INSERT INTO visits(id, patient_id, doctor_id, visit_at, vitals, diagnosis, notes, plan, next_visit_at, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", id, pid, doctorId, t, JSON.stringify(data.vitals), data.diagnosis, data.notes, JSON.stringify(data.plan), data.next_visit_at, t);
+    const prev = latestVisit(pid);
+    run("INSERT INTO visits(id, patient_id, doctor_id, visit_at, vitals, diagnosis, notes, plan, next_visit_at, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", id, pid, doctorId, visitAt, JSON.stringify(data.vitals), data.diagnosis, data.notes, JSON.stringify(data.plan), data.next_visit_at, t);
+    audit(t, doctorId, "VISIT_RECORDED", "visit", id, { diagnosis: data.diagnosis, ...(pastDated ? { visit_at: visitAt, past_dated: true } : {}) });
+    if (pastDated) {
+      if (!prev || visitAt >= prev.visit_at) {
+        // The newest visit now carries a plan that hasn't been started: stop the old schedule until the clinic starts it.
+        run("UPDATE tasks SET status = 'CANCELLED' WHERE patient_id = ? AND status = 'PENDING'", pid);
+        if (!planPausedSince(pid)) setSetting(`paused:${pid}`, String(t));
+      }
+      return;
+    }
     // Replace not-yet-due tasks from the previous plan with the new plan's schedule.
     run("DELETE FROM tasks WHERE patient_id = ? AND status = 'PENDING' AND due_at > ?", pid, t);
+    if (planPausedSince(pid)) {
+      run("DELETE FROM settings WHERE key = ?", `paused:${pid}`);
+      audit(t, doctorId, "CARE_PLAN_STARTED", "visit", id, { via: "visit" });
+    }
     setSetting(`gen:${pid}`, String(t));
-    audit(t, doctorId, "VISIT_RECORDED", "visit", id, { diagnosis: data.diagnosis });
     ensureTasks(pid, t);
-    const doc = getUser(doctorId)?.name ?? "Your doctor";
-    const meds = data.plan.medications.map((m) => `💊 ${m.name} ${describeMed(m)}${m.instructions ? ` (${m.instructions})` : ""}`).join("\n");
-    const mon = data.plan.monitoring.map((m) => VITAL_META[m.key].label).join(", ");
-    const physio = data.plan.physio.map((x) => `🏃 ${x.name}: ${x.detail}`).join("\n");
-    const life = data.plan.lifestyle.map((x) => `🥗 ${x.text}`).join("\n");
-    const fl = data.plan.fluid ? `\n💧 Fluid limit: ${data.plan.fluid.limitMl} ml/day (all drinks). Tell me whenever you drink — e.g. “2 glasses water” — and I'll keep the running total. Send urine total in the evening.` : "";
-    const lb = data.plan.labs ? `\n🧪 Blood tests: ${data.plan.labs.panel} every ${data.plan.labs.everyDays} days — just type the values from the report.` : "";
-    const next = data.next_visit_at ? `\n📅 Next visit: ${fmtDate(data.next_visit_at, { weekday: "short", day: "numeric", month: "short" })}` : "";
-    const fam = data.familySummary ? `\n\n📝 In short:\n${data.familySummary}` : "";
-    const qa = data.answers?.length ? `\n\n❓ Your questions:\n${data.answers.map((a) => `• ${a.question.replace(/^doctor,?\s*/i, "")}\n  ${a.answer}`).join("\n")}` : "";
-    sendWhatsApp({ userId: p.user_id!, patientId: pid, body: `👩‍⚕️ ${doc} has set your care plan after today's visit:\n\n${meds}\n\n📏 Please send: ${mon || "—"}${fl}${lb}\n${physio}\n${life}${next}${qa}${fam}\n\nI'll remind you at the right times. Just reply here in your own words. 💙`, kind: "info", at: t });
-    for (const c of getCaregivers(pid)) if (c.user_id) sendWhatsApp({ userId: c.user_id, patientId: pid, body: `👩‍⚕️ ${first(p.name)}'s care plan was updated by ${doc} today.${fam} You're Level ${c.level} in the care circle — I'll message you only if something needs attention.${next}`, kind: "info", at: t });
+    announcePlan(p, doctorId, data.plan, data.next_visit_at, t, null, data);
   });
   return id;
+}
+
+/** "Start care plan": reminders and check-ins from the latest visit's plan begin now; the days since that visit stay empty. */
+export function startCarePlan(pid: string, t: number, actor: string): { visitId: string } {
+  const p = getPatient(pid);
+  if (!p) throw new Error("Patient not found");
+  if (!planPausedSince(pid)) throw new Error("The care plan is already running");
+  const v = latestVisit(pid, t);
+  if (!v) throw new Error("Record a visit first");
+  tx(() => {
+    run("DELETE FROM settings WHERE key = ?", `paused:${pid}`);
+    run("UPDATE tasks SET status = 'CANCELLED' WHERE patient_id = ? AND status = 'PENDING'", pid);
+    setSetting(`gen:${pid}`, String(t));
+    ensureTasks(pid, t);
+    audit(t, actor, "CARE_PLAN_STARTED", "visit", v.id, { visit_at: v.visit_at });
+    announcePlan(p, v.doctor_id, v.plan, v.next_visit_at, t, dayKey(v.visit_at) < dayKey(t) ? v.visit_at : null);
+  });
+  return { visitId: v.id };
 }
 
 export interface OnboardInput {

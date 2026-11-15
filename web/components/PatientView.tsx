@@ -33,6 +33,8 @@ export interface Data {
   caregivers: Caregiver[];
   visits: Visit[];
   current: Visit | null;
+  /** Set while visits are being entered from past records: no reminders or messages until "Start care plan". */
+  planPausedAt?: number | null;
   summary: IntervalSummary | null;
   open: EscalationView[];
   timeline: TL[];

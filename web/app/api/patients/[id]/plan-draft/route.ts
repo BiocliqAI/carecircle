@@ -1,10 +1,11 @@
 import { now } from "@/lib/clock";
-import { createVisit, getPatient, latestVisit } from "@/lib/engine";
+import { createVisit, getPatient, latestVisit, planPausedSince } from "@/lib/engine";
 import { addSource, blockers, buildDraft, clearPlanDraft, confirmItem, draftToPlan, editMed, getPlanDraft, removeItem, removeSource, resolveConflict, savePlanDraft, type SourceKind } from "@/lib/plandraft";
 import { clearPrep, getPrep } from "@/lib/prep";
 import { draftFamilySummary, suggestNextVisit } from "@/lib/aftervisit";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 import type { ClinicVitals } from "@/lib/types";
+import { dayKey, visitAtFrom } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const t = now();
   const base = latestVisit(id, t)?.plan ?? null;
   const asPlan = new URL(req.url).searchParams.get("asPlan") === "1";
-  return json({ draft: d, blockers: d.built ? blockers(d.built) : null, plan: asPlan && d.built ? draftToPlan(d.built, base) : undefined, prep: getPrep(id), hasVisit: !!base });
+  return json({ draft: d, blockers: d.built ? blockers(d.built) : null, plan: asPlan && d.built ? draftToPlan(d.built, base) : undefined, prep: getPrep(id), hasVisit: !!base, now: t });
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -32,7 +33,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const body = (await req.json()) as {
     action: "source" | "removeSource" | "build" | "resolve" | "confirm" | "remove" | "editMed" | "clear" | "send" | "familySummary";
     kind?: SourceKind; base64?: string; mime?: string; seconds?: number; id?: string; option?: number;
-    patch?: Record<string, unknown>; nextVisit?: string | null; familySummary?: string;
+    patch?: Record<string, unknown>; nextVisit?: string | null; familySummary?: string; visitDate?: string | null;
   };
   const user = await guard(id, body.action === "send");
   if (!user) return err(body.action === "send" ? "Only the doctor can send the care plan" : "Care team only", 403);
@@ -69,10 +70,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       const nextDate = body.nextVisit ?? d.built.nextVisit?.date ?? null;
       const next = nextDate ? Date.parse(`${nextDate}T11:00:00+05:30`) : null;
       const notes = [d.built.note, ...d.built.answers.map((a) => `Q (${a.askedBy ?? "family"}): ${a.question}\nA: ${a.answer}`)].filter(Boolean).join("\n\n");
-      const vid = createVisit(id, user.id, { vitals, diagnosis: d.built.diagnosis || p.conditions || "", notes, plan, next_visit_at: next, answers: d.built.answers.map((a) => ({ question: a.question, answer: a.answer })), familySummary: (body.familySummary ?? "").trim().slice(0, 1200) || undefined }, t);
+      const visitAt = visitAtFrom(body.visitDate, t);
+      if (typeof visitAt === "string") return err(visitAt);
+      const vid = createVisit(id, user.id, { vitals, diagnosis: d.built.diagnosis || p.conditions || "", notes, plan, next_visit_at: next, answers: d.built.answers.map((a) => ({ question: a.question, answer: a.answer })), familySummary: (body.familySummary ?? "").trim().slice(0, 1200) || undefined }, t, visitAt);
       clearPlanDraft(id);
-      clearPrep(id);
-      return json({ ok: true, visitId: vid });
+      const pastDated = dayKey(visitAt) < dayKey(t);
+      if (!pastDated) clearPrep(id);
+      return json({ ok: true, visitId: vid, pastDated, paused: !!planPausedSince(id) });
     } else {
       const d = getPlanDraft(id);
       if (!d.built) return err("Build the draft first");

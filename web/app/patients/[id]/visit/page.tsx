@@ -11,7 +11,7 @@ import { Spark } from "@/components/Spark";
 import { shorthand } from "@/components/PatientChart";
 import type { IntervalSummary, MedChangeRow } from "@/lib/summary";
 import { DEFAULT_THRESHOLDS, DEFAULT_TIMERS, FREQ_TIMES, KIDNEY_TEMPLATE, SYMPTOMS, VITAL_META, type Baseline, type CarePlan, type ClinicVitals, type Medication, type Visit, type VitalType } from "@/lib/types";
-import { DAY, TZ_OFFSET_MS, dayStart, fmtDate } from "@/lib/time";
+import { DAY, TZ_OFFSET_MS, dayKey, dayStart, fmtDate } from "@/lib/time";
 
 const EMPTY_PLAN: CarePlan = {
   medications: [{ key: "", name: "", dose: "", times: ["08:00"] }],
@@ -84,6 +84,9 @@ function DoctorConsult({ id }: { id: string }) {
   const [diagnosis, setDiagnosis] = useState("");
   const [notes, setNotes] = useState("");
   const [nextDate, setNextDate] = useState("");
+  // Visits can be entered from past records: a past date saves silently and pauses the plan until it's started.
+  const [visitDate, setVisitDate] = useState("");
+  const [visitTime, setVisitTime] = useState("11:00");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -123,12 +126,21 @@ function DoctorConsult({ id }: { id: string }) {
       if (pv && Object.values(pv).some(Boolean)) setVitals(Object.fromEntries(Object.entries(pv).filter(([, v]) => v)) as Record<string, string>);
       const nd = new Date(dayStart(x.now) + 28 * DAY + TZ_OFFSET_MS + 12 * 3600_000).toISOString().slice(0, 10);
       setNextDate(nd);
+      setVisitDate(dayKey(x.now));
     }).catch((e) => setErr(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, loading]);
 
   if (!d) return <main className="page">{err ? <div className="alert bad">{err}</div> : <div className="empty"><span className="spin" /></div>}</main>;
-  const visitNo = d.visits.length + 1;
+  const today = dayKey(d.now);
+  const past = !!visitDate && visitDate < today;
+  const shownAt = past ? Date.parse(`${visitDate}T${visitTime || "11:00"}:00+05:30`) : d.now;
+  // Numbered by date: a past visit slots in among the ones already entered.
+  const visitNo = d.visits.filter((v) => v.visit_at <= shownAt).length + 1;
+  function pickDate(v: string) {
+    setVisitDate(v);
+    if (v) setNextDate(new Date(Date.parse(`${v}T12:00:00+05:30`) + 28 * DAY).toISOString().slice(0, 10));
+  }
   const up = (fn: (p: CarePlan) => void) => setPlan((p) => { const n = JSON.parse(JSON.stringify(p)) as CarePlan; fn(n); return n; });
   const primaryName = d.careTeam.find((t) => t.role === "PRIMARY")?.name ?? "";
   const reported = d.medChanges.filter((m) => m.status === "REPORTED");
@@ -147,9 +159,9 @@ function DoctorConsult({ id }: { id: string }) {
       if (bp) { v.sys = Number(bp[1]); v.dia = Number(bp[2]); }
       for (const k of ["weight", "hr", "glucose", "spo2", "pain"] as const) if (vitals[k]) v[k] = Number(vitals[k]);
       const next = nextDate ? Date.parse(`${nextDate}T11:00:00+05:30`) : null;
-      const r = await api<{ id: string }>(`/api/patients/${id}/visits`, { body: { vitals: v, diagnosis, notes, plan, next_visit_at: next } });
+      const r = await api<{ id: string; pastDated: boolean }>(`/api/patients/${id}/visits`, { body: { vitals: v, diagnosis, notes, plan, next_visit_at: next, visit_date: visitDate, visit_time: visitTime } });
       notifyChange();
-      router.push(d!.current ? `/patients/${id}/compare?b=${r.id}` : `/patients/${id}`);
+      router.push(d!.current && !r.pastDated ? `/patients/${id}/compare?b=${r.id}` : `/patients/${id}`);
     } catch (e) {
       setErr((e as Error).message);
       setBusy(false);
@@ -161,7 +173,7 @@ function DoctorConsult({ id }: { id: string }) {
       <div className="consult-head">
         <div>
           <Link href={`/patients/${id}`} className="v2-sub" style={{ fontSize: 13 }}>← {d.patient.name}</Link>
-          <h1 style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>Visit {visitNo} · {fmtDate(d.now, { weekday: "short", day: "numeric", month: "short" })}</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, marginTop: 4 }}>Visit {visitNo} · {fmtDate(shownAt, { weekday: "short", day: "numeric", month: "short", ...(past ? { year: "numeric" } : {}) })}{past && <span className="badge warn" style={{ marginLeft: 10, fontSize: 12, verticalAlign: "middle" }}>past visit</span>}</h1>
           <div className="v2-sub" style={{ fontSize: 14 }}>
             {d.prep?.readyAt ? `Prepared by ${d.prep.readyByName ?? "the assistant"} · ` : ""}
             {d.current ? "Pre-filled from the current plan. Changes are highlighted." : d.baseline?.currentMeds.length ? "Medicines and intake vitals are pre-filled from the baseline." : "Set up the first care plan."}
@@ -178,7 +190,7 @@ function DoctorConsult({ id }: { id: string }) {
       <div className="consult-grid">
         <div className="stack gap16 consult-plan">
           <div className="card">
-            <div className="card-head"><h3>Clinic vitals today</h3><small>{d.current ? `Last visit: BP ${d.current.vitals.sys ?? "—"}/${d.current.vitals.dia ?? "—"}, Wt ${d.current.vitals.weight ?? "—"}` : ""}</small></div>
+            <div className="card-head"><h3>{past ? "Clinic vitals at that visit" : "Clinic vitals today"}</h3><small>{d.current ? `Last visit: BP ${d.current.vitals.sys ?? "—"}/${d.current.vitals.dia ?? "—"}, Wt ${d.current.vitals.weight ?? "—"}` : ""}</small></div>
             <div className="grid g5">
               {[["bp", "BP (mmHg)", "138/86"], ["weight", "Weight (kg)", "77.4"], ["hr", "Pulse (bpm)", "72"], ["glucose", "Sugar fasting", "132"], ["spo2", "SpO₂ %", "97"]].map(([k, l, ph]) => (
                 <label key={k} className="f">{l}<input value={vitals[k] || ""} placeholder={ph} onChange={(e) => setVitals({ ...vitals, [k]: e.target.value })} /></label>
@@ -384,7 +396,9 @@ function DoctorConsult({ id }: { id: string }) {
           </div>
 
           <section className="card wa-preview">
-            <div className="card-head"><h3>{d.patient.name.split(" ")[0]} will receive on WhatsApp</h3><small>The care circle is told the plan changed</small></div>
+            <div className="card-head">{past
+              ? <><h3>Not sent: past visit</h3><small>Nothing goes on WhatsApp. If this is the latest visit, the plan is paused until you press Start care plan on the chart; this is what is sent then</small></>
+              : <><h3>{d.patient.name.split(" ")[0]} will receive on WhatsApp</h3><small>The care circle is told the plan changed</small></>}</div>
             <div className="wa-preview-bubble">{planMessage(plan, d.doctor?.name ?? "Your doctor", nextDate)}</div>
           </section>
         </div>
@@ -437,9 +451,11 @@ function DoctorConsult({ id }: { id: string }) {
         </div>
       </div>
       <div className="consult-bar num">
+        <label className="row" style={{ gap: 8, fontWeight: 600, fontSize: 14 }}>Visit date<input type="date" value={visitDate} max={today} onChange={(e) => pickDate(e.target.value)} style={{ width: "auto" }} /></label>
+        {past && <input type="time" aria-label="Visit time" value={visitTime} onChange={(e) => setVisitTime(e.target.value)} style={{ width: "auto" }} />}
         <label className="row" style={{ gap: 8, fontWeight: 600, fontSize: 14 }}>Next visit<input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} style={{ width: "auto" }} /></label>
-        <span className="v2-sub" style={{ flex: 1, fontSize: 13.5 }}>{changeSummary(plan, d.current?.plan ?? null)}</span>
-        <button className="v2-btn primary" style={{ minHeight: 40, padding: "0 18px", fontSize: 14 }} disabled={busy} onClick={save}>{busy ? <span className="spin" /> : null}{d.current ? "Save and send plan" : "Save visit and start plan"}</button>
+        <span className="v2-sub" style={{ flex: 1, fontSize: 13.5 }}>{past ? "Past visit: saved to the history, nothing is sent." : changeSummary(plan, d.current?.plan ?? null)}</span>
+        <button className="v2-btn primary" style={{ minHeight: 40, padding: "0 18px", fontSize: 14 }} disabled={busy || (!!visitDate && visitDate > today)} onClick={save}>{busy ? <span className="spin" /> : null}{past ? "Save past visit" : d.current ? "Save and send plan" : "Save visit and start plan"}</button>
       </div>
     </main>
   );

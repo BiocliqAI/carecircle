@@ -7,11 +7,11 @@ import { useEffect, useRef, useState } from "react";
 import { api, avatarColor, initials, useSession } from "./client";
 import { Icon } from "./Icon";
 import { blobToDataUrl, speechCtor, type SpeechRec } from "./speech";
-import { fmtDate, fmtTime } from "@/lib/time";
+import { dayKey, fmtDate, fmtTime } from "@/lib/time";
 import { SYMPTOMS, VITAL_META } from "@/lib/types";
 import type { DraftMed, PlanDraft, SourceKind, Tag } from "@/lib/plandraft";
 
-interface Resp { draft: PlanDraft; blockers: { conflicts: number; toConfirm: number } | null; prep?: { flags: { text: string }[]; questions: string; readyAt: number | null }; hasVisit?: boolean }
+interface Resp { draft: PlanDraft; blockers: { conflicts: number; toConfirm: number } | null; prep?: { flags: { text: string }[]; questions: string; readyAt: number | null }; hasVisit?: boolean; now?: number }
 interface PatientInfo { name: string; age: number | null; sex: string; conditions: string; visits: number; allergy: string | null }
 
 const TAG: Record<Tag, [string, string]> = { rx: ["Prescription", "t-rx"], talk: ["Conversation", "t-talk"], keep: ["Carried forward", "t-keep"], protocol: ["Protocol", "t-prot"], pa: ["PA flag", "t-pa"] };
@@ -32,6 +32,7 @@ export function PlanBuilder({ id }: { id: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const [edit, setEdit] = useState<DraftMed | null>(null);
   const [nextVisit, setNextVisit] = useState("");
+  const [visitDate, setVisitDate] = useState(""); // empty = today; an earlier date is a past visit entered from records
   const [fam, setFam] = useState("");
   const [famBusy, setFamBusy] = useState(false);
   const [famVia, setFamVia] = useState<"ai" | "rules" | null>(null);
@@ -80,7 +81,7 @@ export function PlanBuilder({ id }: { id: string }) {
     setBusy("send");
     setErr(null);
     try {
-      await api(`/api/patients/${id}/plan-draft`, { body: { action: "send", nextVisit: nextVisit || null, familySummary: fam.trim() || undefined } });
+      await api(`/api/patients/${id}/plan-draft`, { body: { action: "send", nextVisit: nextVisit || null, familySummary: fam.trim() || undefined, visitDate: visitDate || null } });
       notifyChange();
       router.push(`/patients/${id}`);
     } catch (e) {
@@ -97,6 +98,8 @@ export function PlanBuilder({ id }: { id: string }) {
   const canSend = isDoctor && !!b && !stale && bl && !bl.conflicts && !bl.toConfirm;
   const changes = b ? b.medications.filter((m) => m.change !== "same").length : 0;
   const step = !b ? 1 : canSend ? 3 : 2;
+  const today = dayKey(d.now ?? Date.now());
+  const past = !!visitDate && visitDate < today;
 
   return (
     <main className="pc">
@@ -274,7 +277,9 @@ export function PlanBuilder({ id }: { id: string }) {
 
             {b && (
               <section className="v2-card pad wa-preview">
-                <div className="row between" style={{ marginBottom: 8 }}><h2>{p?.name.split(" ")[0] ?? "The patient"} will receive on WhatsApp</h2><span className="v2-sub">the care circle is told the plan changed</span></div>
+                <div className="row between" style={{ marginBottom: 8 }}>{past
+                  ? <><h2>Not sent: past visit</h2><span className="v2-sub">sent only if you later press Start care plan</span></>
+                  : <><h2>{p?.name.split(" ")[0] ?? "The patient"} will receive on WhatsApp</h2><span className="v2-sub">the care circle is told the plan changed</span></>}</div>
                 <div className="wa-preview-bubble">{preview(b, nextVisit)}{fam.trim() ? `\n\n📝 In short:\n${fam.trim()}` : ""}</div>
                 <div className="stack" style={{ marginTop: 12, gap: 6 }}>
                   <div className="row between"><b style={{ fontSize: 13.5 }}>“In short” for the family</b><span className="v2-sub">{famBusy ? "Drafting…" : famVia === "ai" ? "✨ AI draft from your plan. Edit freely." : famVia === "rules" ? "Drafted from your plan. Edit freely." : "Optional"}</span></div>
@@ -293,10 +298,12 @@ export function PlanBuilder({ id }: { id: string }) {
               {bl?.conflicts ? <> · <b style={{ color: "var(--c-red)" }}>{bl.conflicts} conflict{bl.conflicts > 1 ? "s" : ""} to resolve</b></> : null}
               {bl?.toConfirm ? <> · <b style={{ color: "var(--c-amber)" }}>{bl.toConfirm} to confirm</b></> : null}
               {!isDoctor && <> · only the doctor can send</>}
+              {past && <> · past visit: saved to the history, nothing is sent</>}
             </span>
+            <label className="row" style={{ gap: 6, fontSize: 13.5, fontWeight: 600 }}>Visit date<input type="date" value={visitDate || today} max={today} onChange={(e) => setVisitDate(e.target.value === today ? "" : e.target.value)} className="pb-date" /></label>
             <Link href={`/patients/${id}/visit?fromDraft=1`} className="v2-btn">Edit in full form</Link>
             <button className="v2-btn primary" style={{ minHeight: 40, padding: "0 18px", fontSize: 14 }} disabled={!canSend || busy === "send"} onClick={send}>
-              {busy === "send" ? <span className="spin" /> : null}{canSend ? "Send plan" : stale ? "Rebuild first" : bl?.conflicts || bl?.toConfirm ? "Resolve items first" : "Send plan"}
+              {busy === "send" ? <span className="spin" /> : null}{canSend ? (past ? "Save past visit" : "Send plan") : stale ? "Rebuild first" : bl?.conflicts || bl?.toConfirm ? "Resolve items first" : "Send plan"}
             </button>
           </div>
         )}
