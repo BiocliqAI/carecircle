@@ -343,10 +343,25 @@ function FillFromDocuments({ value, onChange, pid }: { value: Baseline; onChange
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{ added: string[]; warnings: string[]; before: Baseline } | null>(null);
+  // Documents already on the patient's record (photos and PDFs) can be read without uploading them again.
+  const [onFile, setOnFile] = useState<{ id: number; title: string; mime: string; size: number; uploaded_at: number }[]>([]);
+  const [picked, setPicked] = useState<number[]>([]);
+  useEffect(() => {
+    if (!pid) return;
+    api<{ documents: { id: number; title: string; mime: string; size: number; uploaded_at: number }[] }>(`/api/patients/${pid}/documents`)
+      .then((r) => {
+        const docs = r.documents.filter((d) => /^(image\/|application\/pdf$)/.test(d.mime));
+        setOnFile(docs);
+        setPicked(docs.slice(0, 10).map((d) => d.id));
+      })
+      .catch(() => setOnFile([]));
+  }, [pid]);
+  const togglePick = (id: number) => { setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : cur.length >= 10 ? cur : [...cur, id])); setResult(null); setErr(null); };
+  const total = files.length + picked.length;
 
   const add = (list: FileList | null) => {
     if (!list) return;
-    setFiles((cur) => [...cur, ...Array.from(list)].slice(0, 10));
+    setFiles((cur) => [...cur, ...Array.from(list)].slice(0, Math.max(0, 10 - picked.length)));
     setResult(null);
     setErr(null);
   };
@@ -357,7 +372,7 @@ function FillFromDocuments({ value, onChange, pid }: { value: Baseline; onChange
     try {
       const payload = (await Promise.all(files.map(fileToPayload))).map((p, i) => ({ ...p, name: files[i].name }));
       // For an existing patient the files are also kept under Documents; during onboarding there is no record yet.
-      const r = await api<{ baseline: Extracted; warnings: string[] }>("/api/baseline/extract", { body: { files: payload, patientId: pid } });
+      const r = await api<{ baseline: Extracted; warnings: string[] }>("/api/baseline/extract", { body: { files: payload, docIds: picked, patientId: pid } });
       const { next, added } = mergeExtraction(value, r.baseline);
       onChange(next);
       setResult({ added, warnings: r.warnings, before: value });
@@ -374,16 +389,36 @@ function FillFromDocuments({ value, onChange, pid }: { value: Baseline; onChange
       <div className="card-head">
         <div>
           <h3>✨ Fill from documents</h3>
-          <small>Add old prescriptions, discharge summaries or lab reports (photos or PDFs). The form fills in below and you check it. The form isn't saved until you save{pid ? "; the documents themselves are kept under Documents" : ""}.</small>
+          <small>{onFile.length ? "Pick documents already on this patient's record, or add more" : "Add old prescriptions, discharge summaries or lab reports"} (photos or PDFs, up to 10). The form fills in below and you check it. The form isn't saved until you save{pid ? "; new documents you add are kept under Documents" : ""}.</small>
         </div>
       </div>
+      {onFile.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div className="row between" style={{ marginBottom: 6 }}>
+            <b style={{ fontSize: 13 }}>On this patient's record ({picked.length} of {onFile.length} selected)</b>
+            <span className="row" style={{ gap: 4 }}>
+              <button type="button" className="btn sm ghost" disabled={busy} onClick={() => { setPicked(onFile.slice(0, Math.max(0, 10 - files.length)).map((d) => d.id)); setResult(null); }}>Select all</button>
+              <button type="button" className="btn sm ghost" disabled={busy} onClick={() => { setPicked([]); setResult(null); }}>Clear</button>
+            </span>
+          </div>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            {onFile.map((d) => (
+              <label key={d.id} className={`check${picked.includes(d.id) ? " on" : ""}`} title={`${fmtDate(d.uploaded_at)} · ${(d.size / 1024 / 1024).toFixed(1)} MB`}>
+                <input type="checkbox" checked={picked.includes(d.id)} disabled={busy || (!picked.includes(d.id) && total >= 10)} onChange={() => togglePick(d.id)} />
+                {d.mime === "application/pdf" ? "📄" : "🖼️"} {d.title.slice(0, 40)}
+              </label>
+            ))}
+          </div>
+          {onFile.length > 10 && <small className="muted">Up to 10 can be read at once. Pick the newest prescription and the most recent reports first.</small>}
+        </div>
+      )}
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
         <input ref={input} type="file" hidden multiple accept="image/*,application/pdf" onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
-        <button type="button" className="btn" onClick={() => input.current?.click()} disabled={busy}>📎 Add documents</button>
+        <button type="button" className="btn" onClick={() => input.current?.click()} disabled={busy || total >= 10}>📎 {onFile.length ? "Add more documents" : "Add documents"}</button>
         {files.map((f, i) => (
           <span key={i} className="badge brand">{f.name.slice(0, 28)} <button type="button" className="x-btn" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}>×</button></span>
         ))}
-        {files.length > 0 && <button type="button" className="btn primary" onClick={read} disabled={busy}>{busy ? <><span className="spin" /> Reading…</> : `Read ${files.length} document${files.length > 1 ? "s" : ""}`}</button>}
+        {total > 0 && <button type="button" className="btn primary" onClick={read} disabled={busy}>{busy ? <><span className="spin" /> Reading…</> : `Read ${total} document${total > 1 ? "s" : ""}`}</button>}
       </div>
       {err && <div className="alert bad" style={{ marginTop: 10 }}>{err}</div>}
       {result && (

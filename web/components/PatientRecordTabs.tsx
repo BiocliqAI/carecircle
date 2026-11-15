@@ -430,6 +430,12 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
           </div>
         </section>
       )}
+      {canEdit && docs.some((d) => /^(image\/|application\/pdf$)/.test(d.mime)) && (
+        <div className="callout row between" style={{ gap: 10 }}>
+          <span>Read these documents into the baseline: history, conditions, current medicines and labs. You check everything before it is saved.</span>
+          <a className="btn sm" href={`/patients/${pid}/baseline`}>✨ Fill baseline from documents</a>
+        </div>
+      )}
       {docs.length === 0 ? <div className="card muted">No documents yet. Documents sent by the patient or family on WhatsApp also appear here.</div> : (
         <section className="card" style={{ padding: 0 }}>
           {docs.map((d) => (
