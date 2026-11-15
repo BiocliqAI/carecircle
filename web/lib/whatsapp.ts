@@ -85,8 +85,12 @@ export function phoneOf(userId: string): string | null {
 export function userByPhone(raw: string): { id: string; role: string } | undefined {
   const want = e164(raw);
   if (!want) return undefined;
-  return all<{ id: string; role: string; phone: string | null }>("SELECT id, role, phone FROM users WHERE role IN ('PATIENT','CAREGIVER')")
-    .find((u) => e164(u.phone) === want || (u.role === "PATIENT" && phoneOf(u.id) === want));
+  const matches = all<{ id: string; role: string; phone: string | null }>("SELECT id, role, phone FROM users WHERE role IN ('PATIENT','CAREGIVER')")
+    .filter((u) => e164(u.phone) === want || (u.role === "PATIENT" && phoneOf(u.id) === want));
+  if (matches.length < 2) return matches[0];
+  // One number, two roles (a patient who is also someone's caregiver): the reply belongs to whoever we last wrote to.
+  const lastOut = (id: string) => get<{ at: number }>("SELECT MAX(created_at) AS at FROM messages WHERE user_id = ? AND direction = 'OUT'", id)?.at ?? 0;
+  return matches.map((u) => ({ u, at: lastOut(u.id) })).sort((a, b) => b.at - a.at)[0].u;
 }
 
 /** Within 24 h of their last message, including one sent before they were onboarded (kept by number). */

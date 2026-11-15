@@ -139,6 +139,20 @@ export interface ConsentRow {
 export const getConsents = (pid: string) => all<ConsentRow>("SELECT user_id, role, status, requested_at, responded_at, message_id FROM consents WHERE patient_id = ?", pid);
 const pendingConsent = (pid: string, userId: string) => !!get("SELECT 1 FROM consents WHERE patient_id = ? AND user_id = ? AND status = 'PENDING'", pid, userId);
 
+/**
+ * The patient a plain YES / NO answers when this person has a consent request waiting. A caregiver in more than one
+ * circle answers the circle they were most recently asked about, not whichever patient happens to be listed first.
+ */
+function consentReplyPatient(userId: string, body: string): string | null {
+  if (!YES_RE.test(body) && !NO_RE.test(body)) return null;
+  const waiting = all<{ patient_id: string }>("SELECT patient_id FROM consents WHERE user_id = ? AND status = 'PENDING' ORDER BY requested_at", userId).map((r) => r.patient_id);
+  if (waiting.length < 2) return waiting[0] ?? null;
+  const last = get<{ patient_id: string }>(
+    `SELECT patient_id FROM messages WHERE user_id = ? AND direction = 'OUT' AND patient_id IN (${waiting.map(() => "?").join(",")}) ORDER BY created_at DESC, id DESC LIMIT 1`,
+    userId, ...waiting);
+  return last?.patient_id ?? waiting[0];
+}
+
 export function requestConsent(pid: string, userId: string, role: string, t: number) {
   run("INSERT INTO consents(patient_id, user_id, role, status, requested_at) VALUES(?,?,?,'PENDING',?) ON CONFLICT(patient_id, user_id) DO NOTHING", pid, userId, role, t);
 }
@@ -713,14 +727,14 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   const t = opts.at ?? now();
   const user = getUser(userId);
   if (!user) throw new Error("Unknown user");
-  const pid = patientIdsForUser(user)[0];
+  // A tapped, translated button comes back as its translated label: map it to the English word the engine understands.
+  const tapped = mapButtonReply(userId, body);
+  const pid = consentReplyPatient(userId, tapped ?? body) ?? patientIdsForUser(user)[0];
   const p = pid ? getPatient(pid) : undefined;
   const msgId = run("INSERT INTO messages(patient_id, user_id, direction, body, created_at, kind) VALUES(?,?,?,?,?,?)", p?.id ?? null, userId, "IN", body, t, "inbound").lastInsertRowid;
   const reply = (text: string, quick?: string[]) => sendWhatsApp({ userId, patientId: p?.id ?? null, body: text, quick, kind: "reply", at: t + 1000 });
   if (!p) return void reply("Hi! This number isn't linked to a patient yet. Please contact your clinic.");
 
-  // A tapped, translated button comes back as its translated label: map it to the English word the engine understands.
-  const tapped = mapButtonReply(userId, body);
   if (tapped) body = tapped;
 
   // "Reply in Tamil" / "english please": switch the language of everything we send this person.
@@ -829,7 +843,10 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   }
 
   if (user.role === "PATIENT" && YES_RE.test(body)) {
-    if (pendingConsent(p.id, userId)) respondConsent(p.id, userId, "GIVEN", msgId, t);
+    // Also a change of mind after NO ("reply YES anytime"), or a patient whose request row is missing: record it either way.
+    const cur = get<{ status: string }>("SELECT status FROM consents WHERE patient_id = ? AND user_id = ?", p.id, userId);
+    if (!cur) requestConsent(p.id, userId, "PATIENT", t);
+    if (cur?.status !== "GIVEN") respondConsent(p.id, userId, "GIVEN", msgId, t);
     else audit(t, userId, "CONSENT_GIVEN", "patient", p.id, { channel: "whatsapp" });
     return void reply(`Thank you, ${first(p.name)}! ✅ Consent recorded. Your readings will be shared with ${doctorName(p)}'s care team and your care circle.`);
   }
