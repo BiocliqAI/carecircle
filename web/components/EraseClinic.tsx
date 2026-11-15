@@ -41,7 +41,7 @@ export function EraseClinic({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className="stack">
-      {!compact && <p className="muted" style={{ margin: 0 }}>Erases the clinic, staff, patients, caregivers, messages and alerts, and returns to the setup screen. Gemini settings are kept. This can’t be undone.</p>}
+      {!compact && <p className="muted" style={{ margin: 0 }}>Erases the clinic, staff, patients, caregivers, messages and alerts, and returns to the setup screen. AI keys (Anthropic and Gemini) are kept. This can’t be undone.</p>}
       {!open ? (
         <div><button className="btn danger" onClick={() => setOpen(true)}>Erase all records…</button></div>
       ) : (

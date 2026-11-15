@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 
 const tmpDb = path.join(os.tmpdir(), `carecircle-test-gemini-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+delete process.env.ANTHROPIC_API_KEY;
 process.env.CARECIRCLE_DB = tmpDb;
 
 const { run, get, all, resetDb } = await import("../lib/db.js");

@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 const tmp = path.join(os.tmpdir(), `carecircle-smoke-${Date.now()}.db`);
 process.env.CARECIRCLE_DB = tmp;
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 
 const { parseRules } = await import("../lib/parser");
 const { all, get } = await import("../lib/db");

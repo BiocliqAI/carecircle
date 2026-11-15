@@ -3,7 +3,7 @@
 // builder's Send step; nothing is sent until they press Send.
 import { all, get } from "./db";
 import { getVisits } from "./engine";
-import { familySummaryAI, isGeminiConfigured } from "./gemini";
+import { familySummaryAI, isAIConfigured } from "./gemini";
 import type { PlanDraft } from "./plandraft";
 import { DAY, dayKey, fmtDate } from "./time";
 
@@ -36,7 +36,7 @@ export function ruleSummary(b: Built, nextVisit: string | null): string {
 }
 
 export async function draftFamilySummary(b: Built, nextVisit: string | null): Promise<{ text: string; via: "ai" | "rules" }> {
-  if (isGeminiConfigured()) {
+  if (isAIConfigured()) {
     const ctx = {
       medicines: b.medications.map((m) => ({ name: m.name, dose: m.dose, schedule: plainSchedule(m.schedule), change: m.change, was: m.was, instructions: m.instructions })),
       warningSigns: b.warningSigns?.text ?? "",

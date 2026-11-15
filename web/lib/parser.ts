@@ -483,14 +483,8 @@ const SCHEMA = {
   required: ["vitals", "meds", "physio", "lifestyle", "symptoms", "noSymptoms", "help", "fluids", "labs", "medChanges", "outsideVisit", "language"],
 };
 
-async function parseGemini(text: string, meds: MedRef[]): Promise<ParsedMessage | null> {
-  const { getGeminiApiKey, getGeminiModel } = await import("./gemini");
-  const key = getGeminiApiKey();
-  if (!key) return null;
-  const { GoogleGenAI } = await import("@google/genai");
-  const ai = new GoogleGenAI({ apiKey: key });
-  const modelName = getGeminiModel();
-  const prompt = `You extract structured clinical health-log data from a WhatsApp message sent by a patient or their caregiver.
+function extractionPrompt(text: string, meds: MedRef[]): string {
+  return `You extract structured clinical health-log data from a WhatsApp message sent by a patient or their caregiver.
 The message may be in English, Hindi, Tamil, Hinglish, Tanglish, colloquial shorthand, voice-to-text transcription, or mixed.
 Understand natural phrasing and intent (e.g., Tamil 'potachu' / 'kuduthom' = taken, Hindi 'dawa le li' = taken, 'bhool gaye' / 'miss aaiduchu' = missed, 'loose motions' = diarrhoea, 'feet swollen' = edema).
 Do not diagnose or prescribe. Only extract explicitly stated facts.
@@ -500,6 +494,31 @@ Rules: "took all tablets" / "morning medicines done" => meds.allTaken=true. Nega
 Fluids: in ml. 1 glass/tumbler = 200 ml, 1 cup = 150 ml. Mark total=true only if total for the day is stated.
 Reported medicine changes: If another doctor started, stopped or changed a medicine, extract in medChanges with prescriber name.
 Message: """${text}"""`;
+}
+
+/** Claude reads the message into the same structure; the JSON schema is given in the instructions. */
+async function parseClaude(text: string, meds: MedRef[]): Promise<ParsedMessage | null> {
+  const { claudeText, isClaudeConfigured } = await import("./claude");
+  if (!isClaudeConfigured()) return null;
+  const system = `${extractionPrompt(text, meds)}\n\nReturn a JSON object that matches this JSON Schema (every required key present; use [] / false / null when the message says nothing):\n${JSON.stringify(SCHEMA)}`;
+  const call = claudeText(system, [{ type: "text", text: "Extract the data from the message above." }], { json: true, effort: "low", maxTokens: 4000, timeoutMs: 30_000 });
+  const timeout = new Promise<null>((res) => setTimeout(() => res(null), 30_000));
+  const out = await Promise.race([call, timeout]);
+  if (!out) return null;
+  const raw = JSON.parse(out);
+  if (raw.physio === "none") raw.physio = null;
+  if (raw.lifestyle === "none") raw.lifestyle = null;
+  return normaliseParsed(raw, meds);
+}
+
+async function parseGemini(text: string, meds: MedRef[]): Promise<ParsedMessage | null> {
+  const { getGeminiApiKey, getGeminiModel } = await import("./gemini");
+  const key = getGeminiApiKey();
+  if (!key) return null;
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({ apiKey: key });
+  const modelName = getGeminiModel();
+  const prompt = extractionPrompt(text, meds);
   const call = ai.interactions.create({
     model: modelName,
     input: prompt,
@@ -518,19 +537,25 @@ Message: """${text}"""`;
 export async function parseMessage(text: string, meds: MedRef[], allowAi = true): Promise<{ parsed: ParsedMessage; parser: string }> {
   if (allowAi) {
     try {
-      const p = await parseGemini(text, meds);
-      if (p) {
-        const { getGeminiModel } = await import("./gemini");
-        return { parsed: p, parser: getGeminiModel() };
+      const { isClaudeConfigured, getClaudeModel } = await import("./claude");
+      if (isClaudeConfigured()) {
+        const p = await parseClaude(text, meds);
+        if (p) return { parsed: p, parser: getClaudeModel() };
+      } else {
+        const p = await parseGemini(text, meds);
+        if (p) {
+          const { getGeminiModel } = await import("./gemini");
+          return { parsed: p, parser: getGeminiModel() };
+        }
       }
     } catch (e) {
-      console.warn("[parser] Gemini failed, falling back to rules:", (e as Error).message);
+      console.warn("[parser] AI failed, falling back to rules:", (e as Error).message);
     }
   }
   return { parsed: normaliseParsed(parseRules(text, meds), meds), parser: "rules-v1" };
 }
 
 export function aiEnabled(): boolean {
-  const { isGeminiConfigured } = require("./gemini");
-  return isGeminiConfigured();
+  const { isAIConfigured } = require("./gemini");
+  return isAIConfigured();
 }

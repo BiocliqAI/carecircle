@@ -4,7 +4,7 @@
 import { now } from "./clock";
 import { get, run } from "./db";
 import { getPatient, ingestMessage, latestVisit, runScheduler, type UserRow } from "./engine";
-import { isGeminiConfigured, lastTranscribeError, readDeviceAI, transcribeAudio } from "./gemini";
+import { isAIConfigured, lastTranscribeError, readDeviceAI, transcribeAudio } from "./gemini";
 import { deviceText, type DeviceRead } from "./quality";
 import { extractDocument } from "./docauto";
 import { fixHealthWords } from "./speechfix";
@@ -66,7 +66,7 @@ export async function receiveMedia(user: UserRow, b: MediaIn): Promise<Record<st
   else if (await readDevicePhoto(user.id, pid, docId, b.base64, b.mime || "", t)) { /* replied: asked to confirm the reading */ }
   else {
     void extractDocument(docId); // read in the background so the assistant's task is pre-filled; the reply does not wait
-    sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: `📄 Received “${name}”. It's been added to the record for your care team to review.${!isGeminiConfigured() && /^image\//.test(b.mime || "") && category !== "lab" && category !== "prescription" ? "\nIf this shows a reading from your BP machine, glucometer or scale, please also type it, e.g. “BP 138/86”." : ""}${category === "lab" ? "" : "\nIf it's from a visit to another doctor, tap below and I'll note the visit too."}`, quick: category === "lab" ? undefined : [FROM_VISIT_BUTTON] });
+    sendWhatsApp({ userId: user.id, patientId: pid, at: t + 1000, kind: "reply", body: `📄 Received “${name}”. It's been added to the record for your care team to review.${!isAIConfigured() && /^image\//.test(b.mime || "") && category !== "lab" && category !== "prescription" ? "\nIf this shows a reading from your BP machine, glucometer or scale, please also type it, e.g. “BP 138/86”." : ""}${category === "lab" ? "" : "\nIf it's from a visit to another doctor, tap below and I'll note the visit too."}`, quick: category === "lab" ? undefined : [FROM_VISIT_BUTTON] });
   }
   return { ok: true, document: docId };
 }
@@ -76,7 +76,7 @@ export async function receiveMedia(user: UserRow, b: MediaIn): Promise<Record<st
  * before it is logged (their "Yes" is processed exactly like typing the reading). Returns true when it replied.
  */
 async function readDevicePhoto(userId: string, pid: string, docId: number, base64: string, mime: string, t: number): Promise<boolean> {
-  if (!/^image\//.test(mime) || !isGeminiConfigured()) return false;
+  if (!/^image\//.test(mime) || !isAIConfigured()) return false;
   const raw = await readDeviceAI(base64, mime).catch(() => null);
   if (!raw || raw.isDevice !== true) return false;
   const read = deviceText(raw as unknown as DeviceRead);

@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     return err(`Those files are too large to read together (about 20 MB at most)${big.length ? `. Largest: ${big.join(", ")}` : ""}. Pick fewer or smaller ones`);
   }
   const raw = await extractBaselineAI(all_.map((f) => ({ base64: f.base64!, mime: f.mime! })), Object.keys(LAB_META));
-  if (!raw) return err(lastTranscribeError === "Gemini is not configured" ? "AI is not set up. Add the Gemini key in Settings, or fill the form by hand." : `Couldn't read the documents${lastTranscribeError ? `: ${lastTranscribeError}` : ""}`, 502);
+  if (!raw) return err(lastTranscribeError === "AI is not configured" ? "AI is not set up. Add the Anthropic (or Gemini) key in Settings, or fill the form by hand." : `Couldn't read the documents${lastTranscribeError ? `: ${lastTranscribeError}` : ""}`, 502);
   const t = now();
   if (b.patientId) {
     for (const f of files) {

@@ -6,6 +6,7 @@ import path from "node:path";
 process.env.CARECIRCLE_DB = path.join(os.tmpdir(), `carecircle-test-appa-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
 process.env.CARECIRCLE_MODE = "live";
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 delete process.env.CARECIRCLE_SAMPLE_PATIENT;
 
 const { all, get, run } = await import("../lib/db");

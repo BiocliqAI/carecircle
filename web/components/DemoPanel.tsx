@@ -77,8 +77,8 @@ export function DemoPanel({ open, onClose, onHide }: { open: boolean; onClose: (
         <section>
           <h4>AI</h4>
           <div className="row between">
-            <small>{clock?.ai ? `Gemini on · ${clock.model}` : "Rule-based parsing"}</small>
-            <button className="btn sm" onClick={() => setGemini(true)}>✨ Gemini key</button>
+            <small>{clock?.ai ? `AI on · ${clock.model}` : "Rule-based parsing"}</small>
+            <button className="btn sm" onClick={() => setGemini(true)}>✨ AI keys</button>
           </div>
         </section>
 
