@@ -163,7 +163,8 @@ export function editNote(id: number, body: string | null, t: number, actor: stri
 
 // ---------------------------------------------------------------- documents
 export const DOC_CATEGORIES = ["prescription", "lab", "discharge", "imaging", "voice", "other"] as const;
-export const MAX_DOC_BYTES = 5 * 1024 * 1024;
+export const MAX_DOC_BYTES = 50 * 1024 * 1024;
+export const MAX_DOC_LABEL = `${MAX_DOC_BYTES / 1024 / 1024} MB`;
 
 export interface DocumentRow {
   id: number;
@@ -196,7 +197,7 @@ export function addDocument(pid: string, d: { title: string; category: string; m
   const raw = d.base64.replace(/^data:[^;]+;base64,/, "");
   const bytes = Buffer.from(raw, "base64");
   if (!bytes.length) throw new Error("The file is empty");
-  if (bytes.length > MAX_DOC_BYTES) throw new Error("Files are limited to 5 MB");
+  if (bytes.length > MAX_DOC_BYTES) throw new Error(`Files are limited to ${MAX_DOC_LABEL}`);
   const category = (DOC_CATEGORIES as readonly string[]).includes(d.category) ? d.category : "other";
   const title = (d.title || "Document").trim().slice(0, 120);
   const id = run(
