@@ -1,6 +1,6 @@
 import { all } from "@/lib/db";
 import { now } from "@/lib/clock";
-import { dayFluid, getConsents, getCaregivers, getPatient, getUser, getVisits, latestVisit, type EscalationRow } from "@/lib/engine";
+import { dayFluid, getConsents, getCaregivers, getPatient, getUser, getVisits, latestVisit, planPausedSince, type EscalationRow } from "@/lib/engine";
 import { outsideVisits } from "@/lib/outside";
 import { WATCH_KEYS, openWatches, watchOffList } from "@/lib/watch";
 import { intervalSummary, longRange, medChanges, type EscalationView } from "@/lib/summary";
@@ -80,6 +80,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     caregivers: caregivers.map((c) => (user.role === "PATIENT" || user.role === "CAREGIVER" ? { ...c } : c)),
     visits,
     current,
+    planPausedAt: planPausedSince(id),
     summary,
     open,
     timeline,

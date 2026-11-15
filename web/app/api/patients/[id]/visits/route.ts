@@ -1,9 +1,10 @@
 import { now } from "@/lib/clock";
-import { createVisit, getPatient } from "@/lib/engine";
+import { createVisit, getPatient, planPausedSince } from "@/lib/engine";
 import { clearPrep } from "@/lib/prep";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 import type { CarePlan, ClinicVitals } from "@/lib/types";
 import { DEFAULT_THRESHOLDS, DEFAULT_TIMERS, VITAL_META } from "@/lib/types";
+import { dayKey, visitAtFrom } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -47,14 +48,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await sessionUser();
   if (!isClinician(user) || !canView(user!, id)) return err("Only the care team can record visits", 403);
   if (!getPatient(id)) return err("Not found", 404);
-  const body = (await req.json()) as { vitals: ClinicVitals; diagnosis: string; notes: string; plan: CarePlan; next_visit_at: number | null };
+  const body = (await req.json()) as { vitals: ClinicVitals; diagnosis: string; notes: string; plan: CarePlan; next_visit_at: number | null; visit_date?: string; visit_time?: string };
   const plan = validPlan(body.plan);
   if (typeof plan === "string") return err(plan);
   const vitals: ClinicVitals = {};
   for (const [k, v] of Object.entries(body.vitals || {})) if (v !== null && v !== undefined && String(v) !== "" && Number.isFinite(Number(v))) (vitals as Record<string, number>)[k] = Number(v);
   const doctorId = user!.role === "DOCTOR" ? user!.id : getPatient(id)!.doctor_id;
   if (user!.role !== "DOCTOR") return err("Only the doctor can record the visit and change the care plan. Use Prepare to get it ready.", 403);
-  const vid = createVisit(id, doctorId, { vitals, diagnosis: body.diagnosis || "", notes: body.notes || "", plan, next_visit_at: body.next_visit_at || null }, now());
-  clearPrep(id);
-  return json({ id: vid });
+  const t = now();
+  const visitAt = visitAtFrom(body.visit_date, t, body.visit_time);
+  if (typeof visitAt === "string") return err(visitAt);
+  const vid = createVisit(id, doctorId, { vitals, diagnosis: body.diagnosis || "", notes: body.notes || "", plan, next_visit_at: body.next_visit_at || null }, t, visitAt);
+  const pastDated = dayKey(visitAt) < dayKey(t);
+  if (!pastDated) clearPrep(id); // a past visit entered from records isn't the visit the assistant prepared for
+  return json({ id: vid, pastDated, paused: !!planPausedSince(id) });
 }

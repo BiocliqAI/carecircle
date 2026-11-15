@@ -113,6 +113,8 @@ export function PatientChart({ id }: { id: string }) {
 
       <div className="pc-body">
         <div className="pc-inner stack gap16">
+          {d.planPausedAt && cur && <StartPlanBar d={d} onStarted={() => { notifyChange(); load(); }} />}
+
           {/* open alerts strip */}
           {d.open.map((e) => (
             <div key={e.id} className={`pc-alert ${e.type === "URGENT" ? "red" : e.type === "DEVIATION" ? "amber" : "blue"}`}>
@@ -429,3 +431,36 @@ function SideCards({ d, onSec }: { d: Data; onSec: (x: Section) => void }) {
   );
 }
 
+
+/** Shown while the latest visit was entered from past records and its plan hasn't been started. */
+function StartPlanBar({ d, onStarted }: { d: Data; onStarted: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const cur = d.current!;
+  const clinician = d.viewer.role === "DOCTOR" || d.viewer.role === "PA";
+  const who = [shortName(d.patient.name), ...d.caregivers.map((c) => c.name.split(" ")[0])].join(", ");
+  async function start() {
+    if (!window.confirm(`Start ${shortName(d.patient.name)}'s care plan from the visit on ${fmtDate(cur.visit_at)}?\n\nReminders and check-ins begin now, and the plan is sent on WhatsApp to ${who}. The days since that visit stay without data.`)) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/api/patients/${d.patient.id}/care-plan`, { body: { action: "start" } });
+      onStarted();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="pc-alert amber">
+      <span className="pc-alert-k">Care plan paused</span>
+      <b className="num">Latest visit: {fmtDate(cur.visit_at)}</b>
+      <span className="v2-sub" style={{ flex: 1, minWidth: 220, fontSize: 13 }}>
+        Visits are being entered from past records. No reminders, check-ins or WhatsApp messages go out, and only emergency rules apply, until the plan is started.
+        {err && <b style={{ color: "var(--c-red)" }}> {err}</b>}
+      </span>
+      {clinician && <button className="v2-btn primary" disabled={busy} onClick={start}>{busy ? <span className="spin" /> : null}Start care plan</button>}
+    </div>
+  );
+}

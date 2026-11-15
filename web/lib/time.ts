@@ -29,6 +29,18 @@ export function dayKey(ms: number): string {
   return new Date(ms + TZ_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/**
+ * The time of a visit from the form's date (YYYY-MM-DD, clinic time). No date or today's date means now; an earlier
+ * day means that day at `hhmm` (default 11:00). Returns an error message for a bad or future date.
+ */
+export function visitAtFrom(date: string | null | undefined, t: number, hhmm = "11:00"): number | string {
+  if (!date || date === dayKey(t)) return t;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(`${date}T12:00:00Z`))) return "Enter a valid visit date";
+  if (date > dayKey(t)) return "The visit date can't be in the future";
+  if (date < "2000-01-01") return "Enter a valid visit date";
+  return atLocal(dayStart(Date.parse(`${date}T12:00:00+05:30`)), /^([01]\d|2[0-3]):[0-5]\d$/.test(hhmm) ? hhmm : "11:00");
+}
+
 export function fmtDate(ms: number, opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" }): string {
   return new Intl.DateTimeFormat("en-IN", { timeZone: TZ, ...opts }).format(ms);
 }
