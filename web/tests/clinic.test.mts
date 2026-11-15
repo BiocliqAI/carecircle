@@ -237,7 +237,7 @@ describe("Live clinic onboarding", () => {
     records.updateDocument(id, { title: "RFT Sept", category: "nonsense" }, now(), paId);
     assert.equal(records.listDocuments(pid)[0].title, "RFT Sept");
     assert.equal(records.listDocuments(pid)[0].category, "lab", "unknown categories are ignored");
-    assert.throws(() => records.addDocument(pid, { title: "big", category: "lab", mime: "image/png", base64: Buffer.alloc(6 * 1024 * 1024).toString("base64") }, now(), paId), /5 MB/);
+    assert.throws(() => records.addDocument(pid, { title: "big", category: "lab", mime: "image/png", base64: Buffer.alloc(51 * 1024 * 1024).toString("base64") }, now(), paId), /50 MB/);
     records.deleteDocument(id, now(), paId);
     assert.equal(records.listDocuments(pid).length, 0);
   });

@@ -248,8 +248,8 @@ describe("reports read with AI are kept under Documents", () => {
     assert.ok(d.filed_at, "already reviewed in the window, so filed");
     assert.equal(da.awaitingCheck(d.filed_at, da.readExtract(d.extract)), false, "no second check asked for");
   });
-  it("refuses files over 5 MB", () => {
-    assert.throws(() => da.keepChartedDocument("p_ramesh", "u_pa_priya", ocr, "image/png", Buffer.alloc(6 * 1024 * 1024).toString("base64"), now()), /5 MB/);
+  it("refuses files over 50 MB", () => {
+    assert.throws(() => da.keepChartedDocument("p_ramesh", "u_pa_priya", ocr, "image/png", Buffer.alloc(51 * 1024 * 1024).toString("base64"), now()), /50 MB/);
   });
   it("dates values by the report, never in the future", () => {
     const t = Date.parse("2026-10-01T12:00:00+05:30");

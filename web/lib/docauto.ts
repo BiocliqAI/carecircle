@@ -5,7 +5,7 @@ import { get, run } from "./db";
 import { audit } from "./db";
 import { enterLabs, getPatient } from "./engine";
 import { analyzeDocumentOCR, isGeminiConfigured, type OCROutput } from "./gemini";
-import { addDocument, MAX_DOC_BYTES } from "./records";
+import { addDocument, MAX_DOC_BYTES, MAX_DOC_LABEL } from "./records";
 import { fmtDate } from "./time";
 import { LAB_META } from "./types";
 
@@ -121,7 +121,7 @@ export function reportTime(date: string | null | undefined, t: number): number {
  * person who reviewed the values, with what was read attached. Returns the document id.
  */
 export function keepChartedDocument(pid: string, userId: string, r: OCROutput, mime: string, base64: string, t: number): number {
-  if (Buffer.byteLength(base64.replace(/^data:[^;]+;base64,/, ""), "base64") > MAX_DOC_BYTES) throw new Error("Files are limited to 5 MB");
+  if (Buffer.byteLength(base64.replace(/^data:[^;]+;base64,/, ""), "base64") > MAX_DOC_BYTES) throw new Error(`Files are limited to ${MAX_DOC_LABEL}`);
   const category = DOC_TYPE_CATEGORY[r.documentType] ?? "other";
   const date = r.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(r.documentDate) ? r.documentDate : null;
   const docId = addDocument(pid, { title: (r.documentTypeName || "Medical document").slice(0, 120), category, mime, base64, notes: r.doctorNotes?.slice(0, 300) || undefined }, t, userId);

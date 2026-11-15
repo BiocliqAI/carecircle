@@ -14,6 +14,8 @@ export interface DocItem { id: number; title: string; category: string; mime: st
 
 const CATS: [string, string][] = [["prescription", "Prescription"], ["lab", "Lab report"], ["discharge", "Discharge summary"], ["imaging", "Imaging"], ["voice", "Voice note"], ["other", "Other"]];
 const catLabel = (c: string) => CATS.find((x) => x[0] === c)?.[1] ?? "Other";
+const MAX_UPLOAD_MB = 50; // matches MAX_DOC_BYTES in lib/records.ts (server-only module)
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 // ---------------------------------------------------------------- profile + care circle
@@ -352,7 +354,9 @@ function ReadPanel({ d, busy, act, refresh }: { d: DocItem; busy: boolean; act: 
 }
 
 export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; docs: DocItem[]; canEdit: boolean; onChange: () => void }) {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [fileKey, setFileKey] = useState(0); // remounts the file input so it clears after an upload
   const [meta, setMeta] = useState({ title: "", category: "lab", notes: "" });
   const [editing, setEditing] = useState<{ id: number; title: string; category: string; notes: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -373,13 +377,35 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
       setBusy(false);
     }
   }
+  // One request per file, so each stays under the server's per-request limit and one bad file doesn't sink the rest.
   async function upload() {
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) return setErr("Files are limited to 5 MB");
-    const base64 = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
-    if (await act({ action: "add", base64, mime: file.type, title: meta.title || file.name, category: meta.category, notes: meta.notes })) {
-      setFile(null);
+    if (!files.length) return;
+    const tooBig = files.filter((f) => f.size > MAX_UPLOAD_BYTES);
+    if (tooBig.length) return setErr(`Files are limited to ${MAX_UPLOAD_MB} MB: ${tooBig.map((f) => f.name).join(", ")}`);
+    const single = files.length === 1;
+    const failed: File[] = [];
+    const errors: string[] = [];
+    setBusy(true);
+    setErr(null);
+    for (const [i, file] of files.entries()) {
+      setProgress(single ? null : `Uploading ${i + 1} of ${files.length}…`);
+      try {
+        const base64 = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
+        const title = single ? meta.title || file.name : file.name.replace(/\.[^.]+$/, "");
+        await api(`/api/patients/${pid}/documents`, { body: { action: "add", base64, mime: file.type, title, category: meta.category, notes: meta.notes } });
+      } catch (e) {
+        failed.push(file);
+        errors.push(`${file.name}: ${(e as Error).message}`);
+      }
+    }
+    setProgress(null);
+    setBusy(false);
+    onChange();
+    setFiles(failed);
+    if (failed.length) setErr(`${failed.length} of ${files.length} didn't upload. ${errors.join(" · ")}`);
+    else {
       setMeta({ title: "", category: "lab", notes: "" });
+      setFileKey((k) => k + 1);
     }
   }
 
@@ -387,17 +413,21 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
     <div className="stack gap16">
       {canEdit && (
         <section className="card">
-          <div className="card-head"><h3>Add a document</h3><small>Photos, PDFs or scans up to 5 MB. Every upload must be checked by a person before it counts as filed.</small></div>
+          <div className="card-head"><h3>Add a document</h3><small>Photos, PDFs or scans up to {MAX_UPLOAD_MB} MB each. Pick several at once to upload them together. Every upload must be checked by a person before it counts as filed.</small></div>
           <div className="grid g4" style={{ alignItems: "end" }}>
-            <label className="f">File<input type="file" accept="image/*,application/pdf,audio/*" onChange={(e) => { const f = e.target.files?.[0] ?? null; setFile(f); if (f && !meta.title) setMeta((m) => ({ ...m, title: f.name.replace(/\.[^.]+$/, "") })); }} /></label>
-            <label className="f">Title<input value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} placeholder="e.g. RFT 20 Sep" /></label>
+            <label className="f">Files<input key={fileKey} type="file" multiple accept="image/*,application/pdf,audio/*" onChange={(e) => { const fs = [...(e.target.files ?? [])]; setFiles(fs); setErr(null); if (fs.length === 1 && !meta.title) setMeta((m) => ({ ...m, title: fs[0].name.replace(/\.[^.]+$/, "") })); }} /></label>
+            <label className="f">Title{files.length > 1 ? <input disabled value="" placeholder="Each file keeps its own name" /> : <input value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} placeholder="e.g. RFT 20 Sep" />}</label>
             <label className="f">Type
               <select value={meta.category} onChange={(e) => setMeta({ ...meta, category: e.target.value })}>{CATS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
             </label>
             <label className="f">Notes<input value={meta.notes} onChange={(e) => setMeta({ ...meta, notes: e.target.value })} placeholder="Optional" /></label>
           </div>
           {err && <div className="alert bad" style={{ marginTop: 8 }}>{err}</div>}
-          <div style={{ marginTop: 10 }}><button className="btn primary" disabled={!file || busy} onClick={upload}>{busy ? <span className="spin" /> : "⬆"} Upload</button></div>
+          {files.length > 1 && <div className="muted" style={{ marginTop: 8 }}>{files.length} files: {files.map((f) => `${f.name} (${kb(f.size)})`).join(", ")}</div>}
+          <div className="row" style={{ marginTop: 10, gap: 10 }}>
+            <button className="btn primary" disabled={!files.length || busy} onClick={upload}>{busy ? <span className="spin" /> : "⬆"} Upload{files.length > 1 ? ` ${files.length} files` : ""}</button>
+            {progress && <span className="muted">{progress}</span>}
+          </div>
         </section>
       )}
       {docs.length === 0 ? <div className="card muted">No documents yet. Documents sent by the patient or family on WhatsApp also appear here.</div> : (

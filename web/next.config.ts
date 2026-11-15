@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   distDir: process.env.CARECIRCLE_MODE === "live" ? ".next-clinic" : ".next",
   turbopack: { root: __dirname },
   // Opening the dev server through an ngrok tunnel (testing real WhatsApp locally). Has no effect on production builds.
+  // Uploads arrive as base64 JSON through proxy.ts (about 4/3 of the file size); the default 10 MB buffer would cut
+  // off documents well under the 50 MB limit in lib/records.ts.
+  experimental: { proxyClientMaxBodySize: "80mb" },
   allowedDevOrigins: ["*.ngrok-free.dev", "*.ngrok-free.app", "*.ngrok.app"],
 };
 
