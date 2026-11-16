@@ -69,6 +69,7 @@ describe("onboarding from past records", () => {
       return id;
     };
     const note = doc("Cardiology note", "clinical", { date: "2026-03-04", kind: "consultation", text: "Dr E Satish Kumar. CAD, stent 2019. Ecosprin 75 OD.", visits: [{ date: "2026-03-04", doctorName: "Dr E Satish Kumar", kind: "outside" }], medList: ["Ecosprin 75 mg OD"] });
+    const copy = doc("Cardiology note (copy)", "clinical", { date: "2026-03-04", kind: "consultation", text: "Same visit, photocopy.", visits: [{ date: "2026-03-04", doctorName: "Dr. E Satish Kumar", specialty: "Cardiology", findings: "Stable", kind: "outside" }] });
     const lab1 = doc("Blood test Feb", "lab", { date: "2026-02-01", kind: "lab_report", labs: [{ marker: "creatinine", value: 2.1, unit: "mg/dL" }], text: "Creatinine 2.1" });
     const lab2 = doc("Blood test Sep", "lab", { date: "2026-09-01", kind: "lab_report", labs: [{ marker: "creatinine", value: 6.0, unit: "mg/dL" }], readings: [{ type: "bp", v1: 150, v2: 90, date: "2026-09-02", time: "07:30" }] });
     reply = JSON.stringify({
@@ -89,11 +90,18 @@ describe("onboarding from past records", () => {
 
     // The AI got the clinical record in full and the lab pile as reports and trends.
     const input = JSON.parse(((asked.at(-1)!.messages as { content: { text: string }[] }[])[0].content[0]).text);
-    assert.deepEqual(input.documents.map((d: { id: number }) => d.id), [note]);
+    assert.deepEqual(input.documents.map((d: { id: number }) => d.id), [note, copy]);
     assert.deepEqual(input.reports.map((d: { id: number }) => d.id), [lab1, lab2]);
     assert.deepEqual(input.labTrends.Creatinine, ["2026-02-01: 2.1 mg/dL", "2026-09-01: 6 mg/dL"]);
     assert.equal(input.patient.caregivers[0].name, "Ravi");
     assert.match(String(asked.at(-1)!.system), /immunisations/);
+    assert.equal(asked.at(-1)!.max_tokens, 128000, "the history may use the model's full answer length");
+    assert.doesNotMatch(String(asked.at(-1)!.system), /"visits": \[\{/, "the AI isn't asked to list consultations");
+    const visits = listOf(draft.summary, "visits");
+    assert.equal(visits.length, 1, "the same visit in two records is one row");
+    assert.deepEqual(visits[0].sources, [note, copy]);
+    assert.equal(visits[0].specialty, "Cardiology");
+    assert.equal(visits[0].takeaway, "Stable");
 
     assert.equal(fieldsOf(draft.summary, "alerts").implants.text, "Coronary stent (2019)");
     assert.deepEqual(listOf(draft.summary, "medicines")[0].sources, [note], "unknown document ids are dropped");

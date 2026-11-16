@@ -149,7 +149,7 @@ export function Onboarding({ pid }: { pid: string }) {
         <Records d={d} uploads={uploads} busy={busy} act={act} onPick={() => fileRef.current?.click()} onDrop={addFiles} onReview={() => setView("review")} />
       ) : draft ? (
         <>
-          {d.onboarding?.buildError && <div className="alert warn" style={{ marginBottom: 12 }}><div>{d.onboarding.buildError} <button className="btn sm" disabled={!!busy || locked} onClick={() => act("rebuild", { action: "rebuild" })}>{busy === "rebuild" ? <span className="spin" /> : null} Try again</button></div></div>}
+          {d.onboarding?.buildError && <div className="alert warn" style={{ marginBottom: 12 }}><div>{d.onboarding.buildError} <button className="btn sm" disabled={!!busy || locked} onClick={() => window.confirm("Put the history together again from the records already read? Changes made to this draft are replaced.") && act("rebuild", { action: "rebuild" }).then(() => setView(null))}>{busy === "rebuild" ? <span className="spin" /> : null} Try again</button></div></div>}
           <div className="row between" style={{ marginBottom: 8 }}>
             <nav className="v2-tabs" aria-label="Review sections" style={{ padding: 0, flex: 1 }}>
               <button className={tab === "summary" ? "on" : ""} onClick={() => setTab("summary")}>Clinical summary {open && open.points > 0 && <span className="v2-count red">{open.points} to check</span>}</button>
@@ -217,7 +217,7 @@ function Records({ d, uploads, busy, act, onPick, onDrop, onReview }: { d: Resp;
           <div className="row between"><h3 style={{ margin: 0 }}>Reading {pr.total} record{pr.total > 1 ? "s" : ""}</h3><span className="muted">{pr.built ? "Ready to review" : "You can leave this page; reading carries on."}</span></div>
           {bar("Read", pr.read + pr.failed, pr.total, `${pr.read} of ${pr.total} files${pr.failed ? ` · ${pr.failed} couldn't be read` : ""}`)}
           {bar("Understood", pr.clinicalRead, pr.clinicalTotal, `${pr.clinicalRead} of ${pr.clinicalTotal} clinical documents`)}
-          {bar("Put together", pr.built ? 1 : 0, 1, pr.built ? "done" : pr.building ? "putting the history together…" : "waiting for all records to be read")}
+          {bar("Put together", pr.built ? 1 : 0, 1, pr.built ? "done" : pr.building ? `putting the history together…${pr.total > 40 ? " (with this many records it can take 10–20 minutes)" : ""}` : "waiting for all records to be read")}
           <div className="row" style={{ gap: 24 }}>
             <span><b className="num">{pr.found.labValues}</b> <span className="muted">lab values</span></span>
             <span><b className="num">{pr.found.visits}</b> <span className="muted">visits</span></span>

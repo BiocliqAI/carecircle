@@ -58,8 +58,8 @@ export function emptyHistory(): History {
 }
 
 /** The AI's instructions for the history part of the JSON, generated from the sections above. */
-export function historySchemaText(): string {
-  return HISTORY.map((s) => s.kind === "list"
+export function historySchemaText(skip: string[] = []): string {
+  return HISTORY.filter((s) => !skip.includes(s.key)).map((s) => s.kind === "list"
     ? ` "${s.key}": [{${s.cols.map((c) => `"${c.key}": "${c.label}${c.hint ? ` (${c.hint})` : ""}${c.type === "date" ? ", YYYY-MM-DD" : ""}"`).join(", ")}, "sources": [document ids]}]  // ${s.n}. ${s.title}. ${s.hint}`
     : ` "${s.key}": {${s.fields.map((f) => `"${f.key}": {"text": "${f.label}${f.hint ? ` (${f.hint})` : ""}", "sources": [ids]}`).join(", ")}}  // ${s.n}. ${s.title}. ${s.hint}`,
   ).join(",\n");

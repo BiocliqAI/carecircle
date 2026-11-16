@@ -1,7 +1,7 @@
 import { now } from "@/lib/clock";
 import { getPatient, getUser } from "@/lib/engine";
 import { loadLearnedMarkers } from "@/lib/labmarkers";
-import { addRecord, buildDraft, confirmOnboarding, currentOnboarding, draftOf, moveRecord, openItems, progress, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
+import { addRecord, confirmOnboarding, currentOnboarding, draftOf, moveRecord, openItems, progress, rebuildDraft, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
@@ -58,12 +58,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       case "remove": removeRecord(id, Number(b.docId), user.id, t); break;
       case "move": moveRecord(id, Number(b.docId), b.pile === "lab" ? "lab" : ("clinical" as Pile)); break;
       case "retry": retryRecord(id, Number(b.docId)); break;
-      case "rebuild": {
-        const o = currentOnboarding(id);
-        if (!o || o.status === "CONFIRMED" || o.status === "SENT") return err("Nothing to rebuild");
-        await buildDraft(o.id);
-        break;
-      }
+      case "rebuild": rebuildDraft(id, user.id, t); break;
       case "save": saveDraftEdits(id, b.edits ?? {}, user, t); break;
       case "send": sendToDoctor(id, user, t); break;
       case "return": sendBack(id, user, b.note ?? "", t); break;
