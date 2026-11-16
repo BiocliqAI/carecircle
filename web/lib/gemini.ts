@@ -266,6 +266,8 @@ export interface OCROutput {
     /** Results that aren't plain numbers, as printed: "Absent", "Normal", "Yellow", "20-30". */
     texts?: { test: string; group?: string; result: string; reference?: string }[];
   };
+  /** Each separate consultation in the document (a running note often holds several dated entries). */
+  visits?: Record<string, unknown>[];
 }
 
 export async function analyzeDocumentOCR(opts: {
@@ -288,17 +290,20 @@ Extract all structured clinical entities conforming strictly to this JSON schema
   "transcription": "Verbatim readable transcription of the document text",
   "prescriber": "Doctor name if identifiable, or null",
   "documentDate": "Date on document in YYYY-MM-DD format if present, or null",
+  "visits": [{"date": "YYYY-MM-DD", "doctorName": "Dr …", "specialty": "e.g. Urology", "hospital": "", "reason": "why the patient came / presenting problem, short", "findings": "history, examination and results noted at this visit, short", "advice": "everything advised (other than medicine changes), short sentences", "tests": "tests ordered", "nextVisitDate": "YYYY-MM-DD or null", "medChanges": [{"medName": "", "change": "started"|"stopped"|"dose_changed"|"other", "newDose": "", "frequency": "OD|BD|TDS|QID|HS|SOS|weekly", "detail": "one plain line"}]}],
   "doctorNotes": "Clinical impression, advice, or remarks",
   "extracted": {
     "vitals": [{"type": "bp"|"weight"|"glucose"|"hr"|"spo2"|"temp"|"pain", "label": "string", "v1": number, "v2": number|undefined, "unit": "string"}],
-    "labs": [{"marker": one of the lab marker keys listed below, "label": "the test name as printed", "value": number, "unit": "string", "flag": "normal"|"high"|"low"|"critical"}],
+    "labs": [{"marker": one of the lab marker keys listed below, "label": "the test name as printed", "value": number, "unit": "string", "flag": "normal"|"high"|"low"|"critical", "date": "YYYY-MM-DD the sample was taken, when it differs from documentDate (e.g. a consultation note quoting an earlier report), else omit"}],
     "medications": [{"name": "string", "dose": "string", "times": ["string"], "change": "started"|"stopped"|"dose_changed"|"continued", "prescriber": "string", "instructions": "string"}],
     "symptoms": [{"key": "string", "severity": "mild"|"moderate"|"severe", "text": "string"}],
     "texts": [{"test": "the test name as printed", "group": "its panel or specimen, e.g. 'Urine routine', 'Urine deposits', 'Differential count'", "result": "the result exactly as printed, e.g. 'Absent', 'Normal', 'Yellow', '20-30', 'Micro organisms present'", "reference": "the reference range or expected value as printed, or ''"}]
   }
 }
 
-${labInstructions(undefined, true)}`;
+${labInstructions(undefined, true)}
+
+Visits: a consultation note, prescription or discharge summary records one or more visits. A single sheet or file often carries SEVERAL dated entries (e.g. a note dated 14/2/24 with a follow-up written below or overleaf dated 21/2/24): give each dated consultation its own entry in "visits", with its own date and only what was written at that visit. A lab report alone has no visits ([]). Use the doctor printed on the letterhead or signing the entry. Dates: Indian style, day first (14/2/24 = 2024-02-14). Lab values written inside a visit note also go in "labs", with the date the sample was taken (e.g. "13/2/24 creat 2.91" = creatinine 2.91 dated 2024-02-13).`;
 
       const modelName = aiModel();
       const { documentParts } = await import("./docread");
@@ -324,6 +329,7 @@ ${labInstructions(undefined, true)}`;
             symptoms: Array.isArray(parsed.extracted?.symptoms) ? parsed.extracted.symptoms : [],
             texts: Array.isArray(parsed.extracted?.texts) ? parsed.extracted.texts : [],
           },
+          visits: Array.isArray(parsed.visits) ? parsed.visits : [],
         };
       }
     } catch (err) {

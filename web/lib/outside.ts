@@ -279,7 +279,7 @@ function saveDraft(id: number, d: Partial<OVDraft>, changes: OVMedChange[] | nul
     const detail = c.unclear ? `${c.detail} (to confirm: ${c.unclear})` : c.detail;
     run(
       "INSERT INTO med_changes(patient_id, at, med_name, change, detail, prescriber, reported_by, message_id, source, status, outside_visit_id, med_key, new_dose, new_times) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-      v.patient_id, dayStart(at) === dayStart(t) ? t : Math.min(at, t), c.medName, c.change, detail.slice(0, 200), doctor, v.reported_by, v.message_id, v.source === "web" ? "dashboard" : "whatsapp", "REPORTED", id, c.planKey, c.newDose, c.times ? JSON.stringify(c.times) : null,
+      v.patient_id, dayStart(at) === dayStart(t) ? t : Math.min(at, t), c.medName, c.change, detail.slice(0, 200), doctor, v.reported_by, v.message_id, v.source === "whatsapp" ? "whatsapp" : "dashboard", "REPORTED", id, c.planKey, c.newDose, c.times ? JSON.stringify(c.times) : null,
     );
   }
 }
@@ -587,6 +587,53 @@ export async function outsideVisitDocument(user: UserRow, p: PatientRow, doc: { 
   setSetting(`lastdoc:${user.id}`, `${doc.id}:${t}`);
   if (!activeFlow(user.id, t)) return { handled: false };
   return outsideVisitTurn(user, p, "", t, { files: [{ base64: doc.base64, mime: doc.mime, docId: doc.id, title: doc.title }] });
+}
+
+// ---------------------------------------------------------------- read from a document (Documents tab)
+/** One visit found in a document, as the checker confirmed it. */
+export interface DocVisitInput {
+  date: string; doctorName: string; specialty?: string; hospital?: string; reason?: string; findings?: string; advice?: string;
+  tests?: string; nextVisitDate?: string | null; medChanges?: unknown[];
+}
+const normDoc = (s: string | null | undefined) => (s ?? "").toLowerCase().replace(/^dr\.?\s*/, "").replace(/[^a-z]/g, "");
+/** An earlier visit to this doctor on this day, if one is on record (so re-filing a document doesn't add it twice). */
+export function sameDayOutsideVisit(pid: string, date: string, doctor: string): OutsideVisitRow | undefined {
+  const day = dayStart(fromKey(date));
+  return all<OutsideVisitRow>("SELECT * FROM outside_visits WHERE patient_id = ? AND visit_at >= ? AND visit_at < ?", pid, day, day + DAY).find((v) => normDoc(v.doctor_name) === normDoc(doctor));
+}
+
+/**
+ * Records a visit to another doctor read from a document, on its own date (any date in the past: it comes from the
+ * record, not from memory). Nothing is sent to the patient or family. Its medicine changes are listed for the clinic
+ * to review, unless the visit is older than the treating doctor's latest visit: then they are history, filed as reviewed.
+ */
+export function saveDocumentVisit(pid: string, userId: string, docId: number | null, input: DocVisitInput, t: number): number {
+  const p = getPatient(pid);
+  if (!p) throw new Error("Patient not found");
+  const doctor = clip(input.doctorName, 80);
+  if (!doctor) throw new Error("Each visit needs the doctor's name");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date ?? "")) throw new Error(`Enter a date for the visit with ${doctor}`);
+  const visitAt = fromKey(input.date);
+  if (visitAt > t + DAY) throw new Error("A visit date can't be in the future");
+  const next = input.nextVisitDate && /^\d{4}-\d{2}-\d{2}$/.test(input.nextVisitDate) ? fromKey(input.nextVisitDate) : null;
+  const plan = latestVisit(pid, t)?.plan;
+  const changes = normaliseChanges(input.medChanges, plan);
+  const reason = [clip(input.reason, 200), clip(input.findings, 400) && `Findings: ${clip(input.findings, 400)}`].filter(Boolean).join(" · ") || null;
+  return tx(() => {
+    const prev = sameDayOutsideVisit(pid, input.date, doctor);
+    const id = prev?.id ?? createRow(pid, userId, "document", t, null, null);
+    saveDraft(id, {
+      doctorName: doctor, specialty: clip(input.specialty, 60), hospital: clip(input.hospital, 80), visitAt,
+      reason: reason?.slice(0, 600) ?? null, advice: clip(input.advice, 600), tests: clip(input.tests, 200), nextVisitAt: next, nextVisitNote: null,
+    }, changes, t);
+    const treating = latestVisit(pid, t);
+    if (treating && visitAt < treating.visit_at)
+      run("UPDATE med_changes SET status = 'REVIEWED', reviewed_by = ?, reviewed_at = ? WHERE outside_visit_id = ? AND status = 'REPORTED'", userId, t, id);
+    run("UPDATE outside_visits SET status = 'COMPLETE', updated_at = ? WHERE id = ?", t, id);
+    if (docId) run("UPDATE patient_documents SET outside_visit_id = COALESCE(outside_visit_id, ?) WHERE id = ?", id, docId);
+    audit(t, userId, prev ? "OUTSIDE_VISIT_UPDATED" : "OUTSIDE_VISIT_RECORDED", "patient", pid, { visit: id, source: "document", document: docId, changes: changes.length });
+    return id;
+  });
 }
 
 // ---------------------------------------------------------------- web (patient / family page)

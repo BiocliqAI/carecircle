@@ -59,6 +59,7 @@ interface VisitData {
   patient: { name: string; conditions: string };
   current: Visit | null;
   planPausedAt?: number | null;
+  documents?: { id: number; title: string; extract: string | null }[];
   visits: Visit[];
   summary: IntervalSummary | null;
   careTeam: { id: number; name: string; role: string }[];
@@ -131,6 +132,24 @@ function DoctorConsult({ id }: { id: string }) {
       setNextDate(nd);
       setVisitDate(dayKey(x.now));
       setStartPlan(!!x.current && !x.planPausedAt);
+      // Opened from a document's "treating doctor's visit": that visit's date, and what the note says, as a start.
+      const q = new URLSearchParams(window.location.search);
+      const doc = x.documents?.find((o) => String(o.id) === q.get("fromDoc"));
+      if (doc?.extract) {
+        try {
+          const v = (JSON.parse(doc.extract) as { visits?: Record<string, unknown>[] }).visits?.[Number(q.get("v"))];
+          const day = typeof v?.date === "string" ? v.date : q.get("date");
+          if (day && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
+            setVisitDate(day);
+            setStartPlan(false);
+            setNextDate(typeof v?.nextVisitDate === "string" ? v.nextVisitDate : new Date(Date.parse(`${day}T12:00:00+05:30`) + 28 * DAY).toISOString().slice(0, 10));
+          }
+          if (v) {
+            const meds = Array.isArray(v.medChanges) ? (v.medChanges as { medName: string; change: string; newDose?: string; frequency?: string }[]).map((m) => `${m.medName} ${m.change.replace("_", " ")}${m.newDose ? ` ${m.newDose}` : ""}${m.frequency ? ` ${m.frequency}` : ""}`).join("; ") : "";
+            setNotes([`From “${doc.title}”:`, v.reason && `Reason: ${v.reason}`, v.findings && `Findings: ${v.findings}`, v.advice && `Advice: ${v.advice}`, v.tests && `Tests ordered: ${v.tests}`, meds && `Medicine changes noted (update the medicines below to match): ${meds}`].filter(Boolean).join("\n"));
+          }
+        } catch { /* not readable: the form starts as usual */ }
+      }
     }).catch((e) => setErr(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, loading]);

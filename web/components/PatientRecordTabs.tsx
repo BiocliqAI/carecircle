@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "./client";
 import { ConsentList, type ConsentView } from "./baseline";
 import { Dictate } from "./Dictate";
-import { fmtDateTime } from "@/lib/time";
+import { fmtDate, fmtDateTime } from "@/lib/time";
 import { LAB_META, MAX_CAREGIVERS } from "@/lib/types";
 import { DOCUMENT_ACCEPT, mimeFor, readableType } from "@/lib/mimetypes";
 
@@ -301,7 +301,9 @@ export function NotesTab({ pid, notes, viewerId, viewerRole, onChange }: { pid: 
 // ---------------------------------------------------------------- documents
 
 type TextRow = { test: string; group?: string; result: string; reference?: string };
-interface ReadOut { title: string; date: string | null; prescriber: string | null; labs: { marker: string; value: number; unit: string }[]; texts?: TextRow[]; meds: number; medList?: string[]; note: string | null; reread?: boolean; done?: boolean }
+type VisitRow = { date: string | null; doctorName: string; specialty?: string; hospital?: string; reason?: string; findings?: string; advice?: string; tests?: string; nextVisitDate?: string | null; medChanges?: { medName: string; change: string; newDose?: string; frequency?: string; detail?: string }[]; kind: "outside" | "treating" | "skip"; recorded?: string | null; nearby?: string | null };
+const shortDay = (d: string) => fmtDate(Date.parse(`${d}T12:00:00+05:30`), { day: "numeric", month: "short", year: "numeric" });
+interface ReadOut { title: string; date: string | null; prescriber: string | null; labs: { marker: string; value: number; unit: string; date?: string }[]; texts?: TextRow[]; visits?: VisitRow[]; meds: number; medList?: string[]; note: string | null; reread?: boolean; done?: boolean }
 const readOut = (raw: string | null): ReadOut | null => { try { return raw ? (JSON.parse(raw) as ReadOut) : null; } catch { return null; } };
 const READ_WINDOW_MS = 3 * 60_000; // after this, an unread document is treated as "couldn't be read"
 const readable = (d: DocItem) => readableType(d.mime, d.title);
@@ -309,22 +311,27 @@ const readable = (d: DocItem) => readableType(d.mime, d.title);
 const awaitingCheck = (d: DocItem) => { const x = readOut(d.extract); return !d.filed_at || (!!x && !!x.reread && !x.done); };
 
 /** What the AI read, for the checker to compare with the original, correct, and confirm or reject. */
-function ReadPanel({ d, busy, act, refresh }: { d: DocItem; busy: boolean; act: (b: Record<string, unknown>) => Promise<boolean>; refresh: () => void }) {
+function ReadPanel({ d, pid, busy, act, refresh }: { d: DocItem; pid: string; busy: boolean; act: (b: Record<string, unknown>) => Promise<boolean>; refresh: () => void }) {
   const x = readOut(d.extract);
   const waiting = !x && !d.filed_at && Date.now() - d.uploaded_at < READ_WINDOW_MS;
   useEffect(() => { if (!waiting) return; const i = setInterval(refresh, 5000); return () => clearInterval(i); }, [waiting, refresh]);
-  const [rows, setRows] = useState<{ marker: string; value: string }[]>([]);
+  const [rows, setRows] = useState<{ marker: string; value: string; date?: string }[]>([]);
+  const [visits, setVisits] = useState<VisitRow[]>([]);
   const [date, setDate] = useState("");
   const [adding, setAdding] = useState("");
   const [texts, setTexts] = useState<TextRow[]>([]);
-  useEffect(() => { setRows(x?.labs.map((l) => ({ marker: l.marker, value: String(l.value) })) ?? []); setTexts(x?.texts ?? []); setDate(x?.date ?? ""); }, [d.extract]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setRows(x?.labs.map((l) => ({ marker: l.marker, value: String(l.value), ...(l.date ? { date: l.date } : {}) })) ?? []); setTexts(x?.texts ?? []); setVisits(x?.visits ?? []); setDate(x?.date ?? ""); }, [d.extract]); // eslint-disable-line react-hooks/exhaustive-deps
   if (waiting) return <div className="callout" style={{ marginTop: 8 }}><span className="spin" /> Reading the document…</div>;
   if (!x) return <div className="callout" style={{ marginTop: 8 }}>The document couldn't be read automatically. Press Read again, or open it, enter any values by hand, then press Mark checked.</div>;
   const unit = (m: string) => x.labs.find((l) => l.marker === m)?.unit || LAB_META[m]?.unit || "";
-  const bad = rows.some((r) => r.value.trim() === "" || !Number.isFinite(Number(r.value)) || Number(r.value) < 0) || texts.some((r) => !r.result.trim());
+  const toRecord = visits.filter((v) => v.kind === "outside");
+  const bad = rows.some((r) => r.value.trim() === "" || !Number.isFinite(Number(r.value)) || Number(r.value) < 0) || texts.some((r) => !r.result.trim()) || toRecord.some((v) => !v.date || !v.doctorName.trim());
+  const setVisit = (i: number, patch: Partial<VisitRow>) => setVisits(visits.map((o, k) => (k === i ? { ...o, ...patch } : o)));
   const xt = x.texts ?? [];
   const changed = date !== (x.date ?? "") || rows.length !== x.labs.length || rows.some((r, i) => r.marker !== x.labs[i]?.marker || Number(r.value) !== x.labs[i]?.value)
-    || texts.length !== xt.length || texts.some((r, i) => r.test !== xt[i]?.test || r.result !== xt[i]?.result);
+    || texts.length !== xt.length || texts.some((r, i) => r.test !== xt[i]?.test || r.result !== xt[i]?.result)
+    || rows.some((r, i) => (r.date ?? "") !== (x.labs[i]?.date ?? ""))
+    || JSON.stringify(visits) !== JSON.stringify(x.visits ?? []);
   const groups = [...new Set(texts.map((r) => r.group ?? ""))];
   const unused = Object.keys(LAB_META).filter((m) => !rows.some((r) => r.marker === m));
   return (
@@ -334,8 +341,8 @@ function ReadPanel({ d, busy, act, refresh }: { d: DocItem; busy: boolean; act: 
       <label className="f" style={{ maxWidth: 220, marginTop: 6 }}>Report date<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
       {rows.length === 0 && <div className="muted" style={{ marginTop: 4 }}>No lab values found. Add any that are on the report.</div>}
       {rows.map((r, i) => (
-        <div key={r.marker} className="row" style={{ gap: 6, marginTop: 4, flexWrap: "nowrap", alignItems: "center" }}>
-          <span style={{ minWidth: 130 }}>{LAB_META[r.marker]?.label ?? r.marker}</span>
+        <div key={`${r.marker}|${r.date ?? ""}`} className="row" style={{ gap: 6, marginTop: 4, flexWrap: "nowrap", alignItems: "center" }}>
+          <span style={{ minWidth: 130 }}>{LAB_META[r.marker]?.label ?? r.marker}{r.date ? <span className="muted" style={{ fontSize: 12.5 }}> · taken {shortDay(r.date)}</span> : null}</span>
           <input className="num" inputMode="decimal" aria-label={`${LAB_META[r.marker]?.label ?? r.marker} value`} value={r.value} style={{ width: 90 }} onChange={(e) => setRows(rows.map((o, k) => (k === i ? { ...o, value: e.target.value } : o)))} />
           <span className="muted">{unit(r.marker)}</span>
           <button type="button" className="btn sm ghost" aria-label={`Remove ${LAB_META[r.marker]?.label ?? r.marker}`} onClick={() => setRows(rows.filter((_, k) => k !== i))}>✕</button>
@@ -345,6 +352,41 @@ function ReadPanel({ d, busy, act, refresh }: { d: DocItem; busy: boolean; act: 
         <div className="row" style={{ gap: 6, marginTop: 6 }}>
           <select value={adding} onChange={(e) => setAdding(e.target.value)} aria-label="Add a lab value"><option value="">+ Add a value the AI missed…</option>{unused.map((m) => <option key={m} value={m}>{LAB_META[m].label}</option>)}</select>
           {adding && <button type="button" className="btn sm" onClick={() => { setRows([...rows, { marker: adding, value: "" }]); setAdding(""); }}>Add</button>}
+        </div>
+      )}
+      {visits.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <b style={{ fontSize: 13 }}>{visits.length === 1 ? "Visit in this document" : `${visits.length} visits in this document`}</b>
+          {visits.map((v, i) => (
+            <div key={i} className="card" style={{ marginTop: 6, padding: 10 }}>
+              <div className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <input type="date" aria-label="Visit date" value={v.date ?? ""} style={{ width: 160 }} onChange={(e) => setVisit(i, { date: e.target.value || null })} />
+                <input aria-label="Doctor" value={v.doctorName} placeholder="Doctor's name" style={{ width: 200 }} onChange={(e) => setVisit(i, { doctorName: e.target.value })} />
+                {v.specialty && <span className="muted">{v.specialty}</span>}
+                <select aria-label="Where this visit goes" value={v.kind} onChange={(e) => setVisit(i, { kind: e.target.value as VisitRow["kind"] })}>
+                  <option value="outside">{v.recorded ? "Update the recorded visit" : "Record as a visit to another doctor"}</option>
+                  <option value="treating">Treating doctor&rsquo;s visit (enter on the visit form)</option>
+                  <option value="skip">Don&rsquo;t record</option>
+                </select>
+              </div>
+              {(v.recorded || v.nearby) && <div className="muted" style={{ marginTop: 4, color: "var(--c-amber)" }}>⚠ {v.recorded ?? v.nearby}</div>}
+              <div style={{ marginTop: 4, fontSize: 13.5 }}>
+                {v.reason && <div><b>Reason:</b> {v.reason}</div>}
+                {v.findings && <div><b>Findings:</b> {v.findings}</div>}
+                {v.advice && <div><b>Advice:</b> {v.advice}</div>}
+                {v.tests && <div><b>Tests ordered:</b> {v.tests}</div>}
+                {v.medChanges?.length ? <div><b>Medicines:</b> {v.medChanges.map((m) => `${m.medName} ${m.change.replace("_", " ")}${m.newDose ? ` ${m.newDose}` : ""}${m.frequency ? ` ${m.frequency}` : ""}`).join("; ")}</div> : null}
+                {v.nextVisitDate && <div><b>Next visit:</b> {shortDay(v.nextVisitDate)}</div>}
+              </div>
+              {v.kind === "outside" && !v.date && <div className="muted" style={{ color: "var(--c-red)" }}>Enter the date to record this visit.</div>}
+              {v.kind === "treating" && (
+                v.date
+                  ? <a className="btn sm" style={{ marginTop: 6 }} href={`/patients/${pid}/visit?date=${v.date}&fromDoc=${d.id}&v=${i}`}>Open the visit form for {shortDay(v.date)} ↗</a>
+                  : <div className="muted">Enter the date, then open the visit form.</div>
+              )}
+            </div>
+          ))}
+          <small className="muted">Visits to another doctor are recorded on their own dates when you file; nothing is sent to the family, and older medicine changes are kept as history. The treating doctor&rsquo;s visits set the care plan, so they&rsquo;re entered on the visit form.</small>
         </div>
       )}
       {texts.length > 0 && (
@@ -368,8 +410,8 @@ function ReadPanel({ d, busy, act, refresh }: { d: DocItem; busy: boolean; act: 
       {x.medList && x.medList.length > 0 && <div className="muted" style={{ marginTop: 6 }}>Medicines seen (not entered from here): {x.medList.join("; ")}</div>}
       {x.note && <div className="muted" style={{ marginTop: 4 }}>Note: {x.note}</div>}
       <div className="row" style={{ gap: 6, marginTop: 8 }}>
-        <button className="btn sm primary" disabled={busy || bad} title={bad ? "Every value needs a number, and every result some text (or remove it)" : undefined} onClick={() => act({ action: "autofile", id: d.id, date: date || null, labs: rows.map((r) => ({ marker: r.marker, value: Number(r.value) })), texts })}>
-          ✓ {changed ? "Save corrections" : "Reading is correct"}: file{rows.length + texts.length ? ` and enter ${[rows.length ? `${rows.length} value${rows.length > 1 ? "s" : ""}` : "", texts.length ? `${texts.length} other result${texts.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ")}` : ""}
+        <button className="btn sm primary" disabled={busy || bad} title={bad ? "Every value needs a number, every result some text, and every visit to record a date and a doctor" : undefined} onClick={() => act({ action: "autofile", id: d.id, date: date || null, labs: rows.map((r) => ({ marker: r.marker, value: Number(r.value), date: r.date ?? null })), texts, visits })}>
+          ✓ {changed ? "Save corrections" : "Reading is correct"}: file{rows.length + texts.length ? ` and enter ${[rows.length ? `${rows.length} value${rows.length > 1 ? "s" : ""}` : "", texts.length ? `${texts.length} other result${texts.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ")}` : ""}{toRecord.length ? `, record ${toRecord.length} visit${toRecord.length > 1 ? "s" : ""}` : ""}
         </button>
         <button className="btn sm" disabled={busy} title="Files the document and enters nothing; add the values by hand" onClick={() => act({ action: "autofile", id: d.id, reject: true })}>✗ Not usable: file without values</button>
       </div>
@@ -477,7 +519,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
                     <b>{d.title}</b> <span className="badge">{catLabel(d.category)}</span> {d.source === "whatsapp" && <span className="badge good">via WhatsApp</span>} {d.filed_at ? <span className="badge good" title={fmtDateTime(d.filed_at)}>Checked{d.filed_by_name ? ` by ${d.filed_by_name.split(" ").slice(0, 2).join(" ")}` : ""}</span> : <span className="badge warn">Needs check</span>}
                     <div className="muted">{fmtDateTime(d.uploaded_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ""} · {kb(d.size)}</div>
                     {d.notes && <div style={{ marginTop: 2 }}>{d.notes}</div>}
-                    {canEdit && readable(d) && awaitingCheck(d) && <ReadPanel d={d} busy={busy} act={act} refresh={onChange} />}
+                    {canEdit && readable(d) && awaitingCheck(d) && <ReadPanel d={d} pid={pid} busy={busy} act={act} refresh={onChange} />}
                     {d.mime.startsWith("audio/") && <audio src={`/api/documents/${d.id}`} controls preload="none" style={{ marginTop: 6, height: 32 }} />}
                   </>
                 )}
