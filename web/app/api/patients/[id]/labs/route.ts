@@ -1,4 +1,5 @@
 import { now } from "@/lib/clock";
+import { audit, get, run } from "@/lib/db";
 import { enterLabs, getPatient } from "@/lib/engine";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 import { LAB_META } from "@/lib/types";
@@ -12,7 +13,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const user = await sessionUser();
   if (!isClinician(user) || !getPatient(id) || !canView(user!, id)) return err("Care team only", 403);
-  const body = (await req.json().catch(() => ({}))) as { date?: string; values?: Record<string, unknown> };
+  const body = (await req.json().catch(() => ({}))) as { action?: string; kind?: string; labId?: number; date?: string; values?: Record<string, unknown> };
+  // One wrong value: removed from the lab history (logged).
+  if (body.action === "delete") {
+    const table = body.kind === "text" ? "lab_texts" : "labs";
+    const row = get<{ id: number }>(`SELECT id FROM ${table} WHERE id = ? AND patient_id = ?`, Number(body.labId), id);
+    if (!row) return err("Lab value not found", 404);
+    run(`DELETE FROM ${table} WHERE id = ?`, row.id);
+    audit(now(), user!.id, "LAB_VALUE_DELETED", "patient", id, { table, id: row.id });
+    return json({ ok: true });
+  }
   const t = now();
   let takenAt = t;
   if (body.date) {

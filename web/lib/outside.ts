@@ -630,7 +630,10 @@ export function saveDocumentVisit(pid: string, userId: string, docId: number | n
     if (treating && visitAt < treating.visit_at)
       run("UPDATE med_changes SET status = 'REVIEWED', reviewed_by = ?, reviewed_at = ? WHERE outside_visit_id = ? AND status = 'REPORTED'", userId, t, id);
     run("UPDATE outside_visits SET status = 'COMPLETE', updated_at = ? WHERE id = ?", t, id);
-    if (docId) run("UPDATE patient_documents SET outside_visit_id = COALESCE(outside_visit_id, ?) WHERE id = ?", id, docId);
+    if (docId) {
+      run("UPDATE patient_documents SET outside_visit_id = COALESCE(outside_visit_id, ?) WHERE id = ?", id, docId);
+      run("UPDATE outside_visits SET document_id = COALESCE(document_id, ?) WHERE id = ?", docId, id);
+    }
     audit(t, userId, prev ? "OUTSIDE_VISIT_UPDATED" : "OUTSIDE_VISIT_RECORDED", "patient", pid, { visit: id, source: "document", document: docId, changes: changes.length });
     return id;
   });

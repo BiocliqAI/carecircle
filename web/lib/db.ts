@@ -163,6 +163,8 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["med_changes", "new_dose", "TEXT"],
   ["med_changes", "new_times", "TEXT"],
   ["med_changes", "applied_at", "INTEGER"],
+  ["labs", "document_id", "INTEGER"], // the document a value was read from (so deleting it can take its values along)
+  ["outside_visits", "document_id", "INTEGER"],
 ];
 
 function migrate(db: DatabaseSyncT) {
@@ -217,7 +219,7 @@ export function resetDb(): void {
   migrate(db);
 }
 
-type Param = string | number | null | bigint | Uint8Array;
+export type Param = string | number | null | bigint | Uint8Array;
 
 export function all<T = Record<string, unknown>>(sql: string, ...params: Param[]): T[] {
   return getDb().prepare(sql).all(...params) as T[];

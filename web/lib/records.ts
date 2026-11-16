@@ -171,6 +171,8 @@ export interface DocumentRow {
   filed_at: number | null; // null = uploaded but not yet checked by a person
   filed_by_name: string | null;
   extract: string | null; // what the AI read from the file (JSON), for the checker to confirm
+  filed_labs: number; // lab values / results entered from it
+  filed_visits: number; // visits to other doctors recorded from it
   patient_id: string;
   title: string;
   category: string;
@@ -185,7 +187,7 @@ export interface DocumentRow {
 
 export const listDocuments = (pid: string) =>
   all<DocumentRow>(
-    "SELECT d.id, d.filed_at, f.name AS filed_by_name, d.extract, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by LEFT JOIN users f ON f.id = d.filed_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
+    "SELECT d.id, d.filed_at, f.name AS filed_by_name, d.extract, (SELECT COUNT(*) FROM labs l WHERE l.document_id = d.id) + (SELECT COUNT(*) FROM lab_texts x WHERE x.document_id = d.id) AS filed_labs, (SELECT COUNT(*) FROM outside_visits o WHERE o.document_id = d.id) AS filed_visits, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by LEFT JOIN users f ON f.id = d.filed_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
     pid,
   );
 
@@ -225,11 +227,38 @@ export function verifyDocument(id: number, t: number, actor: string) {
   audit(t, actor, "DOCUMENT_VERIFIED", "patient", d.patient_id, { document: id });
 }
 
-export function deleteDocument(id: number, t: number, actor: string) {
+/**
+ * Deletes a document. With `withData`, what was filed from it goes too: its lab values and other lab results, and
+ * the visits to other doctors recorded from it (except one whose medicine changes the clinic already applied to the plan).
+ */
+export function deleteDocument(id: number, t: number, actor: string, withData = false): { labs: number; visits: number; keptVisits: number } {
   const d = get<{ patient_id: string }>("SELECT patient_id FROM patient_documents WHERE id = ?", id);
   if (!d) throw new Error("Document not found");
-  run("DELETE FROM patient_documents WHERE id = ?", id);
-  audit(t, actor, "DOCUMENT_DELETED", "patient", d.patient_id, { document: id });
+  const out = { labs: 0, visits: 0, keptVisits: 0 };
+  tx(() => {
+    if (withData) {
+      out.labs = run("DELETE FROM labs WHERE document_id = ?", id).changes + run("DELETE FROM lab_texts WHERE document_id = ?", id).changes;
+      for (const v of all<{ id: number }>("SELECT id FROM outside_visits WHERE document_id = ?", id)) {
+        if (get("SELECT 1 FROM med_changes WHERE outside_visit_id = ? AND applied_at IS NOT NULL", v.id)) { out.keptVisits++; continue; }
+        run("DELETE FROM med_changes WHERE outside_visit_id = ?", v.id);
+        run("UPDATE patient_documents SET outside_visit_id = NULL WHERE outside_visit_id = ?", v.id);
+        run("DELETE FROM outside_visits WHERE id = ?", v.id);
+        out.visits++;
+      }
+    }
+    run("DELETE FROM patient_documents WHERE id = ?", id);
+    audit(t, actor, "DOCUMENT_DELETED", "patient", d.patient_id, { document: id, ...(withData ? out : {}) });
+  });
+  return out;
+}
+
+/** What was filed from a document (shown before deleting it). */
+export function documentData(id: number): { labs: number; visits: number } {
+  const n = (sql: string) => get<{ n: number }>(sql, id)?.n ?? 0;
+  return {
+    labs: n("SELECT COUNT(*) AS n FROM labs WHERE document_id = ?") + n("SELECT COUNT(*) AS n FROM lab_texts WHERE document_id = ?"),
+    visits: n("SELECT COUNT(*) AS n FROM outside_visits WHERE document_id = ?"),
+  };
 }
 
 // ---------------------------------------------------------------- WhatsApp SOS

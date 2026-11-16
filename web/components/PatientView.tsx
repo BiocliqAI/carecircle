@@ -36,7 +36,8 @@ export interface Data {
   /** Set while visits are being entered from past records: no reminders or messages until "Start care plan". */
   planPausedAt?: number | null;
   /** Lab results that aren't plain numbers, newest first. */
-  labTexts?: { test: string; grp: string | null; result: string; reference: string | null; taken_at: number }[];
+  labTexts?: { id: number; test: string; grp: string | null; result: string; reference: string | null; taken_at: number }[];
+  labValues?: { id: number; marker: string; value: number; taken_at: number; source: string }[];
   summary: IntervalSummary | null;
   open: EscalationView[];
   timeline: TL[];

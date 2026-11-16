@@ -221,7 +221,12 @@ export function autoFile(docId: number, userId: string, t: number, edit: ReadEdi
     const takenAt = Math.min(day ? Date.parse(`${day}T09:00:00+05:30`) : at, t);
     const fresh = labsIn.filter((l) => (l.date ?? "") === day).map(({ marker, value }) => ({ marker, value }))
       .filter((l) => !get("SELECT 1 FROM labs WHERE patient_id = ? AND marker = ? AND taken_at >= ? AND taken_at < ?", p.id, l.marker, takenAt - 9 * 3_600_000, takenAt + 15 * 3_600_000));
-    if (fresh.length) { enterLabs(p.id, fresh, takenAt, userId, t); labs += fresh.length; }
+    if (fresh.length) {
+      const last = get<{ m: number | null }>("SELECT MAX(id) AS m FROM labs")?.m ?? 0;
+      enterLabs(p.id, fresh, takenAt, userId, t);
+      run("UPDATE labs SET document_id = ? WHERE patient_id = ? AND id > ?", docId, p.id, last); // so deleting the document can take these along
+      labs += fresh.length;
+    }
   }
   const texts = textsIn.length ? enterTexts(p.id, textsIn, Math.min(at, t), userId, docId) : 0;
   let visits = 0;

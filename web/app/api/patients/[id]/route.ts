@@ -112,7 +112,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     documents: listDocuments(id),
     labMarkers: loadLearnedMarkers(),
     // Results that aren't plain numbers (urine routine, deposits…), newest first.
-    labTexts: all<{ test: string; grp: string | null; result: string; reference: string | null; taken_at: number }>("SELECT test, grp, result, reference, taken_at FROM lab_texts WHERE patient_id = ? ORDER BY taken_at DESC, id LIMIT 500", id),
+    labTexts: all<{ id: number; test: string; grp: string | null; result: string; reference: string | null; taken_at: number }>("SELECT id, test, grp, result, reference, taken_at FROM lab_texts WHERE patient_id = ? ORDER BY taken_at DESC, id LIMIT 500", id),
+    // Every lab value, newest first, for the care team to check or remove a wrong one.
+    labValues: user.role === "DOCTOR" || user.role === "PA"
+      ? all<{ id: number; marker: string; value: number; taken_at: number; source: string }>("SELECT id, marker, value, taken_at, source FROM labs WHERE patient_id = ? ORDER BY taken_at DESC, id LIMIT 1000", id)
+      : [],
   });
 }
 
