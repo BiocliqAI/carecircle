@@ -2,7 +2,7 @@ import { now } from "@/lib/clock";
 import { getPatient, getUser } from "@/lib/engine";
 import { loadLearnedMarkers } from "@/lib/labmarkers";
 import { markCounts } from "@/lib/historyspec";
-import { addRecord, addTypedRecord, confirmedOnboarding, getOnboarding, historyVersions, removedFrom, confirmOnboarding, startUpdate, currentOnboarding, draftOf, moveRecord, openItems, progress, rebuildDraft, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
+import { addRecord, addTypedRecord, settleConfirmedLabs, confirmedOnboarding, getOnboarding, historyVersions, removedFrom, confirmOnboarding, startUpdate, currentOnboarding, draftOf, moveRecord, openItems, progress, rebuildDraft, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +29,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const p = getPatient(id)!;
   const o = currentOnboarding(id);
   if (o && o.status === "COLLECTING") resumeReading(o.id);
+  if (o) settleConfirmedLabs(o);
   const fresh = o ? currentOnboarding(id)! : null;
   const draft = draftOf(fresh ?? undefined);
   // The history as last confirmed (shown on the chart while an update to it is being checked).
