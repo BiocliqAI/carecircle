@@ -9,6 +9,7 @@ import { getBaseline } from "@/lib/clinic";
 import { getPrep } from "@/lib/prep";
 import { deletePatient, listDocuments, listNotes, updatePatient, type PatientEdit } from "@/lib/records";
 import { DAY } from "@/lib/time";
+import { loadLearnedMarkers } from "@/lib/labmarkers";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     })(),
     prep: user.role === "DOCTOR" || user.role === "PA" ? getPrep(id) : null,
     documents: listDocuments(id),
+    labMarkers: loadLearnedMarkers(),
   });
 }
 

@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { addLabMarkers, type LabMetaEntry } from "@/lib/types";
 
 export async function api<T = unknown>(path: string, opts?: { method?: string; body?: unknown }): Promise<T> {
   const r = await fetch(path, {
@@ -10,6 +11,9 @@ export async function api<T = unknown>(path: string, opts?: { method?: string; b
   });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((data as { error?: string }).error || `Request failed (${r.status})`);
+  // Lab tests learned from documents (sent with the session and each patient record) get their names and units here.
+  const learned = (data as { labMarkers?: Record<string, LabMetaEntry> }).labMarkers;
+  if (learned) addLabMarkers(learned);
   return data as T;
 }
 

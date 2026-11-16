@@ -216,7 +216,10 @@ export const SYMPTOMS: Record<string, string> = {
 };
 
 /** Lab catalogue (units as reported by Indian labs). `kidney` = shown in the kidney panel. */
-export const LAB_META: Record<string, { label: string; unit: string; kidney?: boolean; lowerBetter?: boolean; digits?: number }> = {
+export type LabMetaEntry = { label: string; unit: string; kidney?: boolean; lowerBetter?: boolean; digits?: number; learned?: boolean };
+/** Lab tests the record tracks. The built-in ones are below; tests first seen in a patient's documents are added at
+ *  run time (lib/labmarkers.ts on the server, addLabMarkers in the browser), so the list grows with what clinics send. */
+export const LAB_META: Record<string, LabMetaEntry> = {
   creatinine: { label: "Creatinine", unit: "mg/dL", kidney: true, lowerBetter: true, digits: 2 },
   egfr: { label: "eGFR", unit: "mL/min/1.73m²", kidney: true, digits: 0 },
   urea: { label: "Urea", unit: "mg/dL", kidney: true, lowerBetter: true, digits: 0 },
@@ -235,7 +238,29 @@ export const LAB_META: Record<string, { label: string; unit: string; kidney?: bo
   wbc: { label: "WBC", unit: "/µL", digits: 0 },
   ldl: { label: "LDL cholesterol", unit: "mg/dL", lowerBetter: true, digits: 0 },
   vitd: { label: "Vitamin D", unit: "ng/mL", digits: 1 },
+  ferritin: { label: "Ferritin", unit: "ng/mL", digits: 1 },
+  fbs: { label: "Fasting glucose", unit: "mg/dL", digits: 0 },
+  ppbs: { label: "Post-meal glucose", unit: "mg/dL", digits: 0 },
+  platelets: { label: "Platelets", unit: "lakh/µL", digits: 2 },
+  esr: { label: "ESR", unit: "mm/hr", lowerBetter: true, digits: 0 },
+  cholesterol: { label: "Total cholesterol", unit: "mg/dL", lowerBetter: true, digits: 0 },
+  triglycerides: { label: "Triglycerides", unit: "mg/dL", lowerBetter: true, digits: 0 },
+  hdl: { label: "HDL cholesterol", unit: "mg/dL", digits: 0 },
+  bilirubin: { label: "Total bilirubin", unit: "mg/dL", lowerBetter: true, digits: 2 },
+  total_protein: { label: "Total protein", unit: "g/dL", digits: 1 },
+  sgot: { label: "AST (SGOT)", unit: "U/L", lowerBetter: true, digits: 0 },
+  sgpt: { label: "ALT (SGPT)", unit: "U/L", lowerBetter: true, digits: 0 },
+  alp: { label: "Alkaline phosphatase", unit: "U/L", digits: 0 },
+  ggt: { label: "GGT", unit: "U/L", lowerBetter: true, digits: 0 },
+  tsh: { label: "TSH", unit: "mIU/L", digits: 2 },
+  psa: { label: "PSA (total)", unit: "ng/mL", lowerBetter: true, digits: 2 },
+  uacr: { label: "Urine albumin/creatinine ratio", unit: "mg/g", lowerBetter: true, digits: 0 },
 };
+
+/** Adds tests learned from documents to LAB_META. Never changes a test that is already known. */
+export function addLabMarkers(m: Record<string, LabMetaEntry> | null | undefined) {
+  for (const [k, v] of Object.entries(m ?? {})) if (!LAB_META[k] && v?.label && typeof v.unit === "string") LAB_META[k] = { ...v, learned: true };
+}
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
   sysHigh: 150,

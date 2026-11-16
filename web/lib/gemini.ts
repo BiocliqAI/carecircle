@@ -270,6 +270,7 @@ export async function analyzeDocumentOCR(opts: {
   imageBase64: string;
   mimeType: string;
   patientId?: string;
+  name?: string | null;
 }): Promise<OCROutput> {
   const cleanBase64 = opts.imageBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, "");
 
@@ -288,16 +289,19 @@ Extract all structured clinical entities conforming strictly to this JSON schema
   "doctorNotes": "Clinical impression, advice, or remarks",
   "extracted": {
     "vitals": [{"type": "bp"|"weight"|"glucose"|"hr"|"spo2"|"temp"|"pain", "label": "string", "v1": number, "v2": number|undefined, "unit": "string"}],
-    "labs": [{"marker": "creatinine"|"urea"|"potassium"|"sodium"|"hb"|"egfr"|"uric_acid"|"ntprobnp"|"albumin", "label": "string", "value": number, "unit": "string", "flag": "normal"|"high"|"low"|"critical"}],
+    "labs": [{"marker": one of the lab marker keys listed below, "label": "the test name as printed", "value": number, "unit": "string", "flag": "normal"|"high"|"low"|"critical"}],
     "medications": [{"name": "string", "dose": "string", "times": ["string"], "change": "started"|"stopped"|"dose_changed"|"continued", "prescriber": "string", "instructions": "string"}],
     "symptoms": [{"key": "string", "severity": "mild"|"moderate"|"severe", "text": "string"}]
   }
-}`;
+}
+
+${labInstructions()}`;
 
       const modelName = aiModel();
+      const { documentParts } = await import("./docread");
       const outputText = await aiCall(systemInstruction, [
-        { type: "text", text: "Extract all handwritten and printed medical information from this clinical document image into structured JSON." },
-        { type: opts.mimeType === "application/pdf" ? "document" : "image", data: cleanBase64, mime_type: opts.mimeType || "image/png" },
+        { type: "text", text: "Extract all handwritten and printed medical information from this clinical document into structured JSON. For a lab report, list every numeric result on every page." },
+        ...(await documentParts(cleanBase64, opts.mimeType || "image/png", opts.name)),
       ], true);
 
       if (outputText) {
@@ -649,9 +653,17 @@ Rules:
   }
 }
 
+/** The lab tests the record tracks, for the AI: key = name (unit), and how to fill "labs" from a report. */
+function labInstructions(markers: string[] = Object.keys(LAB_META)): string {
+  const list = markers.filter((m) => LAB_META[m]).map((m) => `${m} = ${LAB_META[m].label} (${LAB_META[m].unit})`).join("; ");
+  return `Lab marker keys (key = test (unit)): ${list}.
+Lab rules: put EVERY numeric result on the report whose test matches one of these keys into "labs" (one entry per test: a long report has many), using the key, not the printed name. Synonyms count: HbA1c / glycated haemoglobin = hba1c; Total WBC count / TLC = wbc; Platelet count = platelets; Glucose (fasting) / FBS = fbs; post-prandial / PPBS = ppbs; SGOT / AST = sgot; SGPT / ALT = sgpt; Bicarbonate / HCO3 / total CO2 = bicarbonate; Hb = hb. Give the value in the unit listed for its key; convert only when it is exact (platelets 194000 /µL or 194 ×10³/µL = 1.94 lakh/µL; WBC 7.9 ×10³/µL = 7900 /µL; creatinine in µmol/L ÷ 88.4 = mg/dL), otherwise leave it out. Leave out results that are not numbers (Absent, Normal, Positive) and urine dipstick tests unless a key is for urine.
+A numeric test that matches NO key (e.g. LDH, vitamin B12, procalcitonin) is still included: make up a short lowercase key from its usual abbreviation (letters, digits and underscores, e.g. "ldh", "vitamin_b12"), give its usual full name as "label" and its unit as printed as "unit". Never make a new key for a test that is already listed under another name; derived values (estimated average glucose, indirect bilirubin, LDL/HDL ratio) and red-cell indices count as tests too.`;
+}
+
 /** Reads a patient's old documents (discharge summaries, prescriptions, lab reports; photos or PDFs) into
  *  baseline-intake fields. The PA reviews every value before saving; nothing here is saved. */
-export async function extractBaselineAI(files: { base64: string; mime: string }[], labMarkers: string[]): Promise<Record<string, unknown> | null> {
+export async function extractBaselineAI(files: { base64: string; mime: string; name?: string | null }[], labMarkers: string[]): Promise<Record<string, unknown> | null> {
   const system = `You read a patient's old medical documents (discharge summaries, prescriptions, lab reports) from an Indian clinic and fill an intake form. You only copy what the documents say. Never guess, infer or add.
 
 Return JSON with exactly these keys (use "" , [] or null when a document does not say):
@@ -665,7 +677,7 @@ Return JSON with exactly these keys (use "" , [] or null when a document does no
  "history": "one short paragraph: surgeries, hospital admissions and stopped medicines with years and reasons, oldest first",
  "familyHistory": "text",
  "currentMeds": [{"name":"brand or generic as written","dose":"e.g. 40 mg","frequency":"OD|BD|TDS|QID|HS|weekly|PRN","purpose":"what it is for, only if written","prescriber":"only if written","documentDate":"YYYY-MM-DD" | null}],
- "labs": [{"marker": one of ${JSON.stringify(labMarkers)}, "value": number, "date": "YYYY-MM-DD"}],
+ "labs": [{"marker": a lab marker key (see below), "label": "the test name", "unit": "unit as printed", "value": number, "date": "YYYY-MM-DD"}],
  "notes": "anything useful that fits nowhere else, briefly",
  "warnings": ["things the reviewer should check, e.g. 'handwriting unclear for 2nd medicine', 'two documents disagree on metformin dose'"]
 }
@@ -673,13 +685,19 @@ Return JSON with exactly these keys (use "" , [] or null when a document does no
 Rules:
 - currentMeds: only medicines that are current as of the NEWEST document. A medicine the documents show as stopped goes in "history", never in currentMeds. If documents disagree, use the newest and add a warning.
 - Convert dose patterns to frequency: 1-0-0 or once = OD; 1-0-1 or twice = BD; 1-1-1 = TDS; 0-0-1 at night = HS.
-- labs: use only markers from the allowed list; convert nothing; take the date printed on that report. Skip anything unreadable.
+- labs: take the date printed on that report (the sample collection date). Skip anything unreadable.
+${labInstructions(labMarkers)}
 - Dates: if only month and year are printed use day 01.
 - Add a warning for every value you were unsure of.`;
   const input: AIPart[] = [{ type: "text", text: "Extract the intake form from these documents." }];
+  const { documentParts } = await import("./docread");
   for (const f of files) {
-    const mime = (f.mime || "image/jpeg").split(";")[0];
-    input.push({ type: mime === "application/pdf" ? "document" : "image", data: f.base64.replace(/^data:[^;]+;base64,/, ""), mime_type: mime });
+    try {
+      input.push(...(await documentParts(f.base64, f.mime || "image/jpeg", f.name)));
+    } catch (e) {
+      lastTranscribeError = (e as Error).message;
+      return null;
+    }
   }
   const text = await aiCall(system, input, true, "high");
   if (!text) return null;

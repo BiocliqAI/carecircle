@@ -6,6 +6,7 @@ import { ConsentList, type ConsentView } from "./baseline";
 import { Dictate } from "./Dictate";
 import { fmtDateTime } from "@/lib/time";
 import { LAB_META, MAX_CAREGIVERS } from "@/lib/types";
+import { DOCUMENT_ACCEPT, mimeFor, readableType } from "@/lib/mimetypes";
 
 export interface ProfilePatient { id: string; name: string; age: number | null; sex: string; phone: string; conditions: string; address: string; user_id?: string | null; doctor_id?: string }
 export interface ProfileCaregiver { id: string; name: string; relation: string | null; phone: string; level: number; user_id: string | null; dashboard?: number }
@@ -302,7 +303,7 @@ export function NotesTab({ pid, notes, viewerId, viewerRole, onChange }: { pid: 
 interface ReadOut { title: string; date: string | null; prescriber: string | null; labs: { marker: string; value: number; unit: string }[]; meds: number; medList?: string[]; note: string | null; reread?: boolean; done?: boolean }
 const readOut = (raw: string | null): ReadOut | null => { try { return raw ? (JSON.parse(raw) as ReadOut) : null; } catch { return null; } };
 const READ_WINDOW_MS = 3 * 60_000; // after this, an unread document is treated as "couldn't be read"
-const readable = (d: DocItem) => d.mime.startsWith("image/") || d.mime === "application/pdf";
+const readable = (d: DocItem) => readableType(d.mime, d.title);
 /** A reading still waiting for a person: on an unchecked document, or one read again on request. */
 const awaitingCheck = (d: DocItem) => { const x = readOut(d.extract); return !d.filed_at || (!!x && !!x.reread && !x.done); };
 
@@ -392,7 +393,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
       try {
         const base64 = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(file); });
         const title = single ? meta.title || file.name : file.name.replace(/\.[^.]+$/, "");
-        await api(`/api/patients/${pid}/documents`, { body: { action: "add", base64, mime: file.type, title, category: meta.category, notes: meta.notes } });
+        await api(`/api/patients/${pid}/documents`, { body: { action: "add", base64, mime: mimeFor(file.type, file.name), title, category: meta.category, notes: meta.notes } });
       } catch (e) {
         failed.push(file);
         errors.push(`${file.name}: ${(e as Error).message}`);
@@ -415,7 +416,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
         <section className="card">
           <div className="card-head"><h3>Add a document</h3><small>Photos, PDFs or scans up to {MAX_UPLOAD_MB} MB each. Pick several at once to upload them together. Every upload must be checked by a person before it counts as filed.</small></div>
           <div className="grid g4" style={{ alignItems: "end" }}>
-            <label className="f">Files<input key={fileKey} type="file" multiple accept="image/*,application/pdf,audio/*" onChange={(e) => { const fs = [...(e.target.files ?? [])]; setFiles(fs); setErr(null); if (fs.length === 1 && !meta.title) setMeta((m) => ({ ...m, title: fs[0].name.replace(/\.[^.]+$/, "") })); }} /></label>
+            <label className="f">Files<input key={fileKey} type="file" multiple accept={`${DOCUMENT_ACCEPT},audio/*`} onChange={(e) => { const fs = [...(e.target.files ?? [])]; setFiles(fs); setErr(null); if (fs.length === 1 && !meta.title) setMeta((m) => ({ ...m, title: fs[0].name.replace(/\.[^.]+$/, "") })); }} /></label>
             <label className="f">Title{files.length > 1 ? <input disabled value="" placeholder="Each file keeps its own name" /> : <input value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} placeholder="e.g. RFT 20 Sep" />}</label>
             <label className="f">Type
               <select value={meta.category} onChange={(e) => setMeta({ ...meta, category: e.target.value })}>{CATS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
@@ -430,7 +431,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
           </div>
         </section>
       )}
-      {canEdit && docs.some((d) => /^(image\/|application\/pdf$)/.test(d.mime)) && (
+      {canEdit && docs.some(readable) && (
         <div className="callout row between" style={{ gap: 10 }}>
           <span>Read these documents into the baseline: history, conditions, current medicines and labs. You check everything before it is saved.</span>
           <a className="btn sm" href={`/patients/${pid}/baseline`}>✨ Fill baseline from documents</a>

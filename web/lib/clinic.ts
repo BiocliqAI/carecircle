@@ -4,6 +4,7 @@
 import { all, audit, get, getSetting, resetDb, run, setSetting, tx } from "./db";
 import { resetClockCache } from "./clock";
 import { addLab, getPatient, getUser } from "./engine";
+import { resolveMarker } from "./labmarkers";
 import { LAB_META, type Baseline, type BaselineLab, type BaselineMed, type ClinicVitals, EMPTY_BASELINE } from "./types";
 
 export interface Clinic {
@@ -318,10 +319,11 @@ export function baselineFromExtraction(raw: Record<string, unknown>, t: number):
   // One reading per marker and date; the form's trend lines start from these.
   const seen = new Set<string>();
   for (const l of (Array.isArray(raw.labs) ? (raw.labs as Record<string, unknown>[]) : []).slice(0, 200)) {
-    const marker = str(l?.marker, 40);
     const v = num(l?.value);
     const d = date(l?.date);
-    if (!(marker in LAB_META) || v === undefined) continue;
+    if (v === undefined) continue;
+    const marker = resolveMarker(l?.marker, l?.label, l?.unit); // a test not seen before is learned now
+    if (!marker) continue;
     if (!d) { warnings.push(`${LAB_META[marker].label} ${v}: report date missing, left out.`); continue; }
     if (seen.has(marker + d)) continue;
     seen.add(marker + d);

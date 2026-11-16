@@ -8,6 +8,8 @@ import { analyzeDocumentOCR, isAIConfigured, type OCROutput } from "./gemini";
 import { addDocument, MAX_DOC_BYTES, MAX_DOC_LABEL } from "./records";
 import { fmtDate } from "./time";
 import { LAB_META } from "./types";
+import { resolveMarker } from "./labmarkers";
+import { readableType } from "./mimetypes";
 
 export interface DocExtract {
   category: string; // prescription | lab | discharge | other
@@ -37,12 +39,19 @@ export function extractLine(x: DocExtract): string {
 /** Reads one stored document in the background. Never throws; leaves nothing behind if the read fails. */
 export async function extractDocument(docId: number, opts: { reread?: boolean } = {}): Promise<DocExtract | null> {
   if (!isAIConfigured()) return null;
-  const d = get<{ patient_id: string; mime: string; data: Uint8Array; category: string }>("SELECT patient_id, mime, data, category FROM patient_documents WHERE id = ?", docId);
-  if (!d || !/^(image\/|application\/pdf$)/.test(d.mime)) return null;
+  const d = get<{ patient_id: string; mime: string; data: Uint8Array; category: string; title: string }>("SELECT patient_id, mime, data, category, title FROM patient_documents WHERE id = ?", docId);
+  if (!d || !readableType(d.mime, d.title)) return null;
   try {
-    const r = await analyzeDocumentOCR({ imageBase64: Buffer.from(d.data).toString("base64"), mimeType: d.mime, patientId: d.patient_id });
+    const r = await analyzeDocumentOCR({ imageBase64: Buffer.from(d.data).toString("base64"), mimeType: d.mime, patientId: d.patient_id, name: d.title });
     if (!r.source || /sample|simulator/i.test(r.source)) return null; // never present the simulated reader's output as a real reading (it is what a failed AI call falls back to)
-    const labs = r.extracted.labs.filter((l) => LAB_META[l.marker] && Number.isFinite(l.value)).map((l) => ({ marker: l.marker, value: l.value, unit: l.unit }));
+    // Every numeric result is kept: a test the record doesn't know yet is learned now (lib/labmarkers.ts).
+    const labs: DocExtract["labs"] = [];
+    for (const l of r.extracted.labs) {
+      const value = Number(l.value);
+      if (!Number.isFinite(value)) continue;
+      const marker = resolveMarker(l.marker, l.label, l.unit);
+      if (marker && !labs.some((x) => x.marker === marker)) labs.push({ marker, value, unit: l.unit || LAB_META[marker].unit });
+    }
     const date = r.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(r.documentDate) ? r.documentDate : null;
     const x: DocExtract = { category: DOC_TYPE_CATEGORY[r.documentType] ?? "other", title: (r.documentTypeName || "Medical document").slice(0, 90), date, prescriber: r.prescriber, labs, meds: r.extracted.medications.length, medList: r.extracted.medications.slice(0, 12).map((m) => `${m.name} ${m.dose ?? ""}`.trim().slice(0, 80)), note: r.doctorNotes?.slice(0, 300) ?? null, ...(opts.reread ? { reread: true } : {}) };
     run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify(x), docId);

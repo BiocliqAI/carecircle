@@ -10,12 +10,10 @@ import { blobToDataUrl, speechCtor, type SpeechRec } from "./speech";
 import { dayKey, fmtDate, fmtTime } from "@/lib/time";
 import { SYMPTOMS, VITAL_META } from "@/lib/types";
 import type { DraftMed, PlanDraft, SourceKind, Tag } from "@/lib/plandraft";
+import { DOCUMENT_ACCEPT, mimeFor } from "@/lib/mimetypes";
 
 interface Resp { draft: PlanDraft; blockers: { conflicts: number; toConfirm: number } | null; prep?: { flags: { text: string }[]; questions: string; readyAt: number | null }; hasVisit?: boolean; now?: number }
 interface PatientInfo { name: string; age: number | null; sex: string; conditions: string; visits: number; allergy: string | null }
-
-// Photos, PDFs, Word, Excel and text files (the server reads each one; see lib/docread.ts).
-const DOC_ACCEPT = "image/*,.pdf,.doc,.docx,.odt,.xls,.xlsx,.ods,.csv,.txt,application/pdf,application/msword,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 const TAG: Record<Tag, [string, string]> = { rx: ["Prescription", "t-rx"], talk: ["Conversation", "t-talk"], keep: ["Carried forward", "t-keep"], protocol: ["Protocol", "t-prot"], pa: ["PA flag", "t-pa"] };
 const CHG: Record<string, [string, string]> = { new: ["New", "c-new"], changed: ["Changed", "c-chg"], same: ["No change", "c-same"], stopped: ["Stopped", "c-stop"] };
@@ -72,7 +70,7 @@ export function PlanBuilder({ id }: { id: string }) {
     const files = [...(e.target.files ?? [])];
     e.target.value = "";
     for (const f of files) {
-      const ok = await act("rx", { action: "source", kind: "rx", base64: await blobToDataUrl(f), mime: f.type || "", name: f.name });
+      const ok = await act("rx", { action: "source", kind: "rx", base64: await blobToDataUrl(f), mime: mimeFor(f.type, f.name), name: f.name });
       if (!ok) break;
     }
   }
@@ -156,7 +154,7 @@ export function PlanBuilder({ id }: { id: string }) {
               )}
 
               <div className="pb-add">
-                <input ref={fileRef} type="file" multiple accept={DOC_ACCEPT} hidden onChange={addFile} />
+                <input ref={fileRef} type="file" multiple accept={DOCUMENT_ACCEPT} hidden onChange={addFile} />
                 <button className="v2-btn" disabled={!!busy} onClick={() => fileRef.current?.click()}>{busy === "rx" ? <><span className="spin" /> Reading…</> : <><Icon name="file" size={16} />Prescription or document</>}</button>
                 <Recorder kind="conversation" label="Listen to consultation" disabled={!!busy && busy !== "conversation"} onDone={(base64, mime, seconds) => act("conversation", { action: "source", kind: "conversation", base64, mime, seconds })} busy={busy === "conversation"} />
                 <Recorder kind="dictation" label="Dictate" disabled={!!busy && busy !== "dictation"} onDone={(base64, mime, seconds) => act("dictation", { action: "source", kind: "dictation", base64, mime, seconds })} busy={busy === "dictation"} />

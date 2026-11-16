@@ -99,6 +99,46 @@ describe("Claude for documents and reasoning, Gemini for speech", () => {
     await assert.rejects(ai.readPrescriptionAI("AAAA", "application/zip", "x.zip"), /can't be read/);
   });
 
+  it("asks for every lab test the record tracks when reading a report, not a fixed few", async () => {
+    const { LAB_META } = await import("../lib/types");
+    next = { text: JSON.stringify({ documentType: "lab_report", documentTypeName: "Lab report", transcription: "", documentDate: "2024-02-13", extracted: { vitals: [], medications: [], symptoms: [],
+      labs: [{ marker: "hba1c", label: "HBA1C", value: 7.0, unit: "%" }, { marker: "wbc", label: "Total WBC Count", value: 7900, unit: "/µL" }, { marker: "tsh", label: "TSH", value: 0.514, unit: "mIU/L" }, { marker: "creatinine", label: "Creatinine", value: 2.91, unit: "mg/dL" }] } }) };
+    const r = await ai.analyzeDocumentOCR({ imageBase64: "JVBERi0xLjQ=", mimeType: "application/pdf" });
+    assert.deepEqual(r.extracted.labs.map((l) => l.marker), ["hba1c", "wbc", "tsh", "creatinine"]);
+    const system = String(seen.at(-1)!.body.system);
+    for (const k of Object.keys(LAB_META)) assert.ok(system.includes(`${k} = ${LAB_META[k].label}`), `prompt lists ${k}`);
+    assert.match(system, /EVERY numeric result/);
+  });
+
+  it("learns a lab test it hasn't seen before and keeps every numeric result of a report", async () => {
+    const { LAB_META } = await import("../lib/types");
+    const { resolveMarker, loadLearnedMarkers } = await import("../lib/labmarkers");
+    const { getSetting } = await import("../lib/db");
+    // Known tests by key or by name; nothing new is learned for them.
+    assert.equal(resolveMarker("hba1c", "HbA1c", "%"), "hba1c");
+    assert.equal(resolveMarker("glycated_hb", "HbA1c", "%"), "hba1c");
+    assert.equal(resolveMarker("", "", "U/L"), null);
+    // A new test: learned once, stored, and from then on known.
+    assert.equal(LAB_META.ldh, undefined);
+    assert.equal(resolveMarker("LDH", "Lactate dehydrogenase", "U/L"), "ldh");
+    assert.deepEqual({ label: LAB_META.ldh.label, unit: LAB_META.ldh.unit }, { label: "Lactate dehydrogenase", unit: "U/L" });
+    assert.ok(JSON.parse(getSetting("lab_markers")!).ldh);
+    assert.ok(loadLearnedMarkers().ldh);
+
+    // Through the Documents tab reader: a new test in a report is kept, not dropped.
+    const { run } = await import("../lib/db");
+    const { extractDocument } = await import("../lib/docauto");
+    run("INSERT OR IGNORE INTO users(id, name, role, phone, title) VALUES('u_t_doc','Dr T','DOCTOR','+919800000077','Doctor')");
+    run("INSERT OR IGNORE INTO patients(id, user_id, name, age, sex, phone, conditions, address, doctor_id, created_at) VALUES('p_t', NULL, 'T Patient', 70, 'M', '+919800000078', '', '', 'u_t_doc', 0)");
+    const docId = run("INSERT INTO patient_documents(patient_id, title, category, mime, size, data, source, uploaded_by, uploaded_at) VALUES('p_t','report','lab','application/pdf',4,?, 'clinic','u_t_doc',0)", new Uint8Array([37, 80, 68, 70])).lastInsertRowid;
+    next = { text: JSON.stringify({ documentType: "lab_report", documentTypeName: "Lab report", transcription: "", documentDate: "2024-02-13", extracted: { vitals: [], medications: [], symptoms: [],
+      labs: [{ marker: "hba1c", label: "HBA1C", value: 7.0, unit: "%" }, { marker: "procalcitonin", label: "Procalcitonin", value: 0.12, unit: "ng/mL" }, { marker: "bad", label: "", value: "n/a", unit: "" }] } }) };
+    const x = await extractDocument(Number(docId));
+    assert.deepEqual(x!.labs.map((l) => l.marker), ["hba1c", "procalcitonin"]);
+    assert.equal(LAB_META.procalcitonin.label, "Procalcitonin");
+    assert.match(String(seen.at(-1)!.body.system), /ldh = Lactate dehydrogenase \(U\/L\)/, "learned tests are offered on the next read");
+  });
+
   it("parses WhatsApp messages with Claude", async () => {
     next = { text: JSON.stringify({ vitals: [{ type: "bp", v1: 150, v2: 95 }], meds: { allTaken: true, allMissed: false, taken: [], missed: [] }, physio: null, lifestyle: null, symptoms: [], noSymptoms: true, help: false, fluids: [], labs: [], medChanges: [], outsideVisit: false, language: "en" }) };
     const { parsed, parser } = await parseMessage("BP 150/95, took all tablets", [{ key: "lasix", name: "Lasix" }]);
