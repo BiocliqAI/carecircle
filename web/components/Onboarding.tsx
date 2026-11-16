@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useSession } from "./client";
 import { blobToDataUrl } from "./speech";
 import { DOCUMENT_ACCEPT, mimeFor } from "@/lib/mimetypes";
-import { LAB_META, VITAL_META, type VitalType } from "@/lib/types";
+import { LAB_META, VITAL_META, addLabMarkers, type LabMetaEntry, type VitalType } from "@/lib/types";
 import { fmtDate, fmtDateTime } from "@/lib/time";
 import { HistoryEditor } from "./HistorySections";
 import { LazyText } from "./LazyText";
@@ -23,6 +23,7 @@ interface Resp {
   isUpdate: boolean;
   marks: { added: number; changed: number } | null;
   removed: { section: string; text: string }[];
+  labMarkers?: Record<string, LabMetaEntry>;
 }
 type Tab = "summary" | "doctors" | "labs";
 
@@ -54,6 +55,7 @@ export function Onboarding({ pid }: { pid: string }) {
   const dirtyRef = useRef(false);
   const version = useRef(0);
   const load = useCallback(() => api<Resp>(`/api/patients/${pid}/onboarding`).then((r) => {
+    addLabMarkers(r.labMarkers);
     setD(r);
     setErr(null);
     setDraft((cur) => (dirtyRef.current && cur ? cur : r.draft));
@@ -227,6 +229,7 @@ function Records({ d, uploads, busy, act, onPick, onDrop, onReview }: { d: Resp;
           {failedUploads.map((u, i) => <div key={i} className="alert bad" style={{ marginTop: 8 }}><div><b>{u.name}</b> wasn&rsquo;t added: {u.error}</div></div>)}
         </section>
       )}
+      {!locked && <TypeIn busy={busy} act={act} />}
 
       {pr && pr.total > 0 && (
         <section className="card stack gap16">
@@ -278,6 +281,76 @@ function Records({ d, uploads, busy, act, onPick, onDrop, onReview }: { d: Resp;
       )}
       {unsorted.length > 0 && <div className="muted">{unsorted.length} record{unsorted.length > 1 ? "s" : ""} waiting to be read and sorted.</div>}
     </div>
+  );
+}
+
+/** Typing a record in instead of uploading one: lab values (test, value, unit) or a note, each with its date. */
+function TypeIn({ busy, act }: { busy: string | null; act: (k: string, b: Record<string, unknown>) => Promise<unknown> }) {
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<"values" | "note">("values");
+  const [date, setDate] = useState("");
+  const blank = () => ({ test: "", value: "", unit: "" });
+  const [rows, setRows] = useState([blank(), blank(), blank()]);
+  const [text, setText] = useState("");
+  const [done, setDone] = useState<string | null>(null);
+  const tests = Object.entries(LAB_META).filter(([, m]) => m.unit !== undefined).map(([k, m]) => ({ k, label: m.label, unit: m.unit }));
+  const unitFor = (name: string) => tests.find((x) => x.label.toLowerCase() === name.trim().toLowerCase())?.unit ?? "";
+  const filled = rows.filter((r) => r.test.trim() && r.value.trim());
+  async function save() {
+    const r = await act("type", kind === "values" ? { action: "type", kind: "values", date, values: filled } : { action: "type", kind: "note", date, text });
+    if (r) {
+      setDone(kind === "values" ? `${filled.length} value${filled.length === 1 ? "" : "s"} added for ${day(date)}.` : `Note for ${day(date)} added; it's being read now.`);
+      setRows([blank(), blank(), blank()]); setText("");
+    }
+  }
+  if (!open) return (
+    <div className="row" style={{ gap: 8 }}>
+      <button className="btn" onClick={() => setOpen(true)}>Type in lab values or a note</button>
+      <span className="muted">for results read out over the phone, copied from another system, or not on paper{done ? ` · ${done}` : ""}</span>
+    </div>
+  );
+  return (
+    <section className="card stack" style={{ gap: 10 }}>
+      <div className="card-head">
+        <h3 style={{ margin: 0 }}>Type in a record</h3>
+        <button className="btn sm ghost" onClick={() => setOpen(false)}>Close</button>
+      </div>
+      <div className="row" style={{ gap: 6 }}>
+        <button className={`chip-btn ${kind === "values" ? "on" : ""}`} onClick={() => setKind("values")}>Lab values</button>
+        <button className={`chip-btn ${kind === "note" ? "on" : ""}`} onClick={() => setKind("note")}>Note</button>
+        <label className="row" style={{ gap: 6, marginLeft: "auto" }}>{kind === "values" ? "Sample date" : "Date of the visit or record"}
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ width: 170 }} />
+        </label>
+      </div>
+      {kind === "values" ? (
+        <>
+          <datalist id="typein-tests">{tests.map((x) => <option key={x.k} value={x.label} />)}</datalist>
+          {rows.map((r, i) => (
+            <div key={i} className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
+              <input aria-label={`Test ${i + 1}`} list="typein-tests" placeholder="Test, e.g. Creatinine" value={r.test} style={{ flex: "2 1 200px" }}
+                onChange={(e) => { const v = e.target.value; setRows((x) => x.map((y, j) => (j === i ? { ...y, test: v, unit: y.unit || unitFor(v) } : y))); }} />
+              <input aria-label={`Value ${i + 1}`} placeholder="Value" value={r.value} style={{ flex: "1 1 100px" }} onChange={(e) => { const v = e.target.value; setRows((x) => x.map((y, j) => (j === i ? { ...y, value: v } : y))); }} />
+              <input aria-label={`Unit ${i + 1}`} placeholder="Unit" value={r.unit} style={{ flex: "1 1 100px" }} onChange={(e) => { const v = e.target.value; setRows((x) => x.map((y, j) => (j === i ? { ...y, unit: v } : y))); }} />
+              <button className="btn sm ghost" aria-label={`Remove row ${i + 1}`} onClick={() => setRows((x) => (x.length > 1 ? x.filter((_, j) => j !== i) : [blank()]))}>✕</button>
+            </div>
+          ))}
+          <div className="row between">
+            <button className="btn sm" onClick={() => setRows((x) => [...x, blank()])}>+ Another test</button>
+            <small className="muted">Pick a test from the list or type a new one. Results that aren&rsquo;t numbers (e.g. “Positive”) are kept as text.</small>
+          </div>
+        </>
+      ) : (
+        <>
+          <textarea aria-label="Note" rows={6} value={text} onChange={(e) => setText(e.target.value)}
+            placeholder={"What the record says, in your words or pasted. E.g. “Seen by Dr J Ezhilan, cardiology, MMM. Breathless on exertion. Lasix increased to 40 mg BD. Echo: EF 40%. Review in 1 month.”"} />
+          <small className="muted">It&rsquo;s read like an uploaded document: visits, medicines and values in it go into the history.</small>
+        </>
+      )}
+      <div className="row" style={{ justifyContent: "flex-end", gap: 8 }}>
+        {done && <span className="muted">{done}</span>}
+        <button className="btn primary" disabled={!!busy || !date || (kind === "values" ? !filled.length : text.trim().length < 5)} onClick={save}>{busy === "type" ? <span className="spin" /> : null} Add {kind === "values" ? `${filled.length || ""} value${filled.length === 1 ? "" : "s"}` : "note"}</button>
+      </div>
+    </section>
   );
 }
 

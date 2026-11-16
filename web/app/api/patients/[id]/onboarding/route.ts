@@ -2,7 +2,7 @@ import { now } from "@/lib/clock";
 import { getPatient, getUser } from "@/lib/engine";
 import { loadLearnedMarkers } from "@/lib/labmarkers";
 import { markCounts } from "@/lib/historyspec";
-import { addRecord, confirmedOnboarding, getOnboarding, historyVersions, removedFrom, confirmOnboarding, startUpdate, currentOnboarding, draftOf, moveRecord, openItems, progress, rebuildDraft, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
+import { addRecord, addTypedRecord, confirmedOnboarding, getOnboarding, historyVersions, removedFrom, confirmOnboarding, startUpdate, currentOnboarding, draftOf, moveRecord, openItems, progress, rebuildDraft, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
@@ -71,6 +71,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         if (!b.base64) return err("Choose a file");
         startOnboarding(id, user.id, t);
         return json({ ok: true, docId: addRecord(id, user.id, { base64: b.base64, mime: b.mime ?? "", name: b.name ?? "Record" }, t) });
+      }
+      case "type": {
+        startOnboarding(id, user.id, t);
+        return json({ ok: true, docId: addTypedRecord(id, user.id, b as never, t) });
       }
       case "remove": removeRecord(id, Number(b.docId), user.id, t); break;
       case "move": moveRecord(id, Number(b.docId), b.pile === "lab" ? "lab" : ("clinical" as Pile)); break;

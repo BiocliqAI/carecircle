@@ -11,6 +11,7 @@ import { saveDocumentVisit, upsertCareTeam } from "./outside";
 import { cleanBaseline, getBaseline, saveBaseline } from "./clinic";
 import { isAIConfigured, lastTranscribeError, synthesizeHistoryAI, updateHistoryAI } from "./gemini";
 import { LAB_META, type Baseline } from "./types";
+import { resolveMarker } from "./labmarkers";
 import { dayKey, fmtDate } from "./time";
 import { now as clockNow } from "./clock";
 import { HISTORY, cell, cleanHistory, emptyHistory, fieldsOf, listOf, rowText, unmarked, type HistField, type History, type HistRow, type ListSpec } from "./historyspec";
@@ -108,6 +109,45 @@ export function addRecord(pid: string, by: string, file: { base64: string; mime:
   run("UPDATE patient_documents SET onboarding_id = ? WHERE id = ?", o.id, docId);
   if (o.status !== "COLLECTING") run("UPDATE onboardings SET status = 'COLLECTING', updated_at = ? WHERE id = ?", t, o.id);
   queueRead(docId);
+  return docId;
+}
+
+/** A record typed in instead of uploaded: lab values (filed as typed, no AI needed) or a note (read like any document).
+ *  It is kept as a small text document, so it appears in the piles, can be opened, and is cited like an upload. */
+export function addTypedRecord(pid: string, by: string, input: { date?: string; kind?: string; text?: string; values?: { test?: string; value?: string; unit?: string }[] }, t: number): number {
+  const date = typeof input.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? input.date : null;
+  if (!date) throw new Error("Enter the date of the report or visit");
+  if (Date.parse(`${date}T00:00:00+05:30`) > t + 86_400_000) throw new Error("The date can't be in the future");
+  const shown = fmtDay(date);
+  if (input.kind === "note") {
+    const text = (input.text ?? "").trim().slice(0, 20_000);
+    if (text.length < 5) throw new Error("Type the note first");
+    const body = `Date of this record: ${date}\nTyped in by the clinic (not a scanned document).\n\n${text}`;
+    return addRecord(pid, by, { base64: `data:text/plain;base64,${Buffer.from(body, "utf8").toString("base64")}`, mime: "text/plain", name: `Typed note, ${shown}` }, t);
+  }
+  // Lab values: each test is matched to a known one by name (or learned as a new test); results that aren't numbers
+  // are kept as text results. Nothing is guessed, so no AI is needed.
+  const rows = (input.values ?? []).map((v) => ({ test: str(v.test, 60), value: str(v.value, 60), unit: str(v.unit, 20) })).filter((v) => v.test && v.value).slice(0, 80);
+  if (!rows.length) throw new Error("Enter at least one test and its value");
+  const labs: DocExtract["labs"] = [];
+  const texts: { test: string; result: string }[] = [];
+  for (const r of rows) {
+    const num = Number(r.value.replace(",", "."));
+    const marker = Number.isFinite(num) && /^[<>]?\s*-?[\d.,]+$/.test(r.value) ? resolveMarker(null, r.test, r.unit) : null;
+    if (marker) labs.push({ marker, value: num, unit: r.unit || LAB_META[marker]?.unit || "", date });
+    else texts.push({ test: r.test, result: [r.value, r.unit].filter(Boolean).join(" ") });
+  }
+  const lines = rows.map((r) => `${r.test}: ${r.value}${r.unit ? ` ${r.unit}` : ""}`);
+  const body = `Lab values typed in by the clinic. Sample date: ${date}\n\n${lines.join("\n")}`;
+  const title = `Lab values typed in, ${shown}`;
+  const o = openOnboarding(pid);
+  if (o.status === "SENT") throw new Error("This onboarding is with the doctor. Ask them to send it back to add records.");
+  const docId = addDocument(pid, { title, category: "lab", mime: "text/plain", base64: `data:text/plain;base64,${Buffer.from(body, "utf8").toString("base64")}`, notes: "Typed in at onboarding" }, t, by);
+  const x: DocExtract = { category: "lab", title, date, prescriber: null, labs, texts, kind: "lab_report", text: body, meds: 0, note: null };
+  run("UPDATE patient_documents SET onboarding_id = ?, pile = 'lab', pile_by = 'user', extract = ? WHERE id = ?", o.id, JSON.stringify(x), docId);
+  run("UPDATE onboardings SET status = 'COLLECTING', updated_at = ? WHERE id = ?", t, o.id);
+  audit(t, by, "ONBOARDING_VALUES_TYPED", "patient", pid, { onboarding: o.id, document: docId, values: rows.length });
+  maybeBuild(o.id);
   return docId;
 }
 
