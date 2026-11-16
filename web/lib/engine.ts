@@ -1222,22 +1222,30 @@ function announcePlan(p: PatientRow, doctorId: string, plan: CarePlan, nextVisit
   for (const c of getCaregivers(p.id)) if (c.user_id) sendWhatsApp({ userId: c.user_id, patientId: p.id, body: `👩‍⚕️ ${upd}${fam} You're Level ${c.level} in the care circle — I'll message you only if something needs attention.${next}`, kind: "info", at: t });
 }
 
+/** Whether the patient's care plan is running: there is a visit and the plan isn't paused / waiting to be started. */
+export function planRunning(pid: string): boolean {
+  return !!latestVisit(pid) && !planPausedSince(pid);
+}
+
 /**
- * Records a visit. `visitAt` defaults to now. A visit dated before today is history entered from records: nothing is
- * sent and the running schedule is left alone, except that if it becomes the latest visit the care plan is paused
- * (pending reminders cancelled) until startCarePlan. A visit dated today starts its plan straight away, as before.
+ * Records a visit. `visitAt` defaults to now. Starting the care plan is a separate decision (`start`):
+ * - A visit dated before today never starts it: nothing is sent and the running schedule is left alone, except that
+ *   if it becomes the latest visit the plan is paused (pending reminders cancelled) until startCarePlan.
+ * - A visit dated today starts its plan when `start` is true (the default, as before); with `start: false` it is
+ *   recorded like a past visit and the plan waits for "Start care plan".
  */
-export function createVisit(pid: string, doctorId: string, data: VisitInput, t: number, visitAt = t): string {
+export function createVisit(pid: string, doctorId: string, data: VisitInput, t: number, visitAt = t, opts: { start?: boolean } = {}): string {
   const p = getPatient(pid);
   if (!p) throw new Error("Patient not found");
   if (visitAt > t + 5 * MIN) throw new Error("The visit date can't be in the future");
   const pastDated = dayKey(visitAt) < dayKey(t);
+  const hold = pastDated || opts.start === false; // recorded without starting the plan
   const id = `v_${pid}_${t}`;
   tx(() => {
     const prev = latestVisit(pid);
     run("INSERT INTO visits(id, patient_id, doctor_id, visit_at, vitals, diagnosis, notes, plan, next_visit_at, created_at) VALUES(?,?,?,?,?,?,?,?,?,?)", id, pid, doctorId, visitAt, JSON.stringify(data.vitals), data.diagnosis, data.notes, JSON.stringify(data.plan), data.next_visit_at, t);
-    audit(t, doctorId, "VISIT_RECORDED", "visit", id, { diagnosis: data.diagnosis, ...(pastDated ? { visit_at: visitAt, past_dated: true } : {}) });
-    if (pastDated) {
+    audit(t, doctorId, "VISIT_RECORDED", "visit", id, { diagnosis: data.diagnosis, ...(pastDated ? { visit_at: visitAt, past_dated: true } : {}), ...(hold && !pastDated ? { plan_not_started: true } : {}) });
+    if (hold) {
       if (!prev || visitAt >= prev.visit_at) {
         // The newest visit now carries a plan that hasn't been started: stop the old schedule until the clinic starts it.
         run("UPDATE tasks SET status = 'CANCELLED' WHERE patient_id = ? AND status = 'PENDING'", pid);

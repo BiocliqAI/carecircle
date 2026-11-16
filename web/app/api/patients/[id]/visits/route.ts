@@ -48,7 +48,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const user = await sessionUser();
   if (!isClinician(user) || !canView(user!, id)) return err("Only the care team can record visits", 403);
   if (!getPatient(id)) return err("Not found", 404);
-  const body = (await req.json()) as { vitals: ClinicVitals; diagnosis: string; notes: string; plan: CarePlan; next_visit_at: number | null; visit_date?: string; visit_time?: string };
+  const body = (await req.json()) as { vitals: ClinicVitals; diagnosis: string; notes: string; plan: CarePlan; next_visit_at: number | null; visit_date?: string; visit_time?: string; start_plan?: boolean };
   const plan = validPlan(body.plan);
   if (typeof plan === "string") return err(plan);
   const vitals: ClinicVitals = {};
@@ -58,7 +58,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const t = now();
   const visitAt = visitAtFrom(body.visit_date, t, body.visit_time);
   if (typeof visitAt === "string") return err(visitAt);
-  const vid = createVisit(id, doctorId, { vitals, diagnosis: body.diagnosis || "", notes: body.notes || "", plan, next_visit_at: body.next_visit_at || null }, t, visitAt);
+  const vid = createVisit(id, doctorId, { vitals, diagnosis: body.diagnosis || "", notes: body.notes || "", plan, next_visit_at: body.next_visit_at || null }, t, visitAt, { start: body.start_plan !== false });
   const pastDated = dayKey(visitAt) < dayKey(t);
   if (!pastDated) clearPrep(id); // a past visit entered from records isn't the visit the assistant prepared for
   return json({ id: vid, pastDated, paused: !!planPausedSince(id) });

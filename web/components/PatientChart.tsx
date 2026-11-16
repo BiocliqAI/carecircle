@@ -485,10 +485,10 @@ function StartPlanBar({ d, onStarted }: { d: Data; onStarted: () => void }) {
   }
   return (
     <div className="pc-alert amber">
-      <span className="pc-alert-k">Care plan paused</span>
+      <span className="pc-alert-k">Care plan not started</span>
       <b className="num">Latest visit: {fmtDate(cur.visit_at)}</b>
       <span className="v2-sub" style={{ flex: 1, minWidth: 220, fontSize: 13 }}>
-        Visits are being entered from past records. No reminders, check-ins or WhatsApp messages go out, and only emergency rules apply, until the plan is started.
+        Visits are saved to the history without starting the plan. No reminders, check-ins or WhatsApp messages go out, and only emergency rules apply, until you start it.
         {err && <b style={{ color: "var(--c-red)" }}> {err}</b>}
       </span>
       {clinician && <button className="v2-btn primary" disabled={busy} onClick={start}>{busy ? <span className="spin" /> : null}Start care plan</button>}

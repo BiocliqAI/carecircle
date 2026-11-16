@@ -58,6 +58,7 @@ interface VisitData {
   baseline: Baseline | null;
   patient: { name: string; conditions: string };
   current: Visit | null;
+  planPausedAt?: number | null;
   visits: Visit[];
   summary: IntervalSummary | null;
   careTeam: { id: number; name: string; role: string }[];
@@ -87,6 +88,8 @@ function DoctorConsult({ id }: { id: string }) {
   // Visits can be entered from past records: a past date saves silently and pauses the plan until it's started.
   const [visitDate, setVisitDate] = useState("");
   const [visitTime, setVisitTime] = useState("11:00");
+  // Starting the care plan is its own decision: on by default only when the plan is already running.
+  const [startPlan, setStartPlan] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -127,6 +130,7 @@ function DoctorConsult({ id }: { id: string }) {
       const nd = new Date(dayStart(x.now) + 28 * DAY + TZ_OFFSET_MS + 12 * 3600_000).toISOString().slice(0, 10);
       setNextDate(nd);
       setVisitDate(dayKey(x.now));
+      setStartPlan(!!x.current && !x.planPausedAt);
     }).catch((e) => setErr(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, loading]);
@@ -159,9 +163,9 @@ function DoctorConsult({ id }: { id: string }) {
       if (bp) { v.sys = Number(bp[1]); v.dia = Number(bp[2]); }
       for (const k of ["weight", "hr", "glucose", "spo2", "pain"] as const) if (vitals[k]) v[k] = Number(vitals[k]);
       const next = nextDate ? Date.parse(`${nextDate}T11:00:00+05:30`) : null;
-      const r = await api<{ id: string; pastDated: boolean }>(`/api/patients/${id}/visits`, { body: { vitals: v, diagnosis, notes, plan, next_visit_at: next, visit_date: visitDate, visit_time: visitTime } });
+      const r = await api<{ id: string; pastDated: boolean }>(`/api/patients/${id}/visits`, { body: { vitals: v, diagnosis, notes, plan, next_visit_at: next, visit_date: visitDate, visit_time: visitTime, start_plan: !past && startPlan } });
       notifyChange();
-      router.push(d!.current && !r.pastDated ? `/patients/${id}/compare?b=${r.id}` : `/patients/${id}`);
+      router.push(d!.current && !r.pastDated && startPlan ? `/patients/${id}/compare?b=${r.id}` : `/patients/${id}`);
     } catch (e) {
       setErr((e as Error).message);
       setBusy(false);
@@ -302,7 +306,7 @@ function DoctorConsult({ id }: { id: string }) {
                 return (
                   <div key={k} className="row">
                     <label className={`check ${m ? "on" : ""}`} style={{ minWidth: 170 }}>
-                      <input type="checkbox" checked={!!m} onChange={(e) => up((p) => { if (e.target.checked) p.monitoring.push({ key: k, times: ["08:00"] }); else p.monitoring = p.monitoring.filter((x) => x.key !== k); })} />
+                      <input type="checkbox" style={{ width: 16, height: 16, minHeight: 0, margin: 0, padding: 0, flex: "none" }} checked={!!m} onChange={(e) => up((p) => { if (e.target.checked) p.monitoring.push({ key: k, times: ["08:00"] }); else p.monitoring = p.monitoring.filter((x) => x.key !== k); })} />
                       {VITAL_META[k].label}
                     </label>
                     {m && (
@@ -396,8 +400,8 @@ function DoctorConsult({ id }: { id: string }) {
           </div>
 
           <section className="card wa-preview">
-            <div className="card-head">{past
-              ? <><h3>Not sent: past visit</h3><small>Nothing goes on WhatsApp. If this is the latest visit, the plan is paused until you press Start care plan on the chart; this is what is sent then</small></>
+            <div className="card-head">{past || !startPlan
+              ? <><h3>Not sent{past ? ": past visit" : " yet"}</h3><small>Nothing goes on WhatsApp. If this is the latest visit, the plan is paused until you press Start care plan on the chart; this is what is sent then</small></>
               : <><h3>{d.patient.name.split(" ")[0]} will receive on WhatsApp</h3><small>The care circle is told the plan changed</small></>}</div>
             <div className="wa-preview-bubble">{planMessage(plan, d.doctor?.name ?? "Your doctor", nextDate)}</div>
           </section>
@@ -454,8 +458,9 @@ function DoctorConsult({ id }: { id: string }) {
         <label className="row" style={{ gap: 8, fontWeight: 600, fontSize: 14 }}>Visit date<input type="date" value={visitDate} max={today} onChange={(e) => pickDate(e.target.value)} style={{ width: "auto" }} /></label>
         {past && <input type="time" aria-label="Visit time" value={visitTime} onChange={(e) => setVisitTime(e.target.value)} style={{ width: "auto" }} />}
         <label className="row" style={{ gap: 8, fontWeight: 600, fontSize: 14 }}>Next visit<input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} style={{ width: "auto" }} /></label>
-        <span className="v2-sub" style={{ flex: 1, fontSize: 13.5 }}>{past ? "Past visit: saved to the history, nothing is sent." : changeSummary(plan, d.current?.plan ?? null)}</span>
-        <button className="v2-btn primary" style={{ minHeight: 40, padding: "0 18px", fontSize: 14 }} disabled={busy || (!!visitDate && visitDate > today)} onClick={save}>{busy ? <span className="spin" /> : null}{past ? "Save past visit" : d.current ? "Save and send plan" : "Save visit and start plan"}</button>
+        {!past && <label className="row" style={{ gap: 6, fontSize: 13.5, fontWeight: 600, flexWrap: "nowrap", whiteSpace: "nowrap" }} title="Starts reminders and check-ins from this visit's plan and sends it on WhatsApp. Leave it off while you are entering the patient's history; start it later from the chart."><input type="checkbox" checked={startPlan} onChange={(e) => setStartPlan(e.target.checked)} />Start the care plan now</label>}
+        <span className="v2-sub" style={{ flex: 1, fontSize: 13.5 }}>{past ? "Past visit: saved to the history, nothing is sent." : startPlan ? changeSummary(plan, d.current?.plan ?? null) : "Saved to the history; nothing is sent. Start the care plan from the chart when you're ready."}</span>
+        <button className="v2-btn primary" style={{ minHeight: 40, padding: "0 18px", fontSize: 14 }} disabled={busy || (!!visitDate && visitDate > today)} onClick={save}>{busy ? <span className="spin" /> : null}{past ? "Save past visit" : !startPlan ? "Save visit" : d.current ? "Save and send plan" : "Save visit and start plan"}</button>
       </div>
     </main>
   );

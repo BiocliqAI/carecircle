@@ -12,7 +12,7 @@ import { SYMPTOMS, VITAL_META } from "@/lib/types";
 import type { DraftMed, PlanDraft, SourceKind, Tag } from "@/lib/plandraft";
 import { DOCUMENT_ACCEPT, mimeFor } from "@/lib/mimetypes";
 
-interface Resp { draft: PlanDraft; blockers: { conflicts: number; toConfirm: number } | null; prep?: { flags: { text: string }[]; questions: string; readyAt: number | null }; hasVisit?: boolean; now?: number }
+interface Resp { draft: PlanDraft; blockers: { conflicts: number; toConfirm: number } | null; prep?: { flags: { text: string }[]; questions: string; readyAt: number | null }; hasVisit?: boolean; planRunning?: boolean; now?: number }
 interface PatientInfo { name: string; age: number | null; sex: string; conditions: string; visits: number; allergy: string | null }
 
 const TAG: Record<Tag, [string, string]> = { rx: ["Prescription", "t-rx"], talk: ["Conversation", "t-talk"], keep: ["Carried forward", "t-keep"], protocol: ["Protocol", "t-prot"], pa: ["PA flag", "t-pa"] };
@@ -34,6 +34,7 @@ export function PlanBuilder({ id }: { id: string }) {
   const [edit, setEdit] = useState<DraftMed | null>(null);
   const [nextVisit, setNextVisit] = useState("");
   const [visitDate, setVisitDate] = useState(""); // empty = today; an earlier date is a past visit entered from records
+  const [startPlan, setStartPlan] = useState<boolean | null>(null); // null = the default: on only when the plan is already running
   const [fam, setFam] = useState("");
   const [famBusy, setFamBusy] = useState(false);
   const [famVia, setFamVia] = useState<"ai" | "rules" | null>(null);
@@ -85,7 +86,7 @@ export function PlanBuilder({ id }: { id: string }) {
     setBusy("send");
     setErr(null);
     try {
-      await api(`/api/patients/${id}/plan-draft`, { body: { action: "send", nextVisit: nextVisit || null, familySummary: fam.trim() || undefined, visitDate: visitDate || null } });
+      await api(`/api/patients/${id}/plan-draft`, { body: { action: "send", nextVisit: nextVisit || null, familySummary: fam.trim() || undefined, visitDate: visitDate || null, startPlan: !past && starting } });
       notifyChange();
       router.push(`/patients/${id}`);
     } catch (e) {
@@ -104,6 +105,7 @@ export function PlanBuilder({ id }: { id: string }) {
   const step = !b ? 1 : canSend ? 3 : 2;
   const today = dayKey(d.now ?? Date.now());
   const past = !!visitDate && visitDate < today;
+  const starting = startPlan ?? !!d.planRunning;
 
   return (
     <main className="pc">
@@ -281,8 +283,8 @@ export function PlanBuilder({ id }: { id: string }) {
 
             {b && (
               <section className="v2-card pad wa-preview">
-                <div className="row between" style={{ marginBottom: 8 }}>{past
-                  ? <><h2>Not sent: past visit</h2><span className="v2-sub">sent only if you later press Start care plan</span></>
+                <div className="row between" style={{ marginBottom: 8 }}>{past || !starting
+                  ? <><h2>Not sent{past ? ": past visit" : " yet"}</h2><span className="v2-sub">sent only if you later press Start care plan</span></>
                   : <><h2>{p?.name.split(" ")[0] ?? "The patient"} will receive on WhatsApp</h2><span className="v2-sub">the care circle is told the plan changed</span></>}</div>
                 <div className="wa-preview-bubble">{preview(b, nextVisit)}{fam.trim() ? `\n\n📝 In short:\n${fam.trim()}` : ""}</div>
                 <div className="stack" style={{ marginTop: 12, gap: 6 }}>
@@ -302,12 +304,13 @@ export function PlanBuilder({ id }: { id: string }) {
               {bl?.conflicts ? <> · <b style={{ color: "var(--c-red)" }}>{bl.conflicts} conflict{bl.conflicts > 1 ? "s" : ""} to resolve</b></> : null}
               {bl?.toConfirm ? <> · <b style={{ color: "var(--c-amber)" }}>{bl.toConfirm} to confirm</b></> : null}
               {!isDoctor && <> · only the doctor can send</>}
-              {past && <> · past visit: saved to the history, nothing is sent</>}
+              {past ? <> · past visit: saved to the history, nothing is sent</> : !starting ? <> · saved to the history; nothing is sent until you start the care plan</> : null}
             </span>
+            {!past && <label className="row" style={{ gap: 6, fontSize: 13.5, fontWeight: 600, flexWrap: "nowrap", whiteSpace: "nowrap" }} title="Starts reminders and check-ins from this visit's plan and sends it on WhatsApp. Leave it off while you are entering the patient's history; start it later from the chart."><input type="checkbox" style={{ width: 16, height: 16, minHeight: 0, margin: 0, padding: 0, flex: "none" }} checked={starting} onChange={(e) => setStartPlan(e.target.checked)} />Start the care plan now</label>}
             <label className="row" style={{ gap: 6, fontSize: 13.5, fontWeight: 600 }}>Visit date<input type="date" value={visitDate || today} max={today} onChange={(e) => setVisitDate(e.target.value === today ? "" : e.target.value)} className="pb-date" /></label>
             <Link href={`/patients/${id}/visit?fromDraft=1`} className="v2-btn">Edit in full form</Link>
             <button className="v2-btn primary" style={{ minHeight: 40, padding: "0 18px", fontSize: 14 }} disabled={!canSend || busy === "send"} onClick={send}>
-              {busy === "send" ? <span className="spin" /> : null}{canSend ? (past ? "Save past visit" : "Send plan") : stale ? "Rebuild first" : bl?.conflicts || bl?.toConfirm ? "Resolve items first" : "Send plan"}
+              {busy === "send" ? <span className="spin" /> : null}{canSend ? (past ? "Save past visit" : starting ? "Send plan" : "Save visit") : stale ? "Rebuild first" : bl?.conflicts || bl?.toConfirm ? "Resolve items first" : "Send plan"}
             </button>
           </div>
         )}
