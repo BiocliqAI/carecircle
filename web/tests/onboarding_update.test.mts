@@ -39,6 +39,7 @@ const { addDocument } = await import("../lib/records");
 const onb = await import("../lib/onboarding");
 const { getBaseline } = await import("../lib/clinic");
 const { listOf, fieldsOf, markCounts } = await import("../lib/historyspec");
+const { clearRecords } = await import("../lib/clear");
 
 const T = Date.parse("2026-11-10T11:00:00+05:30");
 const FIRST = (note: number) => JSON.stringify({
@@ -153,14 +154,44 @@ describe("adding records to a history", () => {
     assert.equal(onb.draftOf(up)!.points[0].old, true);
     assert.equal(onb.confirmedOnboarding(pid)!.id, o.id, "the confirmed history stays until the update is confirmed");
 
+    assert.equal(up.status, "REVIEW", "an update opens ready to correct");
+    // The confirmed history is locked: changes go through the update, where they're marked.
+    const confirmedDraft = onb.draftOf(onb.confirmedOnboarding(pid))!;
+    const hand = structuredClone(onb.draftOf(up)!);
+    (hand.summary.conditions as Record<string, unknown>[])[0].status = "stable, on Ecosprin";     // edited
+    (hand.summary.snapshot as Record<string, { text: string }>).bloodGroup = { text: "O negative" } as never;
+    (hand.summary.resolved as Record<string, unknown>[]).push({ name: "TB", period: "2010", outcome: "Treated", sources: [] }); // added
+    (hand.summary.medicines as Record<string, unknown>[]).splice(0, 1);                           // taken out
+    onb.saveDraftEdits(pid, { summary: hand.summary }, pa, T + 1500);
+    const edited = onb.draftOf(onb.getOnboarding(upId))!;
+    const cad = listOf(edited.summary, "conditions")[0];
+    assert.match(String(cad._changed), /^Edited by /);
+    assert.match(String(cad._was), /stable/);
+    assert.equal(listOf(edited.summary, "resolved")[0]._new, true);
+    assert.equal(listOf(edited.summary, "conditions")[1]._changed, undefined, "untouched entries stay unmarked");
+    assert.deepEqual(onb.removedFrom(confirmedDraft.summary, edited.summary).map((r) => r.text), ["Ecosprin 75 mg · 1-0-0 · CAD"]);
+    // Put the medicine back: no longer "taken out".
+    edited.summary.medicines = confirmedDraft.summary.medicines;
+    onb.saveDraftEdits(pid, { summary: edited.summary }, pa, T + 1600);
+    assert.equal(onb.removedFrom(confirmedDraft.summary, onb.draftOf(onb.getOnboarding(upId))!.summary).length, 0);
+
     const nd = addDoc(pid, upId, pa.id, "Discharge Oct 2026", "clinical", discharge);
     reply = UPDATE(nd);
     const d = await onb.buildDraft(upId);
-    assert.deepEqual(markCounts(d.summary), { added: 3, changed: 1 });
-    assert.equal(onb.openItems(d).points, 1, "only the new point is open");
+    // The new record would change "CKD stage 3", which the doctor confirmed: it becomes a point, not a change.
+    const ckd = listOf(d.summary, "conditions").find((c) => String(c.name).startsWith("CKD"))!;
+    assert.equal(ckd.name, "CKD stage 3");
+    const clash = d.points.find((x) => x.title.includes("differs from the confirmed history"))!;
+    assert.match(clash.detail, /Confirmed: “CKD stage 3/);
+    assert.match(clash.detail, /CKD stage 4/);
+    assert.deepEqual(clash.sources, [nd]);
+    assert.equal(fieldsOf(d.summary, "alerts").anticoagulants._new, true, "an empty field can still be filled");
+    assert.equal(listOf(d.summary, "admissions")[0]._new, true);
+    assert.equal(listOf(d.summary, "conditions")[0]._changed?.startsWith("Edited by"), true, "the hand edit is kept");
+    assert.equal(onb.openItems(d).points, 2, "the new point and the disagreement");
     onb.sendToDoctor(pid, pa, T + 2000);
-    assert.equal(onb.draftOf(onb.getOnboarding(upId))!.points.filter((p) => p.status === "doctor" && !p.old).length, 1);
-    assert.equal(onb.onboardingTasks(doc).find((x) => x.patientId === pid)!.forDoctor, 1);
+    assert.equal(onb.draftOf(onb.getOnboarding(upId))!.points.filter((p) => p.status === "doctor" && !p.old).length, 2);
+    assert.equal(onb.onboardingTasks(doc).find((x) => x.patientId === pid)!.forDoctor, 2);
     assert.equal(onb.onboardingTasks(doc).filter((x) => x.patientId === pid).length, 1);
 
     const counts = onb.confirmOnboarding(pid, doc, T + 3000);
@@ -178,14 +209,28 @@ describe("adding records to a history", () => {
     assert.deepEqual(final.builtFrom, [note, nd]);
 
     const b2 = getBaseline(pid)!;
-    assert.deepEqual(b2.conditions.sort(), ["CKD stage 3", "CKD stage 4", "Coronary artery disease"].sort());
+    assert.equal(b2.bloodGroup, "O-", "a confirmed correction reaches the baseline");
+    assert.deepEqual(b2.conditions.sort(), ["CKD stage 3", "Coronary artery disease"].sort());
     assert.equal((b2.history.match(/Summary: /g) ?? []).length, 1, "the history text is replaced, not added twice");
     assert.match(b2.history, /Anticoagulant \/ antiplatelet: Clopidogrel/);
     assert.match(b2.history, /Fluid overload/);
     assert.ok(b2.history.startsWith(b1.history.split("\n")[0]));
 
+    // Both confirmed versions are kept, newest first; the first is untouched.
+    const versions = onb.historyVersions(pid);
+    assert.deepEqual(versions.map((v) => [v.n, v.kind, v.records]), [[2, "update", 1], [1, "first", 1]]);
+    assert.equal(listOf(onb.draftOf(onb.getOnboarding(o.id))!.summary, "conditions")[0].status, "stable", "version 1 still reads as confirmed");
+    assert.throws(() => onb.saveDraftEdits(pid, { summary: final.summary }, doc, T + 3500), /locked/);
+
     // And the next update starts from this one.
     const again = onb.startUpdate(pid, pa.id, T + 4000);
     assert.equal(onb.getOnboarding(again)!.base_id, upId);
+
+    // Clearing documents drops only the update in progress; the confirmed history goes only when chosen.
+    clearRecords(pid, ["documents"], T + 5000, doc.id);
+    assert.equal(onb.historyVersions(pid).length, 2);
+    assert.equal(onb.getOnboarding(again), undefined);
+    clearRecords(pid, ["history"], T + 6000, doc.id);
+    assert.equal(onb.historyVersions(pid).length, 0);
   });
 });

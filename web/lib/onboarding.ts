@@ -64,8 +64,9 @@ export function startOnboarding(pid: string, by: string, t: number): number {
 /** The patient's latest confirmed history, if any. */
 export const confirmedOnboarding = (pid: string) => get<OnboardingRow>("SELECT * FROM onboardings WHERE patient_id = ? AND status = 'CONFIRMED' ORDER BY id DESC LIMIT 1", pid);
 
-/** Opens an update to a confirmed history: it starts as a copy of that history, and the records added to it are read
- *  and folded in, marked as new or changed, for the doctor to confirm again. */
+/** Opens an update to a confirmed history (the only way to change it once confirmed): it starts as a copy of that
+ *  history; corrections and the records added to it are marked new or changed, for the doctor to confirm again.
+ *  The confirmed version itself is never edited: each confirmation is kept as its own version. */
 export function startUpdate(pid: string, by: string, t: number): number {
   const open = get<{ id: number }>("SELECT id FROM onboardings WHERE patient_id = ? AND status != 'CONFIRMED' ORDER BY id DESC LIMIT 1", pid);
   if (open) return open.id;
@@ -80,7 +81,8 @@ export function startUpdate(pid: string, by: string, t: number): number {
     merges: [],
     labs: d.labs.map(({ fresh: _f, ...x }) => x), texts: d.texts.map(({ fresh: _f, ...x }) => x), homes: d.homes.map(({ fresh: _f, ...x }) => x),
   };
-  const id = run("INSERT INTO onboardings(patient_id, status, draft, built_at, created_by, created_at, updated_at, base_id) VALUES(?,?,?,?,?,?,?,?)", pid, "COLLECTING", JSON.stringify(copy), t, by, t, t, base.id).lastInsertRowid;
+  // It opens ready to correct; adding records sends it to reading first.
+  const id = run("INSERT INTO onboardings(patient_id, status, draft, built_at, created_by, created_at, updated_at, base_id) VALUES(?,?,?,?,?,?,?,?)", pid, "REVIEW", JSON.stringify(copy), t, by, t, t, base.id).lastInsertRowid;
   audit(t, by, "HISTORY_UPDATE_STARTED", "patient", pid, { onboarding: id, base: base.id });
   return id;
 }
@@ -216,7 +218,8 @@ export function rebuildDraft(pid: string, by: string, t: number) {
   // From scratch: a first onboarding forgets its draft; an update goes back to the confirmed history it started from.
   const base = o.base_id ? getOnboarding(o.base_id) : null;
   const restart = base ? JSON.stringify({ ...draftOf(base)!, summary: unmarked(draftOf(base)!.summary), builtFrom: draftOf(base)!.builtFrom ?? builtSoFar(base), points: draftOf(base)!.points.map((x) => ({ ...x, old: true })), merges: [] }) : null;
-  run("UPDATE onboardings SET status = 'COLLECTING', draft = ?, build_error = NULL, updated_at = ? WHERE id = ?", restart, t, o.id);
+  const hasRecords = !!get("SELECT 1 FROM patient_documents WHERE onboarding_id = ?", o.id);
+  run("UPDATE onboardings SET status = ?, draft = ?, build_error = NULL, updated_at = ? WHERE id = ?", base && !hasRecords ? "REVIEW" : "COLLECTING", restart, t, o.id);
   audit(t, by, "ONBOARDING_REBUILD", "patient", pid, { onboarding: o.id });
   maybeBuild(o.id);
 }
@@ -387,7 +390,7 @@ async function addToDraft(o: OnboardingRow, prev: Draft, docs: ReadDoc[], p: { i
       labTrends: trends,
     });
     const valid = new Set([...d.builtFrom, ...docs.map((x) => x.id)]);
-    if (ai) applyUpdate(d, ai, valid, treating);
+    if (ai) applyUpdate(d, ai, valid, treating, !!o.base_id);
     else {
       error = `The new records couldn't be added to the history automatically (${lastTranscribeError ?? "AI unavailable"}). Their visits, lab values and readings were added; update the other sections by hand, or try again.`;
       for (const r of clinical) for (const v of r.x.visits ?? []) if (v.doctorName) addDoctor(d, { name: v.doctorName, specialty: v.specialty ?? "", hospital: v.hospital ?? "", role: treating && normDoc(v.doctorName) === normDoc(treating) ? "treating" : "consultant", seen: 1, aliases: [], add: true });
@@ -405,7 +408,13 @@ function addDoctor(d: Draft, doc: DoctorItem) {
 }
 
 /** Applies the AI's additions and changes to the history, marking each one. */
-function applyUpdate(d: Draft, ai: Record<string, unknown>, valid: Set<number>, treating: string | null) {
+function applyUpdate(d: Draft, ai: Record<string, unknown>, valid: Set<number>, treating: string | null, approved = false) {
+  // In an update, entries the doctor has confirmed are not rewritten by a new record: the disagreement becomes a point
+  // to confirm instead. Only entries added in this update can be changed.
+  const pointIds = new Set(d.points.map((x) => x.id));
+  const disagree = (where: string, was: string, now: string, why: string, sources: number[]) => d.points.push({
+    id: uniq(pointIds, "p"), title: `${where}: a new record differs from the confirmed history`,
+    detail: `Confirmed: “${was}”. ${why ? `${why}: ` : "New record: "}“${now}”. Update the entry if the new record is right.`, sources, status: "open" });
   const lists = Object.fromEntries(HISTORY.filter((x): x is ListSpec => x.kind === "list").map((x) => [x.key, x]));
   const add = (ai.add ?? {}) as Record<string, unknown>;
   for (const [key, rows] of Object.entries(add)) {
@@ -423,6 +432,7 @@ function applyUpdate(d: Draft, ai: Record<string, unknown>, valid: Set<number>, 
     if (!now || !Number.isInteger(i) || !rows[i]) continue;
     const old = rows[i];
     if (rowText(sec, now) === rowText(sec, old)) continue;
+    if (approved && !old._new) { disagree(sec.title, rowText(sec, old), rowText(sec, now), str(c.why, 300), now.sources); continue; }
     rows[i] = { ...now, sources: [...new Set([...old.sources, ...now.sources])], ...(old._new ? { _new: true } : { _changed: str(c.why, 300) || "Updated from a new record", _was: old._was ?? rowText(sec, old) }) };
   }
   for (const [key, fields] of Object.entries((ai.fields ?? {}) as Record<string, Record<string, { text?: unknown; sources?: unknown; why?: unknown }>>)) {
@@ -434,6 +444,7 @@ function applyUpdate(d: Draft, ai: Record<string, unknown>, valid: Set<number>, 
       const text = str(v?.text, 800);
       if (!v || !text || text === cur[f.key]?.text) continue;
       const old: HistField = cur[f.key] ?? { text: "", sources: [] };
+      if (approved && old.text && !old._new) { disagree(`${sec.title} – ${f.label}`, old.text, text, str(v.why, 300), ids(v.sources, valid)); continue; }
       cur[f.key] = { text, sources: [...new Set([...old.sources, ...ids(v.sources, valid)])], ...(old.text && !old._new ? { _changed: str(v.why, 300) || "Updated from a new record", _was: old._was ?? old.text } : { _new: true }) };
     }
     d.summary[key] = cur;
@@ -448,7 +459,6 @@ function applyUpdate(d: Draft, ai: Record<string, unknown>, valid: Set<number>, 
     const a = str(m.a, 80), b = str(m.b, 80);
     if (a && b && a !== b && d.doctors.some((x) => x.name === a) && d.doctors.some((x) => x.name === b) && !d.merges.some((y) => y.a === a && y.b === b)) d.merges.push({ a, b, reason: str(m.reason, 200) });
   }
-  const pointIds = new Set(d.points.map((x) => x.id));
   for (const x of arr(ai.points).filter((x) => str(x.title)).slice(0, 40)) d.points.push({ id: uniq(pointIds, "p"), title: str(x.title, 120), detail: str(x.detail, 400), sources: ids(x.sources, valid), status: "open" });
 }
 
@@ -503,19 +513,79 @@ function fromRecords(clinical: { id: number; x: DocExtract }[], treating: string
 
 // ---------------------------------------------------------------- editing, sending, confirming
 /** Saves the checker's edits (any part of the draft). After confirmation only the history can still be edited. */
+/** Saves the checker's edits to a draft in progress. A confirmed history can't be edited: corrections go through an
+ *  update (startUpdate), where every difference from the confirmed version is marked for the doctor. */
 export function saveDraftEdits(pid: string, edits: Partial<Draft>, by: UserRow, t: number) {
   const o = currentOnboarding(pid);
   if (!o) throw new Error("No onboarding for this patient");
+  if (o.status === "CONFIRMED") throw new Error("The confirmed history is locked. Use “Correct or add records” to propose a change for the doctor to confirm.");
   const d = draftOf(o);
   if (!d) throw new Error("The draft isn't ready yet");
   if (o.status === "SENT" && by.role !== "DOCTOR") throw new Error("This onboarding is with the doctor");
   const next: Draft = { ...d };
-  if (edits.summary) next.summary = cleanHistory(edits.summary, undefined, o.status !== "CONFIRMED");
-  if (o.status !== "CONFIRMED") {
-    for (const k of ["doctors", "merges", "points", "labs", "texts", "homes"] as const) if (Array.isArray(edits[k])) (next as unknown as Record<string, unknown>)[k] = edits[k];
+  if (edits.summary) {
+    next.summary = cleanHistory(edits.summary, undefined, true);
+    const base = o.base_id ? draftOf(getOnboarding(o.base_id)) : null;
+    if (base) markEdits(base.summary, next.summary, by.name);
   }
+  for (const k of ["doctors", "merges", "points", "labs", "texts", "homes"] as const) if (Array.isArray(edits[k])) (next as unknown as Record<string, unknown>)[k] = edits[k];
   run("UPDATE onboardings SET draft = ?, updated_at = ? WHERE id = ?", JSON.stringify(next), t, o.id);
-  if (o.status === "CONFIRMED") audit(t, by.id, "CLINICAL_HISTORY_EDITED", "patient", pid, { onboarding: o.id });
+}
+
+/** In an update, marks what a person changed by hand against the confirmed version, so the doctor sees it too:
+ *  an edited entry is "Changed" (with what it said before), a new one "New". Entries left as they were stay unmarked. */
+function markEdits(base: History, h: History, who: string) {
+  for (const sec of HISTORY) {
+    if (sec.kind === "list") {
+      const was = listOf(base, sec.key);
+      const texts = new Set(was.map((r) => rowText(sec, r)));
+      const key = sec.cols[0].key;
+      for (const r of listOf(h, sec.key)) {
+        const text = rowText(sec, r);
+        if (texts.has(text)) { if (!r._new) { delete r._changed; delete r._was; } continue; } // back as it was
+        if (r._new || r._changed) continue;
+        const twin = was.find((w) => cell(w, key) && cell(w, key) === cell(r, key));
+        if (twin) { r._changed = `Edited by ${who}`; r._was = rowText(sec, twin); } else r._new = true;
+      }
+    } else {
+      const was = fieldsOf(base, sec.key), now = fieldsOf(h, sec.key);
+      for (const f of sec.fields) {
+        const v = now[f.key];
+        if (!v) continue;
+        const before = was[f.key]?.text ?? "";
+        if (v.text === before) { delete v._new; delete v._changed; delete v._was; continue; }
+        if (v._new || v._changed) continue;
+        if (before) { v._changed = `Edited by ${who}`; v._was = before; } else v._new = true;
+      }
+    }
+  }
+}
+
+/** What an update takes out of the confirmed history (shown to the checker and the doctor). */
+export function removedFrom(base: History, h: History): { section: string; text: string }[] {
+  const out: { section: string; text: string }[] = [];
+  for (const sec of HISTORY) {
+    if (sec.kind !== "list") continue;
+    const now = listOf(h, sec.key);
+    const texts = new Set(now.map((r) => rowText(sec, r)));
+    const wasTexts = new Set(now.map((r) => r._was).filter(Boolean));
+    for (const w of listOf(base, sec.key)) {
+      const text = rowText(sec, w);
+      if (!texts.has(text) && !wasTexts.has(text)) out.push({ section: sec.title, text });
+    }
+  }
+  return out;
+}
+
+/** Every confirmed version of the patient's history, newest first. */
+export function historyVersions(pid: string) {
+  return all<{ id: number; base_id: number | null; confirmed_at: number; confirmed_by: string | null; created_by: string | null }>(
+    "SELECT id, base_id, confirmed_at, confirmed_by, created_by FROM onboardings WHERE patient_id = ? AND status = 'CONFIRMED' ORDER BY id DESC", pid,
+  ).map((v, i, list) => ({
+    id: v.id, n: list.length - i, confirmedAt: v.confirmed_at, confirmedBy: getUser(v.confirmed_by ?? "")?.name ?? null,
+    records: get<{ n: number }>("SELECT COUNT(*) AS n FROM patient_documents WHERE onboarding_id = ?", v.id)?.n ?? 0,
+    kind: v.base_id ? "update" as const : "first" as const,
+  }));
 }
 
 /** Things a person should look at before it goes to the doctor (or that the doctor has to answer). */
@@ -638,7 +708,8 @@ export function confirmOnboarding(pid: string, by: UserRow, t: number) {
     const blood = f("snapshot", "bloodGroup").match(/\b(A|B|AB|O)\s*(\+|-|positive|negative|pos|neg|\+ve|-ve)/i);
     const base = cleanBaseline({
       ...(prev ?? {}),
-      ...(blood && !prev?.bloodGroup ? { bloodGroup: `${blood[1].toUpperCase()}${/^(\+|pos|positive|\+ve)/i.test(blood[2]) ? "+" : "-"}` } : {}),
+      // Filled when empty, or replaced when the doctor confirmed a correction to it in an update.
+      ...(blood && (!prev?.bloodGroup || (baseDraft && fieldsOf(baseDraft.summary, "snapshot").bloodGroup?.text?.trim() !== f("snapshot", "bloodGroup"))) ? { bloodGroup: `${blood[1].toUpperCase()}${/^(\+|pos|positive|\+ve)/i.test(blood[2]) ? "+" : "-"}` } : {}),
       conditions: [...new Set([...(prev?.conditions ?? []), ...listOf(s, "conditions").map((c) => cell(c, "name")).filter(Boolean)])],
       allergies: f("alerts", "allergies") || prev?.allergies || "",
       history,

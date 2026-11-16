@@ -22,6 +22,7 @@ interface Resp {
   open: { points: number; forDoctor: number; labs: number; merges: number } | null;
   isUpdate: boolean;
   marks: { added: number; changed: number } | null;
+  removed: { section: string; text: string }[];
 }
 type Tab = "summary" | "doctors" | "labs";
 
@@ -155,9 +156,9 @@ export function Onboarding({ pid }: { pid: string }) {
 
       {status === "RETURNED" && <div className="alert warn" style={{ marginBottom: 12 }}><div><b>Sent back by {d.onboarding?.returnedBy ?? "the doctor"}{d.onboarding?.returnedAt ? ` · ${fmtDateTime(d.onboarding.returnedAt)}` : ""}.</b> {d.onboarding?.returnNote ?? "Please check and send again."}</div></div>}
       {status === "SENT" && !isDoctor && <div className="alert info" style={{ marginBottom: 12 }}><div><b>With {d.patient.doctorName ?? "the doctor"} for confirmation</b> since {d.onboarding?.sentAt ? fmtDateTime(d.onboarding.sentAt) : "—"}. You&rsquo;ll see it here if it comes back with questions.</div></div>}
-      {status === "CONFIRMED" && <div className="alert good" style={{ marginBottom: 12 }}><div><b>Confirmed by {d.onboarding?.confirmedBy ?? "the doctor"}</b>{d.onboarding?.confirmedAt ? ` · ${fmtDateTime(d.onboarding.confirmedAt)}` : ""}. The clinical history below can still be corrected. <Link href={`/patients/${pid}`}>Open the chart</Link></div>
-        <button className="btn sm primary" disabled={!!busy} onClick={() => act("update", { action: "update" }).then((r) => { if (r) { setTab("summary"); setView("records"); } })}>{busy === "update" ? <span className="spin" /> : null} Add records to history</button></div>}
-      {d.isUpdate && status !== "CONFIRMED" && <div className="alert info" style={{ marginBottom: 12 }}><div>Adding records to the confirmed history. The records are read and folded in; anything they add or change is marked <b>New</b> or <b>Changed</b> for {first(d.patient.doctorName) || "the doctor"} to confirm. The confirmed history stays on the chart until then.</div></div>}
+      {status === "CONFIRMED" && <div className="alert good" style={{ marginBottom: 12 }}><div><b>Confirmed by {d.onboarding?.confirmedBy ?? "the doctor"}</b>{d.onboarding?.confirmedAt ? ` · ${fmtDateTime(d.onboarding.confirmedAt)}` : ""}. This history is locked: to correct it or add records, open an update. Every change is marked for {first(d.patient.doctorName) || "the doctor"} to confirm, and this version is kept. <Link href={`/patients/${pid}`}>Open the chart</Link></div>
+        <button className="btn sm primary" disabled={!!busy} onClick={() => act("update", { action: "update" }).then((r) => { if (r) { setTab("summary"); setView(null); } })}>{busy === "update" ? <span className="spin" /> : null} Correct or add records</button></div>}
+      {d.isUpdate && status !== "CONFIRMED" && <div className="alert info" style={{ marginBottom: 12 }}><div>Updating the confirmed history. Correct entries here, or <b>Add more records</b>: anything that differs from the confirmed version is marked <b>New</b> or <b>Changed</b> for {first(d.patient.doctorName) || "the doctor"} to confirm. Where a new record disagrees with a confirmed entry, it&rsquo;s raised as a point rather than changed. The confirmed version stays on the chart until then.</div></div>}
       {err && <div className="alert bad" style={{ marginBottom: 12 }}><div>{err}</div></div>}
 
       {shown === "records" ? (
@@ -173,7 +174,7 @@ export function Onboarding({ pid }: { pid: string }) {
             </nav>
             {status !== "SENT" && status !== "CONFIRMED" && <button className="v2-btn" title="Your changes and answers so far are kept; the new records are added to them" onClick={() => setView("records")}>Add more records</button>}
           </div>
-          {tab === "summary" && <SummaryTab draft={draft} edit={edit} locked={locked} confirmed={status === "CONFIRMED"} isDoctor={isDoctor} reviewed={reviewedLine(pr, d.isUpdate)} marks={d.marks} isUpdate={d.isUpdate} />}
+          {tab === "summary" && <SummaryTab draft={draft} edit={edit} locked={locked || status === "CONFIRMED"} confirmed={status === "CONFIRMED"} removed={d.removed} isDoctor={isDoctor} reviewed={reviewedLine(pr, d.isUpdate)} marks={d.marks} isUpdate={d.isUpdate} />}
           {tab === "doctors" && <DoctorsTab draft={draft} edit={edit} locked={locked || status === "CONFIRMED"} />}
           {tab === "labs" && <LabsTab draft={draft} edit={edit} locked={locked || status === "CONFIRMED"} />}
 
@@ -184,7 +185,7 @@ export function Onboarding({ pid }: { pid: string }) {
             </div>
           )}
           {isDoctor && status !== "CONFIRMED" && status !== "COLLECTING" && (
-            <ConfirmPanel draft={draft} edit={edit} busy={busy} dirty={dirty} note={note} setNote={setNote} sent={status === "SENT"}
+            <ConfirmPanel update={d.isUpdate} draft={draft} edit={edit} busy={busy} dirty={dirty} note={note} setNote={setNote} sent={status === "SENT"}
               onConfirm={() => act("confirm", { action: "confirm" })} onReturn={() => act("return", { action: "return", note })} />
           )}
         </>
@@ -289,8 +290,8 @@ const In = ({ value, onChange, label, w, disabled, multiline }: { value: string;
 
 const Row = ({ children }: { children: React.ReactNode }) => <div className="row" style={{ gap: 8, padding: "8px 0", borderTop: "1px solid var(--line-2)", alignItems: "flex-start" }}>{children}</div>;
 
-function SummaryTab({ draft, edit, locked, confirmed, isDoctor, reviewed, marks, isUpdate }: { draft: Draft; edit: Edit; locked: boolean; confirmed: boolean; isDoctor: boolean; reviewed: string; marks: { added: number; changed: number } | null; isUpdate: boolean }) {
-  const any = !!marks && marks.added + marks.changed > 0;
+function SummaryTab({ draft, edit, locked, confirmed, isDoctor, reviewed, marks, isUpdate, removed }: { draft: Draft; edit: Edit; locked: boolean; confirmed: boolean; isDoctor: boolean; reviewed: string; marks: { added: number; changed: number } | null; isUpdate: boolean; removed: { section: string; text: string }[] }) {
+  const any = !!marks && marks.added + marks.changed + removed.length > 0;
   const [onlyMarked, setOnlyMarked] = useState(isUpdate);
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: 16 }}>
@@ -298,9 +299,14 @@ function SummaryTab({ draft, edit, locked, confirmed, isDoctor, reviewed, marks,
         <div className="muted">{reviewed}</div>
         {any && (
           <div className="callout row between" style={{ gap: 8 }}>
-            <span style={{ flex: "1 1 320px" }}><b>From the records just added:</b> {marks!.added} new, {marks!.changed} changed. They&rsquo;re marked below; hover a “Changed” mark to see what it said before.</span>
+            <span style={{ flex: "1 1 320px" }}><b>{isUpdate ? "Differences from the confirmed history:" : "From the records just added:"}</b> {marks!.added} new, {marks!.changed} changed{removed.length ? `, ${removed.length} taken out` : ""}. They&rsquo;re marked below; a “Changed” mark shows what it said before.</span>
             <label className="row" style={{ gap: 6, flexWrap: "nowrap", whiteSpace: "nowrap" }}><input type="checkbox" checked={onlyMarked} onChange={(e) => setOnlyMarked(e.target.checked)} style={{ width: "auto" }} /> Show only new and changed</label>
           </div>
+        )}
+        {removed.length > 0 && (
+          <div className="alert warn"><div><b>Taken out of the confirmed history</b>
+            <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{removed.map((r, i) => <li key={i}><span className="muted">{r.section}:</span> {r.text}</li>)}</ul>
+          </div></div>
         )}
         <HistoryEditor history={draft.summary} locked={locked} onlyMarked={any && onlyMarked} change={(fn) => edit((x) => fn(x.summary))} />
       </div>
@@ -496,10 +502,9 @@ function LabsTab({ draft, edit, locked }: { draft: Draft; edit: Edit; locked: bo
 }
 
 // ---------------------------------------------------------------- step 5: the doctor confirms
-function ConfirmPanel({ draft, edit, busy, dirty, note, setNote, sent, onConfirm, onReturn }: { draft: Draft; edit: Edit; busy: string | null; dirty: boolean; note: string; setNote: (s: string) => void; sent: boolean; onConfirm: () => void; onReturn: () => void }) {
+function ConfirmPanel({ update, draft, edit, busy, dirty, note, setNote, sent, onConfirm, onReturn }: { update: boolean; draft: Draft; edit: Edit; busy: string | null; dirty: boolean; note: string; setNote: (s: string) => void; sent: boolean; onConfirm: () => void; onReturn: () => void }) {
   const left = draft.points.map((p, i) => ({ p, i })).filter(({ p }) => p.status !== "resolved" && !p.old);
   const docs = draft.doctors.filter((d) => d.add && d.role !== "treating").length;
-  const update = draft.points.some((p) => p.old);
   const labs = draft.labs.filter((l) => l.value !== null && l.date && (!update || l.fresh)).length;
   const texts = draft.texts.filter((x) => !update || x.fresh).length, homes = draft.homes.filter((x) => !update || x.fresh).length;
   return (

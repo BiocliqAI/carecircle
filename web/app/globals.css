@@ -48,7 +48,8 @@ small, .muted { color: var(--ink-3); }
   padding: 10px 24px; background: #0b2530; color: #fff;
 }
 .topbar a { color: #d9f3ef; }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; color: #fff !important; }
+/* The app logo only: pills that use the "brand" colour (.badge.brand, .v2-count.brand) keep their own dark text. */
+.brand:not(.badge):not(.v2-count) { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; color: #fff !important; }
 .brand-mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, var(--brand-2), #22c55e); display: grid; place-items: center; font-size: 16px; }
 .topbar nav { display: flex; gap: 4px; margin-left: 12px; }
 .topbar nav a { padding: 6px 12px; border-radius: 8px; font-weight: 500; }
