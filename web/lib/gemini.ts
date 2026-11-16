@@ -560,11 +560,11 @@ export async function transcribeDictation(base64: string, mimeType: string, ctx:
  * One AI request. Text, photos and PDFs go to Claude when it's configured; audio (and anything Claude can't
  * read, such as HEIC photos) goes to Gemini. Returns null on failure, with the reason in lastTranscribeError.
  */
-async function aiCall(system: string, input: AIPart[], json = false, effort: Effort = "medium"): Promise<string | null> {
+async function aiCall(system: string, input: AIPart[], json = false, effort: Effort = "medium", limits: { maxTokens?: number; timeoutMs?: number } = {}): Promise<string | null> {
   lastTranscribeError = null;
   if (isClaudeConfigured() && claudeCanRead(input)) {
     try {
-      return await claudeText(system, input, { json, effort });
+      return await claudeText(system, input, { json, effort, ...limits });
     } catch (e) {
       lastTranscribeError = claudeError(e);
       console.error("[claude]", lastTranscribeError);
@@ -872,7 +872,7 @@ The treating doctor at this clinic is given.
 Return JSON with exactly these keys:
 {
  "history": {
-${historySchemaText()}
+${historySchemaText(["visits"])}
  },
  "doctors": [{"name": "Dr …", "specialty": "", "hospital": "", "role": "treating"|"consultant"|"lab", "seen": number of documents by them, "aliases": ["other spellings found"]}],
  "merges": [{"a": "doctor name", "b": "doctor name", "reason": "why they look like the same person"}],
@@ -890,13 +890,15 @@ Rules:
 - medicines: what the patient takes NOW, from the newest prescription or discharge list; a medicine stopped later is not current (add a point if unsure). Include OTC, supplements and AYUSH if reported.
 - medChanges: starts, stops, dose changes and switches across the records, newest first, with the reason when given; flag stops for side effects or non-response, and adherence problems.
 - labNotes: only abnormal or clinically significant tests, with the trend from labTrends (oldest to latest, a few values with dates) and a short comment. studies: imaging, ECG, echo, endoscopy, biopsy and other study reports with their key finding.
-- visits: every consultation with any doctor, newest first, one-line takeaway.
+- Do not list the consultations: they are gathered from each record separately. Use them to write the other sections.
+- Be brief: a few words per cell, at most about 25 words for a finding or trend. The history for a patient with hundreds of records must still be compact; group repeated events (e.g. "monthly dialysis reviews 2023–2025") rather than listing each one.
 - pending: tests, referrals, procedures or follow-ups that were advised and not shown as done in later records.
 - social: family history, occupation, living situation, caregiver and language when documented (caregiver and language may come from "patient").
 - inferences: things you can reasonably infer but that are not written (e.g. "likely CKD stage 4 from eGFR 22 in 2026, not named in any note"). Keep them out of the other sections.
 - doctors: every doctor who saw or treated the patient. role "treating" for the given treating doctor (match spellings), "lab" for names that only sign lab or imaging reports (pathologists, biochemists, radiologists), else "consultant". Put other spellings of the same doctor in aliases; if two entries might be one person but you are not sure, list both and add them to merges.
 - points: data gaps and conflicts that need a person: contradictions between documents (doses, procedure names, dates), unclear handwriting that matters, medicines that may have been stopped, values quoted without a report, missing records referred to (e.g. a discharge summary that is mentioned but not provided).`;
-  const text = await aiCall(system, [{ type: "text", text: JSON.stringify(input) }], true, "high");
+  // A long history for a patient with many records: the largest answer the model allows, and time to write it.
+  const text = await aiCall(system, [{ type: "text", text: JSON.stringify(input) }], true, "high", { maxTokens: 128_000, timeoutMs: 30 * 60_000 });
   if (!text) return null;
   try {
     return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;

@@ -173,6 +173,16 @@ export function progress(o: OnboardingRow) {
 }
 
 // ---------------------------------------------------------------- putting the draft together
+/** Puts the draft together again from the records already read (e.g. after the history couldn't be built). It runs in
+ *  the background; the screen shows "putting the history together" until it's done. Edits to the old draft are replaced. */
+export function rebuildDraft(pid: string, by: string, t: number) {
+  const o = openOnboarding(pid);
+  if (o.status === "SENT") throw new Error("This onboarding is with the doctor");
+  run("UPDATE onboardings SET status = 'COLLECTING', build_error = NULL, updated_at = ? WHERE id = ?", t, o.id);
+  audit(t, by, "ONBOARDING_REBUILD", "patient", pid, { onboarding: o.id });
+  maybeBuild(o.id);
+}
+
 function maybeBuild(onbId: number) {
   const o = getOnboarding(onbId);
   if (!o || o.status !== "COLLECTING" || Q.building.has(onbId)) return;
@@ -242,16 +252,22 @@ export async function buildDraft(onbId: number): Promise<Draft> {
   const trends: Record<string, string[]> = {};
   for (const l of [...labs].filter((x) => x.value !== null && x.date).sort((a, b) => a.date!.localeCompare(b.date!))) (trends[LAB_META[l.marker]?.label ?? l.marker] ??= []).push(`${l.date}: ${l.value} ${l.unit}`.trim());
   const caregivers = all<{ name: string; relation: string | null }>("SELECT name, relation FROM caregivers WHERE patient_id = ? ORDER BY level", p.id);
+  // Keep the whole request well inside the model's context, however many records there are: each record's
+  // transcription is shortened only when the total would be too large (the visits and medicines found in it are kept).
+  const TEXT_BUDGET = 1_600_000; // characters, roughly 400k tokens
+  const perReport = Math.max(600, Math.min(2500, Math.floor((TEXT_BUDGET * 0.2) / Math.max(1, reports.length))));
+  const perDoc = Math.max(2000, Math.floor((TEXT_BUDGET - perReport * reports.length) / Math.max(1, clinical.length)));
   const input = {
     today: dayKey(clockNow()),
     treatingDoctor: treating,
     patient: { name: p.name, age: p.age, sex: p.sex, language: (p.user_id && getSetting(`lang:${p.user_id}`)) || null, caregivers },
-    documents: clinical.map((d) => ({ id: d.id, title: d.title, date: d.x.date, type: d.x.kind ?? d.x.category, prescriber: d.x.prescriber, text: d.x.text ?? "", visits: d.x.visits ?? [], medicines: d.x.medList ?? [] })),
-    reports: reports.map((d) => ({ id: d.id, title: d.title, date: d.x.date, type: d.x.kind ?? d.x.category, text: (d.x.text ?? "").slice(0, 2500) })),
+    documents: clinical.map((d) => ({ id: d.id, title: d.title, date: d.x.date, type: d.x.kind ?? d.x.category, prescriber: d.x.prescriber, text: (d.x.text ?? "").slice(0, perDoc), visits: d.x.visits ?? [], medicines: d.x.medList ?? [] })),
+    reports: reports.map((d) => ({ id: d.id, title: d.title, date: d.x.date, type: d.x.kind ?? d.x.category, text: (d.x.text ?? "").slice(0, perReport) })),
     labTrends: trends,
   };
   const ai = clinical.length ? await synthesizeHistoryAI(input) : null;
   const draft: Draft = ai ? fromAi(ai, valid, treating) : fromRecords(clinical, treating);
+  draft.summary.visits = visitRows(clinical);
   draft.labs = labs;
   draft.texts = texts;
   draft.homes = homes;
@@ -276,22 +292,36 @@ function fromAi(ai: Record<string, unknown>, valid: Set<number>, treating: strin
   };
 }
 
+/** The consultations, straight from what was read in each record: one row per doctor per day, newest first. */
+function visitRows(clinical: { id: number; x: DocExtract }[]): HistRow[] {
+  const rows: HistRow[] = [];
+  for (const d of clinical) for (const v of d.x.visits ?? []) {
+    if (v.kind === "skip" || (!v.doctorName && !v.date)) continue;
+    const takeaway = [v.reason, v.findings, v.advice].filter(Boolean).join(" · ");
+    const same = rows.find((r) => cell(r, "date") === (v.date ?? "") && normDoc(cell(r, "doctor")) === normDoc(v.doctorName));
+    if (same) {
+      if (!same.sources.includes(d.id)) same.sources.push(d.id);
+      if (takeaway && !cell(same, "takeaway").includes(takeaway)) same.takeaway = [cell(same, "takeaway"), takeaway].filter(Boolean).join(" · ").slice(0, 800);
+      for (const k of ["specialty", "hospital"] as const) if (!cell(same, k) && v[k]) same[k] = v[k];
+      continue;
+    }
+    rows.push({ date: v.date ?? "", doctor: v.doctorName ?? "", specialty: v.specialty ?? "", hospital: v.hospital ?? "", takeaway: takeaway.slice(0, 800), sources: [d.id] });
+  }
+  return rows.sort((a, b) => cell(b, "date").localeCompare(cell(a, "date")));
+}
+
 /** Without the AI's history: visits, doctors and the newest medicine list taken straight from each record. */
 function fromRecords(clinical: { id: number; x: DocExtract }[], treating: string | null): Draft {
-  const visits: HistRow[] = [];
   const doctors: DoctorItem[] = [];
   for (const d of clinical) for (const v of d.x.visits ?? []) {
-    visits.push({ date: v.date ?? "", doctor: v.doctorName ?? "", specialty: v.specialty ?? "", hospital: v.hospital ?? "", takeaway: [v.reason, v.findings, v.advice].filter(Boolean).join(" · ").slice(0, 800), sources: [d.id] });
     if (!v.doctorName) continue;
     const hit = doctors.find((x) => normDoc(x.name) === normDoc(v.doctorName));
     if (hit) { hit.seen++; continue; }
     const isTreating = !!treating && normDoc(v.doctorName) === normDoc(treating);
     doctors.push({ name: v.doctorName, specialty: v.specialty ?? "", hospital: v.hospital ?? "", role: isTreating ? "treating" : "consultant", seen: 1, aliases: [], add: !isTreating });
   }
-  visits.sort((a, b) => cell(b, "date").localeCompare(cell(a, "date")));
   const newest = [...clinical].filter((d) => d.x.medList?.length).sort((a, b) => (b.x.date ?? "").localeCompare(a.x.date ?? ""))[0];
   const summary = emptyHistory();
-  summary.visits = visits;
   summary.medicines = (newest?.x.medList ?? []).map((m) => ({ name: m, dose: "", indication: "", started: "", prescriber: newest!.x.prescriber ?? "", sources: [newest!.id] }));
   return { summary, doctors, merges: [], points: [], labs: [], texts: [], homes: [] };
 }
