@@ -15,6 +15,7 @@ interface Resp {
   isUpdate: boolean;
   /** The history as last confirmed (also while an update to it is being checked). */
   confirmed: { confirmedAt: number | null; confirmedBy: string | null; summary: History | null; points: { title: string; answer?: string }[] } | null;
+  versions: { id: number; n: number; confirmedAt: number; confirmedBy: string | null; records: number; kind: "first" | "update" }[];
 }
 
 const LABEL: Record<string, string> = { COLLECTING: "Records being added and read", REVIEW: "Being checked by the assistant", RETURNED: "Sent back by the doctor", SENT: "Waiting for the doctor to confirm" };
@@ -25,6 +26,13 @@ export function ClinicalHistoryCard({ pid }: { pid: string }) {
   const [full, setFull] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [old, setOld] = useState<{ n: number; summary: History; confirmedBy: string | null; confirmedAt: number } | null>(null);
+  async function view(v: Resp["versions"][number]) {
+    try {
+      const r = await api<{ summary: History }>(`/api/patients/${pid}/onboarding?version=${v.id}`);
+      setOld({ n: v.n, summary: r.summary, confirmedBy: v.confirmedBy, confirmedAt: v.confirmedAt });
+    } catch (e) { setErr((e as Error).message); }
+  }
   useEffect(() => { api<Resp>(`/api/patients/${pid}/onboarding`).then(setD).catch((e) => setErr((e as Error).message)); }, [pid]);
 
   async function start(action: "start" | "update") {
@@ -43,8 +51,8 @@ export function ClinicalHistoryCard({ pid }: { pid: string }) {
       <div className="card-head">
         <h3>Clinical history</h3>
         <span className="row" style={{ gap: 6 }}>
-          {c && !open && <button className="btn sm" disabled={busy} onClick={() => start("update")}>{busy ? <span className="spin" /> : null} Add records</button>}
-          {o && <Link className="btn sm" href={`/patients/${pid}/onboarding`}>{open ? "Open" : "Edit"}</Link>}
+          {c && !open && <button className="btn sm" disabled={busy} title="Corrections and new records are marked for the doctor to confirm; this version is kept" onClick={() => start("update")}>{busy ? <span className="spin" /> : null} Correct or add records</button>}
+          {open && <Link className="btn sm" href={`/patients/${pid}/onboarding`}>Open</Link>}
         </span>
       </div>
       {err && <div className="alert bad"><div>{err}</div></div>}
@@ -68,6 +76,25 @@ export function ClinicalHistoryCard({ pid }: { pid: string }) {
               )}
               <div><button className="btn sm ghost" onClick={() => setFull(!full)}>{full ? "Show less" : "Show the full history (all 13 sections)"}</button></div>
             </>
+          )}
+          {(d.versions?.length ?? 0) > 0 && (
+            <details>
+              <summary className="muted">Versions ({d.versions.length}) · locked once confirmed</summary>
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                {d.versions.map((v, i) => (
+                  <li key={v.id} style={{ padding: "2px 0" }}>
+                    <b>v{v.n}</b> · {v.kind === "first" ? "first history" : "update"}, {v.records} record{v.records === 1 ? "" : "s"} · confirmed by {v.confirmedBy ?? "the doctor"}, {fmtDateTime(v.confirmedAt)}{i === 0 ? " · current" : ""}
+                    {" "}<button className="tq-link" onClick={() => view(v)}>View</button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {old && (
+            <div className="card" style={{ background: "var(--bg-2, #F7F9F8)" }}>
+              <div className="card-head"><h4 style={{ margin: 0 }}>Version {old.n} · confirmed by {old.confirmedBy ?? "the doctor"}, {fmtDateTime(old.confirmedAt)}</h4><button className="btn sm ghost" onClick={() => setOld(null)}>Close</button></div>
+              <HistoryView history={old.summary} />
+            </div>
           )}
         </div>
       )}

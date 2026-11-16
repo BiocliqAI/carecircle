@@ -2,7 +2,7 @@ import { now } from "@/lib/clock";
 import { getPatient, getUser } from "@/lib/engine";
 import { loadLearnedMarkers } from "@/lib/labmarkers";
 import { markCounts } from "@/lib/historyspec";
-import { addRecord, confirmedOnboarding, confirmOnboarding, startUpdate, currentOnboarding, draftOf, moveRecord, openItems, progress, rebuildDraft, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
+import { addRecord, confirmedOnboarding, getOnboarding, historyVersions, removedFrom, confirmOnboarding, startUpdate, currentOnboarding, draftOf, moveRecord, openItems, progress, rebuildDraft, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
@@ -14,11 +14,18 @@ async function guard(id: string) {
 }
 
 // Onboarding from past records: progress, the draft for review, and every step (upload, sort, edit, send, confirm).
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   await ready();
   const { id } = await ctx.params;
   const user = await guard(id);
   if (!user) return err("Care team only", 403);
+  // One confirmed version of the history (from the version list).
+  const version = Number(new URL(req.url).searchParams.get("version"));
+  if (version) {
+    const v = getOnboarding(version);
+    if (!v || v.patient_id !== id || v.status !== "CONFIRMED") return err("Version not found", 404);
+    return json({ summary: draftOf(v)?.summary ?? null, confirmedAt: v.confirmed_at, confirmedBy: getUser(v.confirmed_by ?? "")?.name ?? null });
+  }
   const p = getPatient(id)!;
   const o = currentOnboarding(id);
   if (o && o.status === "COLLECTING") resumeReading(o.id);
@@ -38,6 +45,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       confirmedAt: fresh.confirmed_at, confirmedBy: getUser(fresh.confirmed_by ?? "")?.name ?? null,
     },
     isUpdate: !!fresh?.base_id && fresh.status !== "CONFIRMED",
+    removed: fresh?.base_id && fresh.status !== "CONFIRMED" && draft ? removedFrom(draftOf(getOnboarding(fresh.base_id))?.summary ?? {}, draft.summary) : [],
+    versions: historyVersions(id),
     marks: draft ? markCounts(draft.summary) : null,
     confirmed: conf ? { confirmedAt: conf.confirmed_at, confirmedBy: getUser(conf.confirmed_by ?? "")?.name ?? null, summary: (confDraft ?? draft)?.summary ?? null, points: (confDraft ?? draft)?.points ?? [] } : null,
     progress: fresh ? progress(fresh) : null,

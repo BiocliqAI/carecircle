@@ -7,7 +7,8 @@ export const RECORD_PARTS = {
   visits: "Treating doctor's visits and care plan (stops reminders; the plan goes back to 'not started')",
   labs: "Lab values and other lab results",
   readings: "Readings, symptoms and fluid logs",
-  documents: "Documents",
+  documents: "Documents (an onboarding in progress goes with them; the confirmed clinical history stays)",
+  history: "Clinical history confirmed by the doctor (every version)",
   outside: "Visits to other doctors and medicine changes",
   notes: "Notes",
   alerts: "Alerts and pattern warnings",
@@ -26,6 +27,7 @@ export function countRecords(pid: string): Record<RecordPart, number> {
     labs: n("SELECT COUNT(*) AS n FROM labs WHERE patient_id = ?", pid) + n("SELECT COUNT(*) AS n FROM lab_texts WHERE patient_id = ?", pid),
     readings: n("SELECT COUNT(*) AS n FROM observations WHERE patient_id = ?", pid),
     documents: n("SELECT COUNT(*) AS n FROM patient_documents WHERE patient_id = ?", pid),
+    history: n("SELECT COUNT(*) AS n FROM onboardings WHERE patient_id = ? AND status = 'CONFIRMED'", pid),
     outside: n("SELECT COUNT(*) AS n FROM outside_visits WHERE patient_id = ?", pid) + n("SELECT COUNT(*) AS n FROM med_changes WHERE patient_id = ? AND outside_visit_id IS NULL", pid),
     notes: n("SELECT COUNT(*) AS n FROM patient_notes WHERE patient_id = ?", pid),
     alerts: n("SELECT COUNT(*) AS n FROM escalations WHERE patient_id = ?", pid) + n("SELECT COUNT(*) AS n FROM watches WHERE patient_id = ?", pid),
@@ -49,7 +51,10 @@ export function clearRecords(pid: string, parts: RecordPart[], t: number, actor:
     }
     if (want.has("labs")) { del("labs"); del("lab_texts"); }
     if (want.has("readings")) del("observations");
-    if (want.has("documents")) { del("patient_documents"); del("onboardings"); }
+    // The doctor-confirmed history is kept unless it's chosen on its own: clearing documents only drops an
+    // onboarding still in progress (its records are gone). The history's links to the cleared records stop working.
+    if (want.has("documents")) { del("patient_documents"); del("onboardings", "patient_id = ? AND status != 'CONFIRMED'"); }
+    if (want.has("history")) del("onboardings");
     if (want.has("outside")) {
       del("med_changes");
       run("UPDATE patient_documents SET outside_visit_id = NULL WHERE patient_id = ?", pid);
