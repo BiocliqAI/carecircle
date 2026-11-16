@@ -2,6 +2,7 @@ import { now, advanceClock } from "@/lib/clock";
 import { getSetting } from "@/lib/db";
 import { runScheduler } from "@/lib/engine";
 import { aiEnabled } from "@/lib/parser";
+import { aiModel } from "@/lib/gemini";
 import { reseed, simulateDays } from "@/lib/seed";
 import { LIVE } from "@/lib/mode";
 import { err, json, ready } from "@/lib/server";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   await ready();
-  return json({ now: now(), offsetMs: Number(getSetting("clock_offset_ms") || 0), ai: aiEnabled(), model: aiEnabled() ? process.env.GEMINI_MODEL || "gemini-3.8-flash" : null });
+  return json({ now: now(), offsetMs: Number(getSetting("clock_offset_ms") || 0), ai: aiEnabled(), model: aiEnabled() ? aiModel() : null });
 }
 
 // Presenter controls: fast-forward the clock (escalation timers), simulate days of activity, reset.

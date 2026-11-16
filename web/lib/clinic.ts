@@ -136,7 +136,7 @@ export function updateClinic(c: Partial<Omit<Clinic, "setupAt">>, t: number, act
 
 /** Erase everything (live mode, between customer demos). Keeps the Gemini settings. */
 export function resetClinic() {
-  const keep = ["gemini_api_key", "gemini_model"].map((k) => [k, getSetting(k)] as const).filter(([, v]) => v);
+  const keep = ["gemini_api_key", "gemini_model", "anthropic_api_key"].map((k) => [k, getSetting(k)] as const).filter(([, v]) => v);
   resetDb();
   for (const [k, v] of keep) setSetting(k, v!);
   resetClockCache();

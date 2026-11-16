@@ -8,6 +8,7 @@ import fs from "node:fs";
 const tmpDb = path.join(os.tmpdir(), `carecircle-test-summary-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
 process.env.CARECIRCLE_DB = tmpDb;
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 
 const { seedDemo } = await import("../lib/seed");
 const engine = await import("../lib/engine");

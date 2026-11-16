@@ -4,7 +4,7 @@
 import { get, run } from "./db";
 import { audit } from "./db";
 import { enterLabs, getPatient } from "./engine";
-import { analyzeDocumentOCR, isGeminiConfigured, type OCROutput } from "./gemini";
+import { analyzeDocumentOCR, isAIConfigured, type OCROutput } from "./gemini";
 import { addDocument, MAX_DOC_BYTES, MAX_DOC_LABEL } from "./records";
 import { fmtDate } from "./time";
 import { LAB_META } from "./types";
@@ -36,7 +36,7 @@ export function extractLine(x: DocExtract): string {
 
 /** Reads one stored document in the background. Never throws; leaves nothing behind if the read fails. */
 export async function extractDocument(docId: number, opts: { reread?: boolean } = {}): Promise<DocExtract | null> {
-  if (!isGeminiConfigured()) return null;
+  if (!isAIConfigured()) return null;
   const d = get<{ patient_id: string; mime: string; data: Uint8Array; category: string }>("SELECT patient_id, mime, data, category FROM patient_documents WHERE id = ?", docId);
   if (!d || !/^(image\/|application\/pdf$)/.test(d.mime)) return null;
   try {

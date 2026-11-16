@@ -15,6 +15,7 @@ process.env.TWILIO_TEMPLATE_ALERT = "HXalert";
 process.env.TWILIO_TEMPLATE_ESCALATE = "HXescalate";
 process.env.TWILIO_TEMPLATE_ESCALATE_SOLO = "HXescalateSolo";
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 delete process.env.WHATSAPP_ALLOWLIST;
 
 const { get, run, setSetting } = await import("../lib/db");

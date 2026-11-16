@@ -5,6 +5,7 @@ import path from "node:path";
 
 process.env.CARECIRCLE_DB = path.join(os.tmpdir(), `carecircle-test-consent-routing-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 
 const { all, get } = await import("../lib/db");
 const { seedDemo } = await import("../lib/seed");

@@ -132,8 +132,8 @@ export function cleanSpec(raw: unknown): { series: string[]; days: number } | nu
 
 export async function askRecord(pid: string, question: string, t: number): Promise<Answer> {
   const q = question.trim().slice(0, 400);
-  const { isGeminiConfigured, askRecordAI } = await import("./gemini");
-  const aiOn = isGeminiConfigured();
+  const { isAIConfigured, askRecordAI } = await import("./gemini");
+  const aiOn = isAIConfigured();
   if (aiOn) {
     const context = buildContext(pid, t);
     // The same question about an unchanged record has the same answer: reuse it instead of asking the AI again.

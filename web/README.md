@@ -12,7 +12,7 @@ npm run dev          # http://localhost:3000
 
 - Requires Node ≥ 22.5 (uses the built-in `node:sqlite`).
 - The database (`data/carecircle.db`) is created and seeded on the first request.
-- Optional AI: `GEMINI_API_KEY=... npm run dev`. This enables the Gemini parser (`gemini-3.8-flash`, override with `GEMINI_MODEL`) and the AI pre-visit brief. Without a key, the deterministic parser is used.
+- Optional AI: `ANTHROPIC_API_KEY=... GEMINI_API_KEY=... npm run dev`. Claude (`claude-opus-5-5`, override with `CLAUDE_MODEL`) reads documents and photos, understands WhatsApp messages, drafts plans and briefs, translates and answers questions about the record. Gemini (`gemini-3.8-flash`, override with `GEMINI_MODEL`) turns speech into text, and does Claude's jobs too when there is no Anthropic key. Without any key, the deterministic parser is used.
 - `npm test` runs the engine smoke test (seed, escalation ladder, timeouts, ACK/outcome, visit diff, and checks that the doctor received no messages).
 
 ## Live clinic mode (customer demos from scratch)
@@ -69,7 +69,8 @@ The repo root contains `docs/` and `web/`; the app lives in `web/`. `web/railway
    | `CARECIRCLE_DB` | `/data/clinic.db` |
    | `APP_PASSWORD` | the shared password for testers (**required**: without it the site is open to anyone) |
    | `APP_USER` | optional, defaults to `carecircle` |
-   | `GEMINI_API_KEY` | optional, enables AI parsing |
+   | `ANTHROPIC_API_KEY` | optional, Claude reads documents (OCR) and does the reasoning |
+   | `GEMINI_API_KEY` | optional, speech to text (voice notes, dictation); also the reasoning when there is no Anthropic key |
    | `NODE_VERSION` | `22` |
    | `TWILIO_*`, `PUBLIC_BASE_URL` | optional, real WhatsApp: see [`docs/WHATSAPP_GO_LIVE.md`](../docs/WHATSAPP_GO_LIVE.md) |
 

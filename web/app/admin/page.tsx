@@ -63,8 +63,8 @@ export default function Admin() {
           <div className="grid g2">
             <section className="card">
               <div className="card-head"><h3>AI assistance</h3><span className={`badge ${clock?.ai ? "good" : ""}`}>{clock?.ai ? `On · ${clock.model}` : "Off · rule-based"}</span></div>
-              <p className="muted" style={{ marginTop: 0 }}>Gemini reads free-text WhatsApp messages and voice notes, drafts the pre-visit brief and reads photos of prescriptions and lab reports. Rules, not AI, decide every alert.</p>
-              <button className="btn" onClick={() => setGemini(true)}>✨ Configure Gemini</button>
+              <p className="muted" style={{ marginTop: 0 }}>Claude reads documents and photos of prescriptions and lab reports, understands free-text WhatsApp messages and drafts the pre-visit brief. Gemini turns voice notes and dictation into text. Rules, not AI, decide every alert.</p>
+              <button className="btn" onClick={() => setGemini(true)}>✨ Configure AI</button>
             </section>
             <section className="card danger-zone">
               <div className="card-head"><h3>Start afresh</h3></div>

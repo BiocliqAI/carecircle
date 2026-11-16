@@ -1,6 +1,8 @@
-// Gemini API integration: Clinical summarization, WhatsApp NL comprehension, and Vision OCR.
-// Powered by gemini-3.8-flash via the official @google/genai SDK.
+// AI integration. Speech (voice notes, dictation, consultation audio) always uses Gemini, which can hear audio.
+// Everything else — reading documents and photos (OCR), summaries, drafting, WhatsApp understanding, translation,
+// answering questions about the record — uses Claude when an Anthropic API key is set, and Gemini otherwise.
 import { createHash } from "node:crypto";
+import { claudeCanRead, claudeError, claudeText, getClaudeModel, isClaudeConfigured, type AIPart, type Effort } from "./claude";
 import { all, get, getSetting, setSetting } from "./db";
 import { now } from "./clock";
 import { getPatient, getUser, latestVisit, listPatients } from "./engine";
@@ -26,6 +28,16 @@ export function isGeminiConfigured(): boolean {
 
 export function getGeminiModel(): string {
   return process.env.GEMINI_MODEL || "gemini-3.8-flash";
+}
+
+/** Any AI available for reading and reasoning (Claude or Gemini). Speech needs Gemini: see isGeminiConfigured. */
+export function isAIConfigured(): boolean {
+  return isClaudeConfigured() || isGeminiConfigured();
+}
+
+/** The model that does reading and reasoning. */
+export function aiModel(): string {
+  return isClaudeConfigured() ? getClaudeModel() : getGeminiModel();
 }
 
 export interface ClinicalSummaryResult {
@@ -55,17 +67,12 @@ export async function generateClinicalSummary(patientId: string): Promise<Clinic
   const t = now();
   const visit = latestVisit(patientId, t);
   const s = visit ? intervalSummary(patientId, visit.visit_at, t) : null;
-  const apiKey = getGeminiApiKey();
-
-  // If no Gemini API key configured, use comprehensive clinical rules fallback
-  if (!apiKey || !s || !visit) {
+  // No AI configured: use the clinical rules fallback
+  if (!isAIConfigured() || !s || !visit) {
     return buildRuleBasedClinicalSummary(p, visit, s, t);
   }
 
   try {
-    const { GoogleGenAI } = await import("@google/genai");
-    const ai = new GoogleGenAI({ apiKey });
-
     const promptContext = {
       patient: {
         id: p.id,
@@ -161,7 +168,7 @@ You must return a valid JSON object matching the following schema:
 }`;
 
     // Nothing changed since the last summary (same data, same instructions)? Reuse it instead of asking the AI again.
-    const modelName = getGeminiModel();
+    const modelName = aiModel();
     const fingerprint = createHash("sha256").update(modelName + "\u0000" + systemInstruction + "\u0000" + JSON.stringify(promptContext)).digest("hex");
     const cached = getSetting(`aisum:${patientId}`);
     if (cached) {
@@ -171,16 +178,10 @@ You must return a valid JSON object matching the following schema:
       } catch { /* regenerate */ }
     }
 
-    const resp = (await ai.interactions.create({
-      model: modelName,
-      store: false,
-      input: `Analyze this patient's remote telemetry data and generate the structured clinical summary JSON:\n\n${JSON.stringify(promptContext, null, 2)}`,
-      system_instruction: systemInstruction,
-      response_format: { type: "text", mime_type: "application/json" },
-    } as never)) as { output_text?: string | null };
+    const outputText = await aiCall(systemInstruction, [{ type: "text", text: `Analyze this patient's remote telemetry data and generate the structured clinical summary JSON:\n\n${JSON.stringify(promptContext, null, 2)}` }], true, "high");
 
-    if (resp.output_text) {
-      const parsed = JSON.parse(resp.output_text);
+    if (outputText) {
+      const parsed = JSON.parse(outputText);
       const summary: ClinicalSummaryResult = {
         source: modelName,
         model: modelName,
@@ -195,7 +196,7 @@ You must return a valid JSON object matching the following schema:
         careCircleEscalations: parsed.careCircleEscalations || "",
         crossDoctorReconciliation: parsed.crossDoctorReconciliation || "",
         consultationDiscussionPoints: Array.isArray(parsed.consultationDiscussionPoints) ? parsed.consultationDiscussionPoints : [],
-        rawText: resp.output_text,
+        rawText: outputText,
       };
       if (summary.executiveSummary) {
         setSetting(`aisum:${patientId}`, JSON.stringify({ fp: fingerprint, summary }));
@@ -203,7 +204,7 @@ You must return a valid JSON object matching the following schema:
       }
     }
   } catch (err) {
-    console.warn("[gemini] Error calling Gemini API for clinical summary:", (err as Error).message, (err as { cause?: unknown })?.cause);
+    console.warn("[ai] clinical summary failed:", (err as Error).message);
   }
 
   // Graceful fallback to rule-based summary
@@ -270,14 +271,10 @@ export async function analyzeDocumentOCR(opts: {
   mimeType: string;
   patientId?: string;
 }): Promise<OCROutput> {
-  const apiKey = getGeminiApiKey();
   const cleanBase64 = opts.imageBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, "");
 
-  if (apiKey && !cleanBase64.startsWith("SAMPLE_")) {
+  if (isAIConfigured() && !cleanBase64.startsWith("SAMPLE_")) {
     try {
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({ apiKey });
-
       const systemInstruction = `You are an expert clinical document OCR and medical information extraction model.
 Analyze this medical document image (which may be a handwritten prescription, clinical consultation note, laboratory investigation report, or patient home vitals diary).
 Transcribe all text accurately, including cursive handwriting, doctor stamps, dates, lab values, and medicine names.
@@ -297,27 +294,14 @@ Extract all structured clinical entities conforming strictly to this JSON schema
   }
 }`;
 
-      const modelName = getGeminiModel();
-      const resp = (await ai.interactions.create({
-        model: modelName,
-        store: false,
-        system_instruction: systemInstruction,
-        input: [
-          {
-            type: "text",
-            text: "Extract all handwritten and printed medical information from this clinical document image into structured JSON.",
-          },
-          {
-            type: opts.mimeType === "application/pdf" ? "document" : "image",
-            data: cleanBase64,
-            mime_type: opts.mimeType || "image/png",
-          },
-        ],
-        response_format: { type: "text", mime_type: "application/json" },
-      } as never)) as { output_text?: string | null };
+      const modelName = aiModel();
+      const outputText = await aiCall(systemInstruction, [
+        { type: "text", text: "Extract all handwritten and printed medical information from this clinical document image into structured JSON." },
+        { type: opts.mimeType === "application/pdf" ? "document" : "image", data: cleanBase64, mime_type: opts.mimeType || "image/png" },
+      ], true);
 
-      if (resp.output_text) {
-        const parsed = JSON.parse(resp.output_text);
+      if (outputText) {
+        const parsed = JSON.parse(outputText);
         return {
           source: modelName,
           documentType: parsed.documentType || "other",
@@ -335,7 +319,7 @@ Extract all structured clinical entities conforming strictly to this JSON schema
         };
       }
     } catch (err) {
-      console.warn("[gemini-ocr] Vision OCR error, falling back to simulated document analyzer:", (err as Error).message);
+      console.warn("[ai-ocr] document reading failed, falling back to the sample analyzer:", (err as Error).message);
     }
   }
 
@@ -557,10 +541,32 @@ export async function transcribeDictation(base64: string, mimeType: string, ctx:
   }
 }
 
+/**
+ * One AI request. Text, photos and PDFs go to Claude when it's configured; audio (and anything Claude can't
+ * read, such as HEIC photos) goes to Gemini. Returns null on failure, with the reason in lastTranscribeError.
+ */
+async function aiCall(system: string, input: AIPart[], json = false, effort: Effort = "medium"): Promise<string | null> {
+  lastTranscribeError = null;
+  if (isClaudeConfigured() && claudeCanRead(input)) {
+    try {
+      return await claudeText(system, input, { json, effort });
+    } catch (e) {
+      lastTranscribeError = claudeError(e);
+      console.error("[claude]", lastTranscribeError);
+      return null;
+    }
+  }
+  return geminiCall(system, input, json);
+}
+
 async function geminiCall(system: string, input: unknown[], json = false): Promise<string | null> {
   lastTranscribeError = null;
   const apiKey = getGeminiApiKey();
-  if (!apiKey) { lastTranscribeError = "Gemini is not configured"; return null; }
+  if (!apiKey) {
+    const audio = (input as { type?: string }[]).some((p) => p.type === "audio");
+    lastTranscribeError = audio ? "Gemini is not configured" : isClaudeConfigured() ? "Claude can't read this file type (send a JPG, PNG or PDF)" : "AI is not configured";
+    return null;
+  }
   try {
     const { GoogleGenAI } = await import("@google/genai");
     const ai = new GoogleGenAI({ apiKey });
@@ -578,7 +584,7 @@ async function geminiCall(system: string, input: unknown[], json = false): Promi
 
 /** Reads a printed (or handwritten) prescription photo into plain text, line by line. */
 export async function readPrescriptionAI(base64: string, mime: string): Promise<string | null> {
-  return geminiCall(
+  return aiCall(
     "You read a photo of an Indian clinic's prescription. Transcribe every line faithfully as plain text: patient line, diagnosis, each medicine with strength, dose pattern (e.g. 1-0-1), timing (before/after food), duration, investigations ordered, advice lines and the review/next visit date. Keep the original order. Do not add anything that isn't on the paper. Output only the text.",
     [{ type: "text", text: "Transcribe this prescription." }, { type: "image", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: (mime || "image/jpeg").split(";")[0] }],
   );
@@ -586,7 +592,7 @@ export async function readPrescriptionAI(base64: string, mime: string): Promise<
 
 /** Transcribes a doctor–patient consultation with speaker labels (Doctor / Patient / Family). */
 export async function transcribeConversationAI(base64: string, mime: string, ctx: { meds?: string[]; conditions?: string } = {}): Promise<string | null> {
-  return geminiCall(
+  return aiCall(
     [
       "You transcribe a consultation in an Indian clinic between a doctor and a patient, sometimes with a family member. Speech may mix English with Hindi, Tamil or other Indian languages: translate to English.",
       "Label each turn as 'Doctor:', 'Patient:' or 'Family:'. Use correct clinical spelling for drugs and doses; numbers as digits; BP as 150/95.",
@@ -626,7 +632,7 @@ Rules:
 - confidence "low" when a number or name was unclear or inferred.
 - Do not invent medicines, doses, limits or tests. Leave things out rather than guess.
 - Quotes must be verbatim from the conversation/dictation.`;
-  const text = await geminiCall(system, [{ type: "text", text: JSON.stringify({ context, sources }) }], true);
+  const text = await aiCall(system, [{ type: "text", text: JSON.stringify({ context, sources }) }], true, "high");
   if (!text) return null;
   try {
     return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;
@@ -663,12 +669,12 @@ Rules:
 - labs: use only markers from the allowed list; convert nothing; take the date printed on that report. Skip anything unreadable.
 - Dates: if only month and year are printed use day 01.
 - Add a warning for every value you were unsure of.`;
-  const input: unknown[] = [{ type: "text", text: "Extract the intake form from these documents." }];
+  const input: AIPart[] = [{ type: "text", text: "Extract the intake form from these documents." }];
   for (const f of files) {
     const mime = (f.mime || "image/jpeg").split(";")[0];
     input.push({ type: mime === "application/pdf" ? "document" : "image", data: f.base64.replace(/^data:[^;]+;base64,/, ""), mime_type: mime });
   }
-  const text = await geminiCall(system, input, true);
+  const text = await aiCall(system, input, true, "high");
   if (!text) return null;
   try {
     return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;
@@ -727,13 +733,13 @@ How to talk:
 - Never give medical advice, never tell them to change or continue a medicine, never comment on whether a change is right. If they report something urgent (chest pain, fainting, breathlessness), set relevant=false so the safety system handles it.
 - Write in the language and style the sender uses (English, Tamil/Hindi words in English letters are fine).
 - Only record what was actually said or written. Do not invent doses, names or dates.`;
-  const input: unknown[] = [{ type: "text", text: JSON.stringify({ ...(context as object), newMessage: message }) }];
+  const input: AIPart[] = [{ type: "text", text: JSON.stringify({ ...(context as object), newMessage: message }) }];
   for (const f of files) {
     const mime = (f.mime || "image/jpeg").split(";")[0];
     if (!/^image\/|^application\/pdf$/.test(mime)) continue;
     input.push({ type: mime === "application/pdf" ? "document" : "image", data: f.base64.replace(/^data:[^;]+;base64,/, ""), mime_type: mime });
   }
-  const text = await geminiCall(system, input, true);
+  const text = await aiCall(system, input, true, "low");
   if (!text) return null;
   try {
     return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;
@@ -750,7 +756,7 @@ export async function readDeviceAI(base64: string, mime: string): Promise<Record
 
 Return JSON: {"isDevice": boolean, "device": "bp"|"glucose"|"weight"|"spo2"|"temp"|null, "readings": {"sys": number, "dia": number, "pulse": number, "glucose": number, "weight": number, "spo2": number, "temp": number}, "unit": "mg/dL"|"mmol/L"|"kg"|"lb"|"C"|"F"|null, "confidence": "high"|"low", "note": "one short sentence"}
 Rules: include only the readings clearly visible on the display. Read digits exactly; if a digit is blurry, cut off, or you are not sure, set confidence "low". Never guess or calculate. On a blood pressure monitor, SYS is the top number, DIA the middle, PULSE the bottom. If isDevice is false, leave readings empty.`;
-  const text = await geminiCall(system, [{ type: "text", text: "Is this a health device display? Read it." }, { type: "image", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: (mime || "image/jpeg").split(";")[0] }], true);
+  const text = await aiCall(system, [{ type: "text", text: "Is this a health device display? Read it." }, { type: "image", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: (mime || "image/jpeg").split(";")[0] }], true, "low");
   if (!text) return null;
   try {
     return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;
@@ -769,21 +775,21 @@ Rules:
 - Cover, in this order and only if present: what changed (new, changed, stopped medicines in plain words), why (only if the note says so), what to watch for (from the warning signs), when the next visit is.
 - No greeting, no sign-off, no headings, no markdown, no medical jargon. Write numbers and doses exactly as given. Schedules are already in words; never write codes like 1-0-1.
 Output only the message text.`;
-  return geminiCall(system, [{ type: "text", text: JSON.stringify(context) }]);
+  return aiCall(system, [{ type: "text", text: JSON.stringify(context) }], false, "low");
 }
 
 /** Translates one WhatsApp message (and its reply buttons) for an Indian-language reader. Null when unavailable. */
 export async function translateAI(body: string, quick: string[], lang: string): Promise<{ body: string; quick: string[] } | null> {
   const names: Record<string, string> = { hi: "Hindi", ta: "Tamil", te: "Telugu", kn: "Kannada", ml: "Malayalam", bn: "Bengali", gu: "Gujarati", pa: "Punjabi", mr: "Marathi" };
   const L = names[lang];
-  if (!L || !getGeminiApiKey()) return null;
+  if (!L || !isAIConfigured()) return null;
   const system = `You translate WhatsApp messages from a clinic's care assistant into ${L} for patients and their families in India. Write simple, warm, everyday spoken ${L}, the way a friendly nurse would talk. Never sound formal or bookish.
 
 Keep EXACTLY as written, never translate or alter: emojis, all numbers, times, dates, doses and units (mg, ml, kg, mmHg, bpm, %), medicine and brand names, people's names, phone numbers, the emergency number 108, bullet marks and line breaks. Words in capitals inside asterisks such as *ACK*, *YES*, *NO*, *HELP*, *SOS* stay in English with the asterisks. Other words in *asterisks* are translated and keep their asterisks.
 Do not add, remove, soften or reorder any information or instruction. Medical advice must keep its exact meaning.
 
 Input JSON: {"body": string, "quick": string[]} where quick are short reply-button labels. Return JSON {"body": string, "quick": string[]} with quick the same length and order, labels short. Single-digit labels stay as they are.`;
-  const text = await geminiCall(system, [{ type: "text", text: JSON.stringify({ body, quick }) }], true);
+  const text = await aiCall(system, [{ type: "text", text: JSON.stringify({ body, quick }) }], true, "low");
   if (!text) return null;
   try {
     const o = JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as { body?: unknown; quick?: unknown };
@@ -806,7 +812,7 @@ Rules:
 - When asked about the effect of a medicine change, show the readings before and after the change date from the record and say only what the numbers show. You may note that other changes happened around the same time. Do not claim cause.
 - You are not prescribing. Never recommend starting, stopping or changing a medicine, and never advise on treatment. Describe what the record shows.
 - Today's date is in the record. Choose chart "days" so the period in question is visible with some history before it.`;
-  const text = await geminiCall(system, [{ type: "text", text: JSON.stringify({ record: context, question }) }], true);
+  const text = await aiCall(system, [{ type: "text", text: JSON.stringify({ record: context, question }) }], true);
   if (!text) return null;
   try {
     return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as { answer?: unknown; facts?: unknown; chart?: unknown; note?: unknown };

@@ -432,8 +432,8 @@ export async function outsideVisitTurn(user: UserRow, p: PatientRow, body: strin
   const said = files.length && !body.trim() ? `[sent ${files.map((x) => x.title ?? "a document").join(", ")}]` : files.length ? `${body} [with ${files.length} attachment(s)]` : body;
 
   let ai: Record<string, unknown> | null = null;
-  const { isGeminiConfigured, outsideVisitTurnAI } = await import("./gemini");
-  if (opts.allowAi !== false && isGeminiConfigured()) {
+  const { isAIConfigured, outsideVisitTurnAI } = await import("./gemini");
+  if (opts.allowAi !== false && isAIConfigured()) {
     ai = await withTimeout(outsideVisitTurnAI(aiContext(p, user, plan, f, t), said, files), 25_000).catch(() => null);
   }
 
@@ -631,8 +631,8 @@ export async function draftWebVisit(pid: string, user: UserRow, text: string, fi
   const p = getPatient(pid);
   if (!p) throw new Error("Patient not found");
   const plan = latestVisit(pid, t)?.plan;
-  const { isGeminiConfigured, outsideVisitTurnAI } = await import("./gemini");
-  if (isGeminiConfigured()) {
+  const { isAIConfigured, outsideVisitTurnAI } = await import("./gemini");
+  if (isAIConfigured()) {
     const f: Flow = { visitId: null, followupOf: null, turns: [], asked: [], startedAt: t, lastAt: t };
     const ai = await withTimeout(outsideVisitTurnAI({ ...aiContext(p, user, plan, f, t), mode: "Web form: extract everything you can from the text and attachments. The reply is shown above the form: one line listing anything unclear the family should check, or empty." }, text || "[see attachments]", files), 40_000).catch(() => null);
     if (ai) {

@@ -750,8 +750,8 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   // "Reply in Tamil" / "english please": switch the language of everything we send this person.
   const wantLang = explicitLang(body);
   if (wantLang) {
-    const { isGeminiConfigured } = await import("./gemini");
-    if (wantLang !== "en" && !isGeminiConfigured()) return void reply(`Sorry, I can't reply in ${LANGS[wantLang] ?? wantLang} right now, but I'll understand you if you write in it.`);
+    const { isAIConfigured } = await import("./gemini");
+    if (wantLang !== "en" && !isAIConfigured()) return void reply(`Sorry, I can't reply in ${LANGS[wantLang] ?? wantLang} right now, but I'll understand you if you write in it.`);
     setLang(userId, wantLang);
     return void reply(wantLang === "en" ? "Okay, I'll reply in English from now on." : `Okay, I'll reply in ${LANGS[wantLang] ?? wantLang} from now on. You can say "reply in English" any time to change back.`);
   }

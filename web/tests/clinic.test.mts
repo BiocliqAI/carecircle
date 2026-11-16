@@ -9,6 +9,7 @@ const tmpDb = path.join(os.tmpdir(), `carecircle-test-clinic-${Date.now()}-${Mat
 process.env.CARECIRCLE_DB = tmpDb;
 process.env.CARECIRCLE_MODE = "live";
 delete process.env.GEMINI_API_KEY;
+delete process.env.ANTHROPIC_API_KEY;
 
 const { all, get } = await import("../lib/db");
 const { ensureSeeded } = await import("../lib/seed");
