@@ -1,7 +1,8 @@
 import { now } from "@/lib/clock";
 import { getPatient, getUser } from "@/lib/engine";
 import { loadLearnedMarkers } from "@/lib/labmarkers";
-import { addRecord, confirmOnboarding, currentOnboarding, draftOf, moveRecord, openItems, progress, rebuildDraft, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
+import { markCounts } from "@/lib/historyspec";
+import { addRecord, confirmedOnboarding, confirmOnboarding, startUpdate, currentOnboarding, draftOf, moveRecord, openItems, progress, rebuildDraft, removeRecord, resumeReading, retryRecord, saveDraftEdits, sendBack, sendToDoctor, startOnboarding, type Draft, type Pile } from "@/lib/onboarding";
 import { canView, err, isClinician, json, ready, sessionUser } from "@/lib/server";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   if (o && o.status === "COLLECTING") resumeReading(o.id);
   const fresh = o ? currentOnboarding(id)! : null;
   const draft = draftOf(fresh ?? undefined);
+  // The history as last confirmed (shown on the chart while an update to it is being checked).
+  const conf = confirmedOnboarding(id);
+  const confDraft = conf && conf.id !== fresh?.id ? draftOf(conf) : null;
   return json({
     now: now(),
     patient: { id: p.id, name: p.name, doctorId: p.doctor_id, doctorName: getUser(p.doctor_id)?.name ?? null },
@@ -33,6 +37,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       returnedAt: fresh.returned_at, returnedBy: getUser(fresh.returned_by ?? "")?.name ?? null, returnNote: fresh.return_note,
       confirmedAt: fresh.confirmed_at, confirmedBy: getUser(fresh.confirmed_by ?? "")?.name ?? null,
     },
+    isUpdate: !!fresh?.base_id && fresh.status !== "CONFIRMED",
+    marks: draft ? markCounts(draft.summary) : null,
+    confirmed: conf ? { confirmedAt: conf.confirmed_at, confirmedBy: getUser(conf.confirmed_by ?? "")?.name ?? null, summary: (confDraft ?? draft)?.summary ?? null, points: (confDraft ?? draft)?.points ?? [] } : null,
     progress: fresh ? progress(fresh) : null,
     draft,
     open: draft ? openItems(draft) : null,
@@ -50,6 +57,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     switch (b.action) {
       case "start": return json({ ok: true, onboardingId: startOnboarding(id, user.id, t) });
+      case "update": return json({ ok: true, onboardingId: startUpdate(id, user.id, t) });
       case "upload": {
         if (!b.base64) return err("Choose a file");
         startOnboarding(id, user.id, t);

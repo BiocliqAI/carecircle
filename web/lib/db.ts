@@ -179,6 +179,7 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["patient_documents", "pile_by", "TEXT"], // 'ai' or 'user' (a person's choice is kept when the AI re-reads)
   ["patient_documents", "read_error", "TEXT"], // why it couldn't be read
   ["patients", "hospital_id", "TEXT"],
+  ["onboardings", "base_id", "INTEGER"], // an update to a confirmed history builds on that onboarding
 ];
 
 function migrate(db: DatabaseSyncT) {

@@ -33,7 +33,7 @@ export const HISTORY: SectionSpec[] = [
     cols: [{ key: "date", label: "Date" }, { key: "procedure", label: "Procedure" }, { key: "facility", label: "Facility / surgeon" }, { key: "notes", label: "Complications / notes" }] },
   { kind: "list", key: "immunisations", n: "9", title: "Immunisation history", hint: "Mark due or overdue items, especially for diabetics, the elderly and immunocompromised patients.", max: 30,
     cols: [{ key: "vaccine", label: "Vaccine" }, { key: "dates", label: "Date(s) given" }, { key: "status", label: "Status / next due" }] },
-  { kind: "list", key: "visits", n: "10", title: "Specialist consultations", hint: "Newest first. One-line takeaway per visit.", max: 300,
+  { kind: "list", key: "visits", n: "10", title: "Specialist consultations", hint: "Newest first. One-line takeaway per visit.", max: 1500,
     cols: [{ key: "date", label: "Date", type: "date" }, { key: "doctor", label: "Doctor" }, { key: "specialty", label: "Specialty" }, { key: "hospital", label: "Hospital / clinic" }, { key: "takeaway", label: "Key takeaway", type: "long" }] },
   { kind: "list", key: "pending", n: "11", title: "Pending items and follow-up", hint: "Outstanding tests, referrals, planned procedures and follow-up dates.", max: 40,
     cols: [{ key: "item", label: "Item" }, { key: "due", label: "Due / status" }, { key: "responsible", label: "Responsible" }] },
@@ -43,8 +43,11 @@ export const HISTORY: SectionSpec[] = [
     cols: [{ key: "text", label: "Inference", type: "long" }] },
 ];
 
-export type HistRow = { sources: number[] } & Record<string, unknown>;
-export interface HistField { text: string; sources: number[] }
+/** Marks on a row or field while it is being checked: `_new` (added from records just brought in) or `_changed`
+ *  (why it changed) with `_was` (what it said before). They are cleared when the doctor confirms. */
+export interface Marks { _new?: boolean; _changed?: string; _was?: string }
+export type HistRow = { sources: number[] } & Marks & Record<string, unknown>;
+export interface HistField extends Marks { text: string; sources: number[] }
 export type History = Record<string, HistRow[] | Record<string, HistField>>;
 
 export const listOf = (h: History | null | undefined, key: string): HistRow[] => (Array.isArray(h?.[key]) ? (h![key] as HistRow[]) : []);
@@ -65,17 +68,25 @@ export function historySchemaText(skip: string[] = []): string {
   ).join(",\n");
 }
 
-/** Tidies a history from the AI (or a person's edits): only known sections and columns, strings capped, sources kept. */
-export function cleanHistory(raw: unknown, validIds?: Set<number>): History {
+/** Tidies a history from the AI (or a person's edits): only known sections and columns, strings capped, sources kept.
+ *  With `keepMarks`, the new/changed marks are kept (they're dropped from anything the AI writes). */
+export function cleanHistory(raw: unknown, validIds?: Set<number>, keepMarks = false): History {
   const h = emptyHistory();
   const src = (raw ?? {}) as Record<string, unknown>;
   const s2 = (v: unknown, n: number) => (typeof v === "string" ? v.replace(/[ \t]+/g, " ").trim().slice(0, n) : "");
-  const ids = (v: unknown) => (Array.isArray(v) ? v.map(Number).filter((x) => Number.isInteger(x) && (!validIds || validIds.has(x))).slice(0, 30) : []);
+  const ids = (v: unknown) => (Array.isArray(v) ? [...new Set(v.map(Number).filter((x) => Number.isInteger(x) && (!validIds || validIds.has(x))))].slice(0, 30) : []);
+  const marks = (v: Marks | undefined): Marks => {
+    if (!keepMarks || !v) return {};
+    const m: Marks = {};
+    if (v._new === true) m._new = true;
+    if (typeof v._changed === "string" && v._changed.trim()) { m._changed = s2(v._changed, 300); if (typeof v._was === "string") m._was = s2(v._was, 800); }
+    return m;
+  };
   for (const s of HISTORY) {
     if (s.kind === "list") {
       const rows = Array.isArray(src[s.key]) ? (src[s.key] as Record<string, unknown>[]) : [];
       h[s.key] = rows.slice(0, s.max).map((r) => {
-        const row: HistRow = { sources: ids(r?.sources) };
+        const row: HistRow = { sources: ids(r?.sources), ...marks(r as Marks) };
         for (const c of s.cols) row[c.key] = s2(r?.[c.key], c.type === "long" ? 800 : 300);
         return row;
       }).filter((r) => s.cols.some((c) => cell(r, c.key)));
@@ -83,9 +94,27 @@ export function cleanHistory(raw: unknown, validIds?: Set<number>): History {
       const f = (src[s.key] ?? {}) as Record<string, unknown>;
       h[s.key] = Object.fromEntries(s.fields.map((x) => {
         const v = f[x.key];
-        return [x.key, typeof v === "string" ? { text: s2(v, 800), sources: [] } : { text: s2((v as HistField | undefined)?.text, 800), sources: ids((v as HistField | undefined)?.sources) }];
+        return [x.key, typeof v === "string" ? { text: s2(v, 800), sources: [] } : { text: s2((v as HistField | undefined)?.text, 800), sources: ids((v as HistField | undefined)?.sources), ...marks(v as Marks) }];
       }));
     }
   }
   return h;
+}
+
+/** The history with every new/changed mark removed (after the doctor confirms). */
+export const unmarked = (h: History): History => cleanHistory(h, undefined, false);
+
+/** How many rows and fields are marked new or changed. */
+export function markCounts(h: History | null | undefined): { added: number; changed: number } {
+  let added = 0, changed = 0;
+  for (const s of HISTORY) {
+    const items: Marks[] = s.kind === "list" ? listOf(h, s.key) : Object.values(fieldsOf(h, s.key));
+    for (const m of items) { if (m._new) added++; else if (m._changed) changed++; }
+  }
+  return { added, changed };
+}
+
+/** A row's cells in one line (what it said before a change). */
+export function rowText(s: { cols: ColSpec[] }, r: HistRow): string {
+  return s.cols.map((c) => cell(r, c.key)).filter(Boolean).join(" · ");
 }

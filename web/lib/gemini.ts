@@ -907,3 +907,41 @@ Rules:
     return null;
   }
 }
+
+/** Updates an existing patient history with records brought in later. It returns only what to add or change, so the
+ *  answer stays small however long the history already is. */
+export async function updateHistoryAI(input: { today: string; treatingDoctor: string | null; patient: unknown; history: unknown; doctors: unknown; documents: unknown[]; reports: unknown[]; labTrends: unknown }): Promise<Record<string, unknown> | null> {
+  const system = `You keep ONE patient history summary up to date for an Indian clinic. You get the history as it stands ("history": sections from the clinic's template; every list row has an index "i"), the doctors already known, and records that were just added and are NOT yet in the history:
+- "documents": clinical records (notes, prescriptions, discharge summaries) with their transcribed text, the visits found in them and the medicines on them.
+- "reports": lab, imaging, ECG and other study reports.
+- "labTrends": every numeric lab value now on file, per test, oldest to latest.
+
+Sections of the history (for reference; the same columns apply when you add rows):
+${historySchemaText(["visits"])}
+
+Return JSON with exactly these keys:
+{
+ "add": {"<list section>": [rows with the section's columns and "sources": [document ids]]},
+ "change": [{"section": "<list section>", "i": index of the row, "row": the whole row as it should now read, with "sources", "why": "short reason, naming the record"}],
+ "fields": {"<section>": {"<field>": {"text": "what it should now say", "sources": [ids], "why": "short reason"}}},
+ "doctors": [{"name": "Dr …", "specialty": "", "hospital": "", "role": "treating"|"consultant"|"lab", "seen": number of the new records by them, "aliases": []}],
+ "merges": [{"a": "doctor name", "b": "doctor name", "reason": ""}],
+ "points": [{"title": "short", "detail": "what disagrees, is missing or is unclear, naming the records", "sources": [ids]}]
+}
+
+Rules:
+- Use only what the new records say, read against the history. Never invent anything. Omit keys you have nothing for.
+- Add a row only for something not already in the history (an admission already listed is a change to that row if the new record adds to it, not a new row). Keep cells short, as in the template.
+- Change a row or field when the new record updates it: a newer status or value for a condition, a medicine started, stopped or re-dosed (update "medicines" AND add to "medChanges"), a pending item now done, a newer trend for a key lab. Give the whole row as it should now read.
+- When a new record contradicts the history and it isn't clear which is right, don't change it: add a point.
+- Do not list consultations: they are gathered from each record separately.
+- doctors: only doctors in the new records. Use the same spelling as the known doctors when it is the same person.`;
+  const text = await aiCall(system, [{ type: "text", text: JSON.stringify(input) }], true, "high", { maxTokens: 64_000, timeoutMs: 20 * 60_000 });
+  if (!text) return null;
+  try {
+    return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;
+  } catch {
+    lastTranscribeError = "The AI returned an unreadable update";
+    return null;
+  }
+}

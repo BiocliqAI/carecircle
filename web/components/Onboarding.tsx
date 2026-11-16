@@ -20,16 +20,18 @@ interface Resp {
   progress: { total: number; read: number; failed: number; clinicalTotal: number; clinicalRead: number; building: boolean; built: boolean; found: { labValues: number; visits: number; homeReadings: number }; records: RecordView[] } | null;
   draft: Draft | null;
   open: { points: number; forDoctor: number; labs: number; merges: number } | null;
+  isUpdate: boolean;
+  marks: { added: number; changed: number } | null;
 }
 type Tab = "summary" | "doctors" | "labs";
 
 const day = (d: string | null | undefined) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? fmtDate(Date.parse(`${d}T12:00:00+05:30`), { day: "numeric", month: "short", year: "numeric" }) : d || "date unknown");
-function reviewedLine(pr: Resp["progress"]): string {
+function reviewedLine(pr: Resp["progress"], update = false): string {
   if (!pr) return "";
   const read = pr.records.filter((r) => r.state === "read");
   const dates = read.map((r) => r.date).filter((x): x is string => !!x && /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
   const n = (k: string) => read.filter((r) => (r.pile ?? "clinical") === k).length;
-  return `Records reviewed: ${read.length} (${n("clinical")} clinical, ${n("lab")} lab reports & home readings)${dates.length ? `, ${day(dates[0])} to ${day(dates[dates.length - 1])}` : ""}. Empty parts read “Not documented”.`;
+  return `${update ? "Records added in this update" : "Records reviewed"}: ${read.length} (${n("clinical")} clinical, ${n("lab")} lab reports & home readings)${dates.length ? `, ${day(dates[0])} to ${day(dates[dates.length - 1])}` : ""}. Empty parts read “Not documented”.`;
 }
 const first = (n: string | null | undefined) => (n ?? "").split(" ").slice(0, 2).join(" ");
 
@@ -127,7 +129,7 @@ export function Onboarding({ pid }: { pid: string }) {
   const isDoctor = d.viewer.role === "DOCTOR" && d.viewer.id === d.patient.doctorId;
   const stepNo = !o ? 2 : status === "COLLECTING" ? (pr && pr.total && pr.read + pr.failed < pr.total ? 3 : 2) : status === "SENT" ? 5 : status === "CONFIRMED" ? 6 : 4;
   const locked = status === "SENT" && !isDoctor;
-  const open = draft ? { points: draft.points.filter((p) => p.status === "open").length, labs: draft.labs.filter((l) => l.check && !l.ok && l.value !== null).length, merges: draft.merges.length } : null;
+  const open = draft ? { points: draft.points.filter((p) => p.status === "open" && !p.old).length, labs: draft.labs.filter((l) => l.check && !l.ok && l.value !== null).length, merges: draft.merges.length } : null;
   const toCheck = open ? open.points + open.labs + open.merges : 0;
 
   return (
@@ -135,7 +137,7 @@ export function Onboarding({ pid }: { pid: string }) {
       <div className="page-head">
         <div>
           <small><Link href={`/patients/${pid}`}>← {d.patient.name}</Link></small>
-          <h1>Onboard {d.patient.name}</h1>
+          <h1>{d.isUpdate ? `Add records to ${d.patient.name}’s history` : `Onboard ${d.patient.name}`}</h1>
           <div className="muted">Past records → a checked clinical history, the doctors involved, and every lab value and home reading. Nothing is sent on WhatsApp.</div>
         </div>
         {draft && <span className="muted">{saving ? "Saving…" : dirty ? "Unsaved changes" : "All changes saved"}</span>}
@@ -153,7 +155,9 @@ export function Onboarding({ pid }: { pid: string }) {
 
       {status === "RETURNED" && <div className="alert warn" style={{ marginBottom: 12 }}><div><b>Sent back by {d.onboarding?.returnedBy ?? "the doctor"}{d.onboarding?.returnedAt ? ` · ${fmtDateTime(d.onboarding.returnedAt)}` : ""}.</b> {d.onboarding?.returnNote ?? "Please check and send again."}</div></div>}
       {status === "SENT" && !isDoctor && <div className="alert info" style={{ marginBottom: 12 }}><div><b>With {d.patient.doctorName ?? "the doctor"} for confirmation</b> since {d.onboarding?.sentAt ? fmtDateTime(d.onboarding.sentAt) : "—"}. You&rsquo;ll see it here if it comes back with questions.</div></div>}
-      {status === "CONFIRMED" && <div className="alert good" style={{ marginBottom: 12 }}><div><b>Confirmed by {d.onboarding?.confirmedBy ?? "the doctor"}</b>{d.onboarding?.confirmedAt ? ` · ${fmtDateTime(d.onboarding.confirmedAt)}` : ""}. The clinical history below can still be corrected. <Link href={`/patients/${pid}`}>Open the chart</Link></div></div>}
+      {status === "CONFIRMED" && <div className="alert good" style={{ marginBottom: 12 }}><div><b>Confirmed by {d.onboarding?.confirmedBy ?? "the doctor"}</b>{d.onboarding?.confirmedAt ? ` · ${fmtDateTime(d.onboarding.confirmedAt)}` : ""}. The clinical history below can still be corrected. <Link href={`/patients/${pid}`}>Open the chart</Link></div>
+        <button className="btn sm primary" disabled={!!busy} onClick={() => act("update", { action: "update" }).then((r) => { if (r) { setTab("summary"); setView("records"); } })}>{busy === "update" ? <span className="spin" /> : null} Add records to history</button></div>}
+      {d.isUpdate && status !== "CONFIRMED" && <div className="alert info" style={{ marginBottom: 12 }}><div>Adding records to the confirmed history. The records are read and folded in; anything they add or change is marked <b>New</b> or <b>Changed</b> for {first(d.patient.doctorName) || "the doctor"} to confirm. The confirmed history stays on the chart until then.</div></div>}
       {err && <div className="alert bad" style={{ marginBottom: 12 }}><div>{err}</div></div>}
 
       {shown === "records" ? (
@@ -167,9 +171,9 @@ export function Onboarding({ pid }: { pid: string }) {
               <button className={tab === "doctors" ? "on" : ""} onClick={() => setTab("doctors")}>Doctors {open && open.merges > 0 && <span className="v2-count red">{open.merges} to check</span>}</button>
               <button className={tab === "labs" ? "on" : ""} onClick={() => setTab("labs")}>Labs &amp; home readings {open && open.labs > 0 && <span className="v2-count red">{open.labs} to check</span>}</button>
             </nav>
-            {status !== "SENT" && status !== "CONFIRMED" && <button className="v2-btn" onClick={() => setView("records")}>Add more records</button>}
+            {status !== "SENT" && status !== "CONFIRMED" && <button className="v2-btn" title="Your changes and answers so far are kept; the new records are added to them" onClick={() => setView("records")}>Add more records</button>}
           </div>
-          {tab === "summary" && <SummaryTab draft={draft} edit={edit} locked={locked} confirmed={status === "CONFIRMED"} isDoctor={isDoctor} reviewed={reviewedLine(pr)} />}
+          {tab === "summary" && <SummaryTab draft={draft} edit={edit} locked={locked} confirmed={status === "CONFIRMED"} isDoctor={isDoctor} reviewed={reviewedLine(pr, d.isUpdate)} marks={d.marks} isUpdate={d.isUpdate} />}
           {tab === "doctors" && <DoctorsTab draft={draft} edit={edit} locked={locked || status === "CONFIRMED"} />}
           {tab === "labs" && <LabsTab draft={draft} edit={edit} locked={locked || status === "CONFIRMED"} />}
 
@@ -285,12 +289,20 @@ const In = ({ value, onChange, label, w, disabled, multiline }: { value: string;
 
 const Row = ({ children }: { children: React.ReactNode }) => <div className="row" style={{ gap: 8, padding: "8px 0", borderTop: "1px solid var(--line-2)", alignItems: "flex-start" }}>{children}</div>;
 
-function SummaryTab({ draft, edit, locked, confirmed, isDoctor, reviewed }: { draft: Draft; edit: Edit; locked: boolean; confirmed: boolean; isDoctor: boolean; reviewed: string }) {
+function SummaryTab({ draft, edit, locked, confirmed, isDoctor, reviewed, marks, isUpdate }: { draft: Draft; edit: Edit; locked: boolean; confirmed: boolean; isDoctor: boolean; reviewed: string; marks: { added: number; changed: number } | null; isUpdate: boolean }) {
+  const any = !!marks && marks.added + marks.changed > 0;
+  const [onlyMarked, setOnlyMarked] = useState(isUpdate);
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: 16 }}>
       <div className="stack gap16" style={{ flex: "999 1 560px", minWidth: 0 }}>
         <div className="muted">{reviewed}</div>
-        <HistoryEditor history={draft.summary} locked={locked} change={(fn) => edit((x) => fn(x.summary))} />
+        {any && (
+          <div className="callout row between" style={{ gap: 8 }}>
+            <span style={{ flex: "1 1 320px" }}><b>From the records just added:</b> {marks!.added} new, {marks!.changed} changed. They&rsquo;re marked below; hover a “Changed” mark to see what it said before.</span>
+            <label className="row" style={{ gap: 6, flexWrap: "nowrap", whiteSpace: "nowrap" }}><input type="checkbox" checked={onlyMarked} onChange={(e) => setOnlyMarked(e.target.checked)} style={{ width: "auto" }} /> Show only new and changed</label>
+          </div>
+        )}
+        <HistoryEditor history={draft.summary} locked={locked} onlyMarked={any && onlyMarked} change={(fn) => edit((x) => fn(x.summary))} />
       </div>
       {!confirmed && <Points draft={draft} edit={edit} locked={locked} isDoctor={isDoctor} />}
     </div>
@@ -303,8 +315,8 @@ function Points({ draft, edit, locked, isDoctor }: { draft: Draft; edit: Edit; l
     <aside className="card" style={{ flex: "1 1 300px", minWidth: 0, background: "#FFFBF5", borderColor: "#F3D9B5" }}>
       <h3 style={{ marginTop: 0, color: "var(--c-amber)" }}>Points to confirm</h3>
       <small className="muted">Where the records disagree or were unclear. Answer each, or leave it for the doctor.</small>
-      {draft.points.length === 0 && <div className="muted" style={{ marginTop: 8 }}>Nothing found.</div>}
-      {draft.points.map((p, i) => (
+      {draft.points.every((p) => p.old) && <div className="muted" style={{ marginTop: 8 }}>Nothing found.</div>}
+      {draft.points.map((p, i) => p.old ? null : (
         <div key={p.id} className="stack" style={{ gap: 6, padding: "10px 0", borderTop: "1px solid #F3E2CB" }}>
           <div className="row between"><b>{p.title}</b><span className={`badge ${p.status === "resolved" ? "good" : p.status === "doctor" ? "info" : "warn"}`}>{p.status === "resolved" ? "Answered" : p.status === "doctor" ? "For the doctor" : "Open"}</span></div>
           <small>{p.detail}</small>
@@ -319,6 +331,12 @@ function Points({ draft, edit, locked, isDoctor }: { draft: Draft; edit: Edit; l
           )}
         </div>
       ))}
+      {draft.points.some((p) => p.old) && (
+        <details style={{ marginTop: 8 }}>
+          <summary className="muted">{draft.points.filter((p) => p.old).length} earlier point(s), settled when the history was first confirmed</summary>
+          {draft.points.filter((p) => p.old).map((p) => <div key={p.id} style={{ padding: "6px 0", borderTop: "1px solid #F3E2CB" }}><b>{p.title}</b>{p.answer ? <>: {p.answer}</> : <span className="muted"> (no answer)</span>}</div>)}
+        </details>
+      )}
     </aside>
   );
 }
@@ -378,6 +396,7 @@ function LabsTab({ draft, edit, locked }: { draft: Draft; edit: Edit; locked: bo
   const markers = [...new Set(dated.map((l) => l.marker))].sort((a, b) => Object.keys(LAB_META).indexOf(a) - Object.keys(LAB_META).indexOf(b))
     .filter((m) => !onlyCheck || dated.some((l) => l.marker === m && l.check && !l.ok));
   const setLab = (id: string, patch: Partial<LabItem>) => edit((x) => { const l = x.labs.find((y) => y.id === id); if (l) Object.assign(l, patch); });
+  const freshCount = labs.filter((l) => l.fresh).length + draft.texts.filter((x) => x.fresh).length + draft.homes.filter((x) => x.fresh).length;
   const checks = labs.filter((l) => l.check && !l.ok && l.value !== null);
   const homesBy = (t: string) => draft.homes.filter((h) => h.type === t).sort((a, b) => a.date.localeCompare(b.date));
   const homeTypes = [...new Set(draft.homes.map((h) => h.type))];
@@ -387,6 +406,7 @@ function LabsTab({ draft, edit, locked }: { draft: Draft; edit: Edit; locked: bo
       <section className="card">
         <div className="card-head">
           <h3 style={{ margin: 0 }}>Lab values by date <small className="muted">· {markers.length} test{markers.length === 1 ? "" : "s"}, {dated.length} values</small></h3>
+          {freshCount > 0 && <span className="muted"><span style={{ display: "inline-block", width: 10, height: 10, border: "2px solid #7DB3EA", borderRadius: 2, verticalAlign: "middle" }} /> {freshCount} from the records just added</span>}
           <label className="row" style={{ gap: 6 }}><input type="checkbox" checked={onlyCheck} onChange={(e) => setOnlyCheck(e.target.checked)} /> Only values to check</label>
         </div>
         {dated.length === 0 ? <div className="muted">No dated lab values found.</div> : (
@@ -405,7 +425,7 @@ function LabsTab({ draft, edit, locked }: { draft: Draft; edit: Edit; locked: bo
                         <td key={dt} style={{ padding: 3 }}>
                           <LazyText aria-label={`${LAB_META[m]?.label ?? m} ${day(dt)}`} title={l.check} value={l.value === null ? "" : String(l.value)} disabled={locked} inputMode="decimal"
                             onCommit={(v) => { const t = v.trim().replace(",", "."); if (t === "") setLab(l.id, { value: null }); else if (Number.isFinite(Number(t))) setLab(l.id, { value: Number(t) }); }}
-                            style={{ width: 76, textAlign: "right", background: flag ? "#FEF0E1" : l.value === null ? "#F4F6F5" : "#fff", borderColor: flag ? "#E8A55A" : undefined }} />
+                            style={{ width: 76, textAlign: "right", background: flag ? "#FEF0E1" : l.value === null ? "#F4F6F5" : "#fff", borderColor: flag ? "#E8A55A" : l.fresh ? "#7DB3EA" : undefined, boxShadow: l.fresh ? "inset 0 0 0 1px #7DB3EA" : undefined }} />
                         </td>
                       );
                     })}
@@ -477,12 +497,14 @@ function LabsTab({ draft, edit, locked }: { draft: Draft; edit: Edit; locked: bo
 
 // ---------------------------------------------------------------- step 5: the doctor confirms
 function ConfirmPanel({ draft, edit, busy, dirty, note, setNote, sent, onConfirm, onReturn }: { draft: Draft; edit: Edit; busy: string | null; dirty: boolean; note: string; setNote: (s: string) => void; sent: boolean; onConfirm: () => void; onReturn: () => void }) {
-  const left = draft.points.map((p, i) => ({ p, i })).filter(({ p }) => p.status !== "resolved");
+  const left = draft.points.map((p, i) => ({ p, i })).filter(({ p }) => p.status !== "resolved" && !p.old);
   const docs = draft.doctors.filter((d) => d.add && d.role !== "treating").length;
-  const labs = draft.labs.filter((l) => l.value !== null && l.date).length;
+  const update = draft.points.some((p) => p.old);
+  const labs = draft.labs.filter((l) => l.value !== null && l.date && (!update || l.fresh)).length;
+  const texts = draft.texts.filter((x) => !update || x.fresh).length, homes = draft.homes.filter((x) => !update || x.fresh).length;
   return (
     <section className="card" style={{ marginTop: 16, borderColor: "var(--c-brand)" }}>
-      <h3 style={{ marginTop: 0 }}>{sent ? "Confirm this onboarding" : "Confirm when you're done checking"}</h3>
+      <h3 style={{ marginTop: 0 }}>{update ? "Confirm the added records" : sent ? "Confirm this onboarding" : "Confirm when you're done checking"}</h3>
       {left.length > 0 && (
         <div className="stack" style={{ gap: 0, marginBottom: 12 }}>
           <b style={{ color: "var(--c-amber)" }}>Left for you ({left.length})</b>
@@ -495,12 +517,12 @@ function ConfirmPanel({ draft, edit, busy, dirty, note, setNote, sent, onConfirm
         </div>
       )}
       <div className="callout" style={{ fontSize: 13 }}>
-        <b>When you confirm:</b> the summary becomes the patient&rsquo;s clinical history (Profile tab), still editable; {docs} doctor{docs === 1 ? "" : "s"} join{docs === 1 ? "s" : ""} the care team and visits to them are saved on their dates; {labs} lab values, {draft.texts.length} other results and {draft.homes.length} home readings go into the history, so trends start from the oldest record. Nothing is sent on WhatsApp, and the care plan starts only when you record a visit and choose to start it.
+        <b>When you confirm:</b> {update ? <>the updated summary replaces the clinical history (Profile tab), still editable; new doctors join the care team and new visits are saved on their dates; {labs} new lab values, {texts} other results and {homes} home readings go into the history.</> : <>the summary becomes the patient&rsquo;s clinical history (Profile tab), still editable; {docs} doctor{docs === 1 ? "" : "s"} join{docs === 1 ? "s" : ""} the care team and visits to them are saved on their dates; {labs} lab values, {texts} other results and {homes} home readings go into the history, so trends start from the oldest record.</>} Nothing is sent on WhatsApp, and the care plan starts only when you record a visit and choose to start it.
       </div>
       <div className="row" style={{ marginTop: 12, justifyContent: "flex-end", gap: 8 }}>
         {sent && <input aria-label="Note for the assistant" placeholder="Note for the assistant, if sending back" value={note} onChange={(e) => setNote(e.target.value)} style={{ flex: "1 1 300px" }} />}
         {sent && <button className="btn" disabled={!!busy} onClick={onReturn}>{busy === "return" ? <span className="spin" /> : null} Send back</button>}
-        <button className="btn primary" disabled={!!busy || dirty} onClick={() => window.confirm("Confirm the onboarding? The history, doctors, visits, lab values and home readings are filed in the patient's record.") && onConfirm()}>{busy === "confirm" ? <span className="spin" /> : null} Confirm onboarding</button>
+        <button className="btn primary" disabled={!!busy || dirty} onClick={() => window.confirm(update ? "Confirm the added records? The updated history, new doctors, visits, lab values and readings are filed in the patient's record." : "Confirm the onboarding? The history, doctors, visits, lab values and home readings are filed in the patient's record.") && onConfirm()}>{busy === "confirm" ? <span className="spin" /> : null} {update ? "Confirm update" : "Confirm onboarding"}</button>
       </div>
     </section>
   );

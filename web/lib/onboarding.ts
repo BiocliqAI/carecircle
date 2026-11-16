@@ -9,21 +9,23 @@ import { cleanTexts, enterTexts, extractDocument, readExtract, type DocExtract }
 import { addDocument } from "./records";
 import { saveDocumentVisit, upsertCareTeam } from "./outside";
 import { cleanBaseline, getBaseline, saveBaseline } from "./clinic";
-import { isAIConfigured, lastTranscribeError, synthesizeHistoryAI } from "./gemini";
+import { isAIConfigured, lastTranscribeError, synthesizeHistoryAI, updateHistoryAI } from "./gemini";
 import { LAB_META, type Baseline } from "./types";
 import { dayKey, fmtDate } from "./time";
 import { now as clockNow } from "./clock";
-import { cell, cleanHistory, emptyHistory, fieldsOf, listOf, type History, type HistRow } from "./historyspec";
+import { HISTORY, cell, cleanHistory, emptyHistory, fieldsOf, listOf, rowText, unmarked, type HistField, type History, type HistRow, type ListSpec } from "./historyspec";
 
 export type OnbStatus = "COLLECTING" | "REVIEW" | "SENT" | "RETURNED" | "CONFIRMED";
 export type Pile = "clinical" | "lab";
 
 export interface DoctorItem { name: string; specialty: string; hospital: string; role: "treating" | "consultant" | "lab"; seen: number; aliases: string[]; add: boolean }
 export interface MergeItem { a: string; b: string; reason: string }
-export interface Point { id: string; title: string; detail: string; sources: number[]; status: "open" | "resolved" | "doctor"; answer?: string }
-export interface LabItem { id: string; marker: string; date: string | null; value: number | null; unit: string; sources: number[]; check?: string; ok?: boolean }
-export interface TextItem { id: string; test: string; group?: string; result: string; reference?: string; date: string | null; sources: number[] }
-export interface HomeItem { id: string; type: string; v1: number; v2?: number; date: string; time?: string; sources: number[] }
+/** `old`: from an earlier, already confirmed history (shown folded away when the history is updated). */
+export interface Point { id: string; title: string; detail: string; sources: number[]; status: "open" | "resolved" | "doctor"; answer?: string; old?: boolean }
+/** `fresh`: came from records added after the draft was first put together. */
+export interface LabItem { id: string; marker: string; date: string | null; value: number | null; unit: string; sources: number[]; check?: string; ok?: boolean; fresh?: boolean }
+export interface TextItem { id: string; test: string; group?: string; result: string; reference?: string; date: string | null; sources: number[]; fresh?: boolean }
+export interface HomeItem { id: string; type: string; v1: number; v2?: number; date: string; time?: string; sources: number[]; fresh?: boolean }
 export interface Draft {
   /** The patient history in the clinic template's sections (lib/historyspec.ts). */
   summary: History;
@@ -33,11 +35,15 @@ export interface Draft {
   labs: LabItem[];
   texts: TextItem[];
   homes: HomeItem[];
+  /** The records already folded into this draft; records added later are added to it, not rebuilt from scratch. */
+  builtFrom?: number[];
 }
 export interface OnboardingRow {
   id: number; patient_id: string; status: OnbStatus; draft: string | null; built_at: number | null; build_error: string | null;
   created_by: string | null; created_at: number; updated_at: number; sent_by: string | null; sent_at: number | null;
   confirmed_by: string | null; confirmed_at: number | null; returned_by: string | null; returned_at: number | null; return_note: string | null;
+  /** Set when this adds records to an already confirmed history (the onboarding it builds on). */
+  base_id: number | null;
 }
 
 export const getOnboarding = (id: number) => get<OnboardingRow>("SELECT * FROM onboardings WHERE id = ?", id);
@@ -53,6 +59,35 @@ export function startOnboarding(pid: string, by: string, t: number): number {
   const id = run("INSERT INTO onboardings(patient_id, status, created_by, created_at, updated_at) VALUES(?,?,?,?,?)", pid, "COLLECTING", by, t, t).lastInsertRowid;
   audit(t, by, "ONBOARDING_STARTED", "patient", pid, { onboarding: id });
   return id;
+}
+
+/** The patient's latest confirmed history, if any. */
+export const confirmedOnboarding = (pid: string) => get<OnboardingRow>("SELECT * FROM onboardings WHERE patient_id = ? AND status = 'CONFIRMED' ORDER BY id DESC LIMIT 1", pid);
+
+/** Opens an update to a confirmed history: it starts as a copy of that history, and the records added to it are read
+ *  and folded in, marked as new or changed, for the doctor to confirm again. */
+export function startUpdate(pid: string, by: string, t: number): number {
+  const open = get<{ id: number }>("SELECT id FROM onboardings WHERE patient_id = ? AND status != 'CONFIRMED' ORDER BY id DESC LIMIT 1", pid);
+  if (open) return open.id;
+  const base = confirmedOnboarding(pid);
+  const d = draftOf(base);
+  if (!base || !d) return startOnboarding(pid, by, t);
+  const copy: Draft = {
+    ...d,
+    summary: unmarked(d.summary),
+    builtFrom: d.builtFrom ?? builtSoFar(base),
+    points: d.points.map((x) => ({ ...x, old: true })),
+    merges: [],
+    labs: d.labs.map(({ fresh: _f, ...x }) => x), texts: d.texts.map(({ fresh: _f, ...x }) => x), homes: d.homes.map(({ fresh: _f, ...x }) => x),
+  };
+  const id = run("INSERT INTO onboardings(patient_id, status, draft, built_at, created_by, created_at, updated_at, base_id) VALUES(?,?,?,?,?,?,?,?)", pid, "COLLECTING", JSON.stringify(copy), t, by, t, t, base.id).lastInsertRowid;
+  audit(t, by, "HISTORY_UPDATE_STARTED", "patient", pid, { onboarding: id, base: base.id });
+  return id;
+}
+
+/** For drafts made before `builtFrom` was kept: the records that were read when the draft was put together. */
+function builtSoFar(o: OnboardingRow): number[] {
+  return all<{ id: number }>("SELECT id FROM patient_documents WHERE onboarding_id = ? AND extract IS NOT NULL AND uploaded_at <= ?", o.id, o.built_at ?? 0).map((r) => r.id);
 }
 
 function openOnboarding(pid: string): OnboardingRow {
@@ -178,7 +213,10 @@ export function progress(o: OnboardingRow) {
 export function rebuildDraft(pid: string, by: string, t: number) {
   const o = openOnboarding(pid);
   if (o.status === "SENT") throw new Error("This onboarding is with the doctor");
-  run("UPDATE onboardings SET status = 'COLLECTING', build_error = NULL, updated_at = ? WHERE id = ?", t, o.id);
+  // From scratch: a first onboarding forgets its draft; an update goes back to the confirmed history it started from.
+  const base = o.base_id ? getOnboarding(o.base_id) : null;
+  const restart = base ? JSON.stringify({ ...draftOf(base)!, summary: unmarked(draftOf(base)!.summary), builtFrom: draftOf(base)!.builtFrom ?? builtSoFar(base), points: draftOf(base)!.points.map((x) => ({ ...x, old: true })), merges: [] }) : null;
+  run("UPDATE onboardings SET status = 'COLLECTING', draft = ?, build_error = NULL, updated_at = ? WHERE id = ?", restart, t, o.id);
   audit(t, by, "ONBOARDING_REBUILD", "patient", pid, { onboarding: o.id });
   maybeBuild(o.id);
 }
@@ -210,6 +248,9 @@ export async function buildDraft(onbId: number): Promise<Draft> {
   const treating = getUser(p.doctor_id)?.name ?? null;
   const docs = all<{ id: number; title: string; pile: Pile | null; extract: string | null }>("SELECT id, title, pile, extract FROM patient_documents WHERE onboarding_id = ? AND extract IS NOT NULL ORDER BY id", onbId)
     .map((d) => ({ ...d, x: readExtract(d.extract)! })).filter((d) => d.x);
+  // A draft that already exists (checked, perhaps edited) takes in only the records added since: nothing is lost.
+  const prev = draftOf(o);
+  if (prev) return addToDraft(o, prev, docs, p, treating);
   const valid = new Set(docs.map((d) => d.id));
 
   // Labs: every value with its date; the same test on the same day from two records is one value (or a point if they differ).
@@ -271,10 +312,144 @@ export async function buildDraft(onbId: number): Promise<Draft> {
   draft.labs = labs;
   draft.texts = texts;
   draft.homes = homes;
+  draft.builtFrom = docs.map((d) => d.id);
   const t = clockNow();
   run("UPDATE onboardings SET draft = ?, built_at = ?, build_error = ?, status = 'REVIEW', updated_at = ? WHERE id = ?", JSON.stringify(draft), t,
     clinical.length && !ai ? `The history couldn't be put together automatically (${lastTranscribeError ?? "AI unavailable"}); it was filled from each record's visits instead.` : null, t, onbId);
   return draft;
+}
+
+type ReadDoc = { id: number; title: string; pile: Pile | null; x: DocExtract };
+const uniq = (ids: Set<string>, prefix: string) => { let n = ids.size; while (ids.has(`${prefix}${n}`)) n++; ids.add(`${prefix}${n}`); return `${prefix}${n}`; };
+
+/** Folds records added after the draft was put together into it. The assistant's edits and answers stay; what the new
+ *  records add or change is marked, so the checker and the doctor see exactly what's new. */
+async function addToDraft(o: OnboardingRow, prev: Draft, docs: ReadDoc[], p: { id: string; name: string; age: number | null; sex: string | null; user_id: string | null }, treating: string | null): Promise<Draft> {
+  const done = new Set(prev.builtFrom ?? builtSoFar(o));
+  const fresh = docs.filter((d) => !done.has(d.id));
+  const d: Draft = structuredClone(prev);
+  d.builtFrom = [...new Set([...done, ...docs.map((x) => x.id)])];
+  let error: string | null = null;
+  if (fresh.length) {
+    // Lab values, results and home readings from the new records (a value already in the draft isn't added twice).
+    const labIds = new Set(d.labs.map((l) => l.id)), textIds = new Set(d.texts.map((x) => x.id)), homeIds = new Set(d.homes.map((x) => x.id));
+    for (const r of fresh) for (const l of r.x.labs) {
+      const date = l.date ?? r.x.date ?? null;
+      const same = d.labs.find((x) => x.marker === l.marker && x.date === date);
+      if (same) {
+        if (!same.sources.includes(r.id)) same.sources.push(r.id);
+        if (same.value !== l.value && !same.ok) same.check = `A newly added record says ${l.value} (was ${same.value}). Check which is right.`;
+        continue;
+      }
+      const before = d.labs.filter((x) => x.marker === l.marker && x.date && date && x.date < date && x.value).sort((a, b) => b.date!.localeCompare(a.date!))[0];
+      const jump = before?.value && l.value && (l.value / before.value > 2.5 || l.value / before.value < 0.4);
+      d.labs.push({ id: uniq(labIds, "l"), marker: l.marker, date, value: l.value, unit: l.unit || LAB_META[l.marker]?.unit || "", sources: [r.id], fresh: true,
+        ...(l.uncertain ? { check: "Hard to read, or written as approximate." } : jump ? { check: `Big change from ${before!.value} on ${fmtDay(before!.date)}. Check it was read correctly.` } : {}),
+        ...(!date ? { check: "No date on the record. Enter the date the sample was taken." } : {}) });
+    }
+    for (const r of fresh) for (const x of cleanTexts(r.x.texts ?? [])) {
+      if (d.texts.some((y) => y.test === x.test && (y.group ?? "") === (x.group ?? "") && y.date === r.x.date)) continue;
+      d.texts.push({ id: uniq(textIds, "t"), ...x, date: r.x.date ?? null, sources: [r.id], fresh: true });
+    }
+    for (const r of fresh) for (const h of r.x.readings ?? []) {
+      if (d.homes.some((y) => y.type === h.type && y.date === h.date && y.time === h.time && y.v1 === h.v1)) continue;
+      d.homes.push({ id: uniq(homeIds, "h"), ...h, sources: [r.id], fresh: true });
+    }
+    // Consultations: straight from the new records, merged with the same doctor on the same day.
+    const visits = listOf(d.summary, "visits");
+    for (const v of visitRows(fresh.filter((r) => r.pile !== "lab"))) {
+      const same = visits.find((r) => cell(r, "date") === cell(v, "date") && normDoc(cell(r, "doctor")) === normDoc(cell(v, "doctor")));
+      if (same) {
+        same.sources = [...new Set([...same.sources, ...v.sources])];
+        if (cell(v, "takeaway") && !cell(same, "takeaway").includes(cell(v, "takeaway"))) same.takeaway = [cell(same, "takeaway"), cell(v, "takeaway")].filter(Boolean).join(" · ").slice(0, 800);
+      } else visits.push({ ...v, _new: true });
+    }
+    d.summary.visits = visits.sort((a, b) => cell(b, "date").localeCompare(cell(a, "date")));
+
+    // The rest of the history: the AI reads the new records against it and says what to add or change.
+    const clinical = fresh.filter((r) => r.pile !== "lab"), reports = fresh.filter((r) => r.pile === "lab");
+    const trends: Record<string, string[]> = {};
+    for (const l of [...d.labs].filter((x) => x.value !== null && x.date).sort((a, b) => a.date!.localeCompare(b.date!))) (trends[LAB_META[l.marker]?.label ?? l.marker] ??= []).push(`${l.date}: ${l.value} ${l.unit}`.trim());
+    const history: Record<string, unknown> = {};
+    for (const sec of HISTORY) {
+      if (sec.key === "visits") continue;
+      history[sec.key] = sec.kind === "list"
+        ? listOf(d.summary, sec.key).map((r, i) => ({ i, ...Object.fromEntries(sec.cols.map((c) => [c.key, cell(r, c.key)]).filter(([, v]) => v)) }))
+        : Object.fromEntries(Object.entries(fieldsOf(d.summary, sec.key)).map(([k, v]) => [k, v.text]).filter(([, v]) => v));
+    }
+    const caregivers = all<{ name: string; relation: string | null }>("SELECT name, relation FROM caregivers WHERE patient_id = ? ORDER BY level", p.id);
+    const ai = await updateHistoryAI({
+      today: dayKey(clockNow()), treatingDoctor: treating,
+      patient: { name: p.name, age: p.age, sex: p.sex, language: (p.user_id && getSetting(`lang:${p.user_id}`)) || null, caregivers },
+      history, doctors: d.doctors.map((x) => ({ name: x.name, specialty: x.specialty, aliases: x.aliases })),
+      documents: clinical.map((r) => ({ id: r.id, title: r.title, date: r.x.date, type: r.x.kind ?? r.x.category, prescriber: r.x.prescriber, text: (r.x.text ?? "").slice(0, 30_000), visits: r.x.visits ?? [], medicines: r.x.medList ?? [] })),
+      reports: reports.map((r) => ({ id: r.id, title: r.title, date: r.x.date, type: r.x.kind ?? r.x.category, text: (r.x.text ?? "").slice(0, 2500) })),
+      labTrends: trends,
+    });
+    const valid = new Set([...d.builtFrom, ...docs.map((x) => x.id)]);
+    if (ai) applyUpdate(d, ai, valid, treating);
+    else {
+      error = `The new records couldn't be added to the history automatically (${lastTranscribeError ?? "AI unavailable"}). Their visits, lab values and readings were added; update the other sections by hand, or try again.`;
+      for (const r of clinical) for (const v of r.x.visits ?? []) if (v.doctorName) addDoctor(d, { name: v.doctorName, specialty: v.specialty ?? "", hospital: v.hospital ?? "", role: treating && normDoc(v.doctorName) === normDoc(treating) ? "treating" : "consultant", seen: 1, aliases: [], add: true });
+    }
+  }
+  const t = clockNow();
+  run("UPDATE onboardings SET draft = ?, built_at = ?, build_error = ?, status = 'REVIEW', updated_at = ? WHERE id = ?", JSON.stringify(d), t, error, t, o.id);
+  return d;
+}
+
+function addDoctor(d: Draft, doc: DoctorItem) {
+  const hit = d.doctors.find((x) => [x.name, ...x.aliases].some((n) => normDoc(n) === normDoc(doc.name)));
+  if (hit) { hit.seen += doc.seen; hit.specialty ||= doc.specialty; hit.hospital ||= doc.hospital; return; }
+  d.doctors.push(doc);
+}
+
+/** Applies the AI's additions and changes to the history, marking each one. */
+function applyUpdate(d: Draft, ai: Record<string, unknown>, valid: Set<number>, treating: string | null) {
+  const lists = Object.fromEntries(HISTORY.filter((x): x is ListSpec => x.kind === "list").map((x) => [x.key, x]));
+  const add = (ai.add ?? {}) as Record<string, unknown>;
+  for (const [key, rows] of Object.entries(add)) {
+    if (!lists[key] || key === "visits") continue;
+    const clean = listOf(cleanHistory({ [key]: rows }, valid), key);
+    d.summary[key] = [...clean.map((r) => ({ ...r, _new: true })), ...listOf(d.summary, key)];
+  }
+  // Changes refer to rows by their place in the history as it was sent (before the additions above).
+  const offset = (key: string) => (Array.isArray(add[key]) ? listOf(cleanHistory({ [key]: add[key] }, valid), key).length : 0);
+  for (const c of arr(ai.change)) {
+    const key = str(c.section, 40), sec = lists[key];
+    if (!sec || key === "visits") continue;
+    const rows = listOf(d.summary, key), i = Math.round(Number(c.i)) + offset(key);
+    const now = listOf(cleanHistory({ [key]: [c.row] }, valid), key)[0];
+    if (!now || !Number.isInteger(i) || !rows[i]) continue;
+    const old = rows[i];
+    if (rowText(sec, now) === rowText(sec, old)) continue;
+    rows[i] = { ...now, sources: [...new Set([...old.sources, ...now.sources])], ...(old._new ? { _new: true } : { _changed: str(c.why, 300) || "Updated from a new record", _was: old._was ?? rowText(sec, old) }) };
+  }
+  for (const [key, fields] of Object.entries((ai.fields ?? {}) as Record<string, Record<string, { text?: unknown; sources?: unknown; why?: unknown }>>)) {
+    const sec = HISTORY.find((x) => x.key === key);
+    if (!sec || sec.kind !== "fields" || !fields || typeof fields !== "object") continue;
+    const cur = fieldsOf(d.summary, key);
+    for (const f of sec.fields) {
+      const v = fields[f.key];
+      const text = str(v?.text, 800);
+      if (!v || !text || text === cur[f.key]?.text) continue;
+      const old: HistField = cur[f.key] ?? { text: "", sources: [] };
+      cur[f.key] = { text, sources: [...new Set([...old.sources, ...ids(v.sources, valid)])], ...(old.text && !old._new ? { _changed: str(v.why, 300) || "Updated from a new record", _was: old._was ?? old.text } : { _new: true }) };
+    }
+    d.summary[key] = cur;
+  }
+  for (const x of arr(ai.doctors)) {
+    if (!str(x.name, 80)) continue;
+    const role = (["treating", "consultant", "lab"] as const).find((r) => r === x.role) ?? "consultant";
+    const isTreating = role === "treating" || (!!treating && normDoc(str(x.name)) === normDoc(treating));
+    addDoctor(d, { name: str(x.name, 80), specialty: str(x.specialty, 60), hospital: str(x.hospital, 80), role: isTreating ? "treating" : role, seen: Math.max(1, Math.round(Number(x.seen) || 1)), aliases: (Array.isArray(x.aliases) ? x.aliases : []).map((a) => str(a, 80)).filter(Boolean).slice(0, 6), add: !isTreating && role === "consultant" });
+  }
+  for (const m of arr(ai.merges)) {
+    const a = str(m.a, 80), b = str(m.b, 80);
+    if (a && b && a !== b && d.doctors.some((x) => x.name === a) && d.doctors.some((x) => x.name === b) && !d.merges.some((y) => y.a === a && y.b === b)) d.merges.push({ a, b, reason: str(m.reason, 200) });
+  }
+  const pointIds = new Set(d.points.map((x) => x.id));
+  for (const x of arr(ai.points).filter((x) => str(x.title)).slice(0, 40)) d.points.push({ id: uniq(pointIds, "p"), title: str(x.title, 120), detail: str(x.detail, 400), sources: ids(x.sources, valid), status: "open" });
 }
 
 function fromAi(ai: Record<string, unknown>, valid: Set<number>, treating: string | null): Draft {
@@ -335,7 +510,7 @@ export function saveDraftEdits(pid: string, edits: Partial<Draft>, by: UserRow, 
   if (!d) throw new Error("The draft isn't ready yet");
   if (o.status === "SENT" && by.role !== "DOCTOR") throw new Error("This onboarding is with the doctor");
   const next: Draft = { ...d };
-  if (edits.summary) next.summary = cleanHistory(edits.summary);
+  if (edits.summary) next.summary = cleanHistory(edits.summary, undefined, o.status !== "CONFIRMED");
   if (o.status !== "CONFIRMED") {
     for (const k of ["doctors", "merges", "points", "labs", "texts", "homes"] as const) if (Array.isArray(edits[k])) (next as unknown as Record<string, unknown>)[k] = edits[k];
   }
@@ -346,8 +521,8 @@ export function saveDraftEdits(pid: string, edits: Partial<Draft>, by: UserRow, 
 /** Things a person should look at before it goes to the doctor (or that the doctor has to answer). */
 export function openItems(d: Draft) {
   return {
-    points: d.points.filter((p) => p.status === "open").length,
-    forDoctor: d.points.filter((p) => p.status === "doctor").length,
+    points: d.points.filter((p) => p.status === "open" && !p.old).length,
+    forDoctor: d.points.filter((p) => p.status === "doctor" && !p.old).length,
     labs: d.labs.filter((l) => l.check && !l.ok && l.value !== null).length,
     merges: d.merges.length,
   };
@@ -359,7 +534,7 @@ export function sendToDoctor(pid: string, by: UserRow, t: number) {
   const d = draftOf(o);
   if (!d) throw new Error("The draft isn't ready yet");
   // Points the assistant didn't resolve go to the doctor.
-  d.points = d.points.map((p) => (p.status === "open" ? { ...p, status: "doctor" } : p));
+  d.points = d.points.map((p) => (p.status === "open" && !p.old ? { ...p, status: "doctor" } : p));
   run("UPDATE onboardings SET status = 'SENT', draft = ?, sent_by = ?, sent_at = ?, return_note = NULL, updated_at = ? WHERE id = ?", JSON.stringify(d), by.id, t, t, o.id);
   audit(t, by.id, "ONBOARDING_SENT", "patient", pid, { onboarding: o.id });
 }
@@ -375,6 +550,25 @@ const FREQ: [RegExp, string][] = [[/\b(three times|tds|tid|1-1-1)\b/i, "TDS"], [
 const freqOf = (dose: string) => FREQ.find(([re]) => re.test(dose))?.[1] ?? "as prescribed";
 const fmtDay = (d: string | null) => (d && isDay(d) ? fmtDate(Date.parse(`${d}T12:00:00+05:30`), { day: "numeric", month: "short", year: "numeric" }) : d ?? "date unknown");
 
+/** The short history written into the baseline. */
+function historyText(s: History): string {
+  const f = (sec: string, k: string) => fieldsOf(s, sec)[k]?.text?.trim() ?? "";
+  const rows = (sec: string, fmt: (r: HistRow) => string) => listOf(s, sec).map(fmt).filter(Boolean).join("; ");
+  const line = (label: string, text: string) => (text ? `${label}: ${text}${/[.!?]$/.test(text) ? "" : "."}` : "");
+  return [
+    line("Summary", f("snapshot", "oneGlance")),
+    line("Implants / devices", f("alerts", "implants")),
+    line("Anticoagulant / antiplatelet", f("alerts", "anticoagulants")),
+    line("Code status", f("alerts", "codeStatus")),
+    line("Admissions", rows("admissions", (a) => [fmtDay(cell(a, "from") || null) + (cell(a, "to") && cell(a, "to") !== cell(a, "from") ? `–${fmtDay(cell(a, "to"))}` : ""), cell(a, "facility"), cell(a, "reason") && `(${cell(a, "reason")})`].filter(Boolean).join(" "))),
+    line("Procedures", rows("procedures", (x) => [cell(x, "date") || "date unknown", cell(x, "procedure"), cell(x, "facility")].filter(Boolean).join(", "))),
+    line("Past conditions", rows("resolved", (x) => [cell(x, "name"), cell(x, "period") && `(${cell(x, "period")})`, cell(x, "outcome")].filter(Boolean).join(" "))),
+    line("Studies", rows("studies", (x) => [cell(x, "date"), cell(x, "study"), cell(x, "finding")].filter(Boolean).join(" "))),
+    line("Immunisations", rows("immunisations", (x) => [cell(x, "vaccine"), cell(x, "dates"), cell(x, "status")].filter(Boolean).join(" "))),
+    line("Pending", rows("pending", (x) => [cell(x, "item"), cell(x, "due")].filter(Boolean).join(" "))),
+  ].filter(Boolean).join("\n");
+}
+
 /** The doctor confirms: the history, doctors, visits, lab values, results and home readings go into the record. */
 export function confirmOnboarding(pid: string, by: UserRow, t: number) {
   const o = openOnboarding(pid);
@@ -385,6 +579,10 @@ export function confirmOnboarding(pid: string, by: UserRow, t: number) {
   if (!d) throw new Error("The draft isn't ready yet");
   const treating = getUser(p.doctor_id)?.name ?? "";
   const counts = { doctors: 0, visits: 0, labs: 0, texts: 0, homes: 0 };
+  // Only what came from this onboarding's records is filed (an update leaves what was confirmed before alone).
+  const mine = new Set(all<{ id: number }>("SELECT id FROM patient_documents WHERE onboarding_id = ?", o.id).map((r) => r.id));
+  const ours = (x: { sources: number[] }) => !o.base_id || x.sources.some((id) => mine.has(id));
+  const baseDraft = o.base_id ? draftOf(getOnboarding(o.base_id)) : null;
   tx(() => {
     // Doctors (merged ones are folded into their twin by the review screen and arrive as one entry).
     const added = new Set<string>();
@@ -398,6 +596,7 @@ export function confirmOnboarding(pid: string, by: UserRow, t: number) {
     // Visits to other doctors, on their dates. The treating doctor's own past visits stay in the history only.
     const treatingNames = new Set([normDoc(treating), ...d.doctors.filter((x) => x.role === "treating").flatMap((x) => [normDoc(x.name), ...x.aliases.map(normDoc)])]);
     for (const v of listOf(d.summary, "visits")) {
+      if (!ours(v)) continue;
       const date = cell(v, "date"), doctor = cell(v, "doctor");
       if (!isDay(date) || !doctor || treatingNames.has(normDoc(doctor))) continue;
       const ovId = saveDocumentVisit(pid, by.id, v.sources[0] ?? null, { date, doctorName: doctor, specialty: cell(v, "specialty"), hospital: cell(v, "hospital"), findings: cell(v, "takeaway") }, t);
@@ -407,6 +606,7 @@ export function confirmOnboarding(pid: string, by: UserRow, t: number) {
     }
     // Lab values: one per test and day; a value already on record that day is not entered again.
     for (const l of d.labs) {
+      if (!ours(l)) continue;
       if (l.value === null || !Number.isFinite(l.value) || !l.date || !isDay(l.date) || !LAB_META[l.marker]) continue;
       const at = Math.min(Date.parse(`${l.date}T09:00:00+05:30`), t);
       if (get("SELECT 1 FROM labs WHERE patient_id = ? AND marker = ? AND taken_at >= ? AND taken_at < ?", pid, l.marker, at - 9 * 3_600_000, at + 15 * 3_600_000)) continue;
@@ -415,44 +615,36 @@ export function confirmOnboarding(pid: string, by: UserRow, t: number) {
       counts.labs++;
     }
     for (const x of d.texts) {
+      if (!ours(x)) continue;
       if (!x.date || !isDay(x.date)) continue;
       counts.texts += enterTexts(pid, [x], Math.min(Date.parse(`${x.date}T09:00:00+05:30`), t), by.id, x.sources[0] ?? null, "ONBOARDING");
     }
     for (const h of d.homes) {
+      if (!ours(h)) continue;
       const at = Math.min(Date.parse(`${h.date}T${h.time ?? "08:00"}:00+05:30`), t);
       if (!Number.isFinite(at) || get("SELECT 1 FROM observations WHERE patient_id = ? AND type = ? AND observed_at = ? AND v1 = ?", pid, h.type, at, h.v1)) continue;
       run("INSERT INTO observations(patient_id, type, v1, v2, observed_at, logged_by, parser) VALUES(?,?,?,?,?,?,?)", pid, h.type, h.v1, h.v2 ?? null, at, by.id, "onboarding");
       counts.homes++;
     }
     // The baseline gets the essentials from the history (conditions, alerts, current medicines, a short history).
+    // An update replaces what the earlier confirmation wrote rather than adding it twice.
     const s = d.summary;
     const f = (sec: string, k: string) => fieldsOf(s, sec)[k]?.text?.trim() ?? "";
-    const rows = (sec: string, fmt: (r: HistRow) => string) => listOf(s, sec).map(fmt).filter(Boolean).join("; ");
     const prev = getBaseline(pid);
-    const answered = d.points.filter((x) => x.answer?.trim()).map((x) => `${x.title}: ${x.answer!.trim()}`);
-    const line = (label: string, text: string) => (text ? `${label}: ${text}${/[.!?]$/.test(text) ? "" : "."}` : "");
-    const history = [
-      line("Summary", f("snapshot", "oneGlance")),
-      line("Implants / devices", f("alerts", "implants")),
-      line("Anticoagulant / antiplatelet", f("alerts", "anticoagulants")),
-      line("Code status", f("alerts", "codeStatus")),
-      line("Admissions", rows("admissions", (a) => [fmtDay(cell(a, "from") || null) + (cell(a, "to") && cell(a, "to") !== cell(a, "from") ? `–${fmtDay(cell(a, "to"))}` : ""), cell(a, "facility"), cell(a, "reason") && `(${cell(a, "reason")})`].filter(Boolean).join(" "))),
-      line("Procedures", rows("procedures", (x) => [cell(x, "date") || "date unknown", cell(x, "procedure"), cell(x, "facility")].filter(Boolean).join(", "))),
-      line("Past conditions", rows("resolved", (x) => [cell(x, "name"), cell(x, "period") && `(${cell(x, "period")})`, cell(x, "outcome")].filter(Boolean).join(" "))),
-      line("Studies", rows("studies", (x) => [cell(x, "date"), cell(x, "study"), cell(x, "finding")].filter(Boolean).join(" "))),
-      line("Immunisations", rows("immunisations", (x) => [cell(x, "vaccine"), cell(x, "dates"), cell(x, "status")].filter(Boolean).join(" "))),
-      line("Pending", rows("pending", (x) => [cell(x, "item"), cell(x, "due")].filter(Boolean).join(" "))),
-    ].filter(Boolean).join("\n");
+    const answered = d.points.filter((x) => !x.old && x.answer?.trim()).map((x) => `${x.title}: ${x.answer!.trim()}`);
+    const swap = (before: string | undefined, oldPart: string, newPart: string) => (oldPart && before?.includes(oldPart) ? before.replace(oldPart, newPart) : [before, newPart].filter(Boolean).join("\n"));
+    const history = swap(prev?.history, baseDraft ? historyText(baseDraft.summary) : "", historyText(s));
+    const family = swap(prev?.familyHistory, baseDraft ? fieldsOf(baseDraft.summary, "social").family?.text?.trim() ?? "" : "", f("social", "family"));
     const blood = f("snapshot", "bloodGroup").match(/\b(A|B|AB|O)\s*(\+|-|positive|negative|pos|neg|\+ve|-ve)/i);
     const base = cleanBaseline({
       ...(prev ?? {}),
       ...(blood && !prev?.bloodGroup ? { bloodGroup: `${blood[1].toUpperCase()}${/^(\+|pos|positive|\+ve)/i.test(blood[2]) ? "+" : "-"}` } : {}),
       conditions: [...new Set([...(prev?.conditions ?? []), ...listOf(s, "conditions").map((c) => cell(c, "name")).filter(Boolean)])],
       allergies: f("alerts", "allergies") || prev?.allergies || "",
-      history: [prev?.history, history].filter(Boolean).join("\n"),
-      familyHistory: [prev?.familyHistory, f("social", "family")].filter(Boolean).join("\n"),
+      history,
+      familyHistory: family,
       currentMeds: listOf(s, "medicines").filter((m) => cell(m, "name")).map((m) => ({ name: cell(m, "name"), dose: cell(m, "dose").slice(0, 40), frequency: freqOf(cell(m, "dose")), ...(cell(m, "prescriber") ? { prescriber: cell(m, "prescriber") } : {}), ...(cell(m, "indication") ? { purpose: cell(m, "indication") } : {}) })),
-      notes: [prev?.notes, answered.length ? `Confirmed at onboarding:\n${answered.join("\n")}` : ""].filter(Boolean).join("\n\n"),
+      notes: [prev?.notes, answered.length ? `Confirmed ${o.base_id ? "with added records" : "at onboarding"}:\n${answered.join("\n")}` : ""].filter(Boolean).join("\n\n"),
       labs: prev?.labs ?? [],
     } as Partial<Baseline>, t);
     if (typeof base === "string") throw new Error(base);
@@ -462,7 +654,11 @@ export function confirmOnboarding(pid: string, by: UserRow, t: number) {
       const x = readExtract(r.extract);
       run("UPDATE patient_documents SET filed_at = COALESCE(filed_at, ?), filed_by = COALESCE(filed_by, ?), extract = ? WHERE id = ?", t, by.id, x ? JSON.stringify({ ...x, done: true }) : r.extract, r.id);
     }
-    run("UPDATE onboardings SET status = 'CONFIRMED', confirmed_by = ?, confirmed_at = ?, updated_at = ? WHERE id = ?", by.id, t, t, o.id);
+    // What's confirmed is no longer "new": the marks go, and this becomes the history later updates start from.
+    const final: Draft = { ...d, summary: unmarked(d.summary), points: d.points.map((x) => ({ ...x, old: true })), merges: [],
+      labs: d.labs.map(({ fresh: _f, ...x }) => x), texts: d.texts.map(({ fresh: _f, ...x }) => x), homes: d.homes.map(({ fresh: _f, ...x }) => x),
+      builtFrom: d.builtFrom ?? [...mine] };
+    run("UPDATE onboardings SET status = 'CONFIRMED', draft = ?, confirmed_by = ?, confirmed_at = ?, updated_at = ? WHERE id = ?", JSON.stringify(final), by.id, t, t, o.id);
     audit(t, by.id, "ONBOARDING_CONFIRMED", "patient", pid, { onboarding: o.id, ...counts });
   });
   return counts;
@@ -481,7 +677,7 @@ export function onboardingTasks(user: UserRow): OnboardingTask[] {
       return {
         onboardingId: r.id, patientId: r.patient_id, patientName: r.name, status: r.status, updatedAt: r.updated_at,
         records: get<{ n: number }>("SELECT COUNT(*) AS n FROM patient_documents WHERE onboarding_id = ?", r.id)?.n ?? 0,
-        forDoctor: d ? d.points.filter((p) => p.status === "doctor").length : 0,
+        forDoctor: d ? d.points.filter((p) => p.status === "doctor" && !p.old).length : 0,
         byName: (r.status === "SENT" ? getUser(r.sent_by ?? "") : r.status === "RETURNED" ? getUser(r.returned_by ?? "") : null)?.name ?? null,
         note: r.status === "RETURNED" ? r.return_note : null,
       };
