@@ -99,6 +99,74 @@ describe("Claude for documents and reasoning, Gemini for speech", () => {
     await assert.rejects(ai.readPrescriptionAI("AAAA", "application/zip", "x.zip"), /can't be read/);
   });
 
+  it("asks for every lab test the record tracks when reading a report, not a fixed few", async () => {
+    const { LAB_META } = await import("../lib/types");
+    next = { text: JSON.stringify({ documentType: "lab_report", documentTypeName: "Lab report", transcription: "", documentDate: "2024-02-13", extracted: { vitals: [], medications: [], symptoms: [],
+      labs: [{ marker: "hba1c", label: "HBA1C", value: 7.0, unit: "%" }, { marker: "wbc", label: "Total WBC Count", value: 7900, unit: "/µL" }, { marker: "tsh", label: "TSH", value: 0.514, unit: "mIU/L" }, { marker: "creatinine", label: "Creatinine", value: 2.91, unit: "mg/dL" }] } }) };
+    const r = await ai.analyzeDocumentOCR({ imageBase64: "JVBERi0xLjQ=", mimeType: "application/pdf" });
+    assert.deepEqual(r.extracted.labs.map((l) => l.marker), ["hba1c", "wbc", "tsh", "creatinine"]);
+    const system = String(seen.at(-1)!.body.system);
+    for (const k of Object.keys(LAB_META)) assert.ok(system.includes(`${k} = ${LAB_META[k].label}`), `prompt lists ${k}`);
+    assert.match(system, /EVERY numeric result/);
+  });
+
+  it("learns a lab test it hasn't seen before and keeps every numeric result of a report", async () => {
+    const { LAB_META } = await import("../lib/types");
+    const { resolveMarker, loadLearnedMarkers } = await import("../lib/labmarkers");
+    const { getSetting } = await import("../lib/db");
+    // Known tests by key or by name; nothing new is learned for them.
+    assert.equal(resolveMarker("hba1c", "HbA1c", "%"), "hba1c");
+    assert.equal(resolveMarker("glycated_hb", "HbA1c", "%"), "hba1c");
+    assert.equal(resolveMarker("", "", "U/L"), null);
+    // A new test: learned once, stored, and from then on known.
+    assert.equal(LAB_META.ldh, undefined);
+    assert.equal(resolveMarker("LDH", "Lactate dehydrogenase", "U/L"), "ldh");
+    assert.deepEqual({ label: LAB_META.ldh.label, unit: LAB_META.ldh.unit }, { label: "Lactate dehydrogenase", unit: "U/L" });
+    assert.ok(JSON.parse(getSetting("lab_markers")!).ldh);
+    assert.ok(loadLearnedMarkers().ldh);
+
+    // Through the Documents tab reader: a new test in a report is kept, not dropped.
+    const { run } = await import("../lib/db");
+    const { extractDocument } = await import("../lib/docauto");
+    run("INSERT OR IGNORE INTO users(id, name, role, phone, title) VALUES('u_t_doc','Dr T','DOCTOR','+919800000077','Doctor')");
+    run("INSERT OR IGNORE INTO patients(id, user_id, name, age, sex, phone, conditions, address, doctor_id, created_at) VALUES('p_t', NULL, 'T Patient', 70, 'M', '+919800000078', '', '', 'u_t_doc', 0)");
+    const docId = run("INSERT INTO patient_documents(patient_id, title, category, mime, size, data, source, uploaded_by, uploaded_at) VALUES('p_t','report','lab','application/pdf',4,?, 'clinic','u_t_doc',0)", new Uint8Array([37, 80, 68, 70])).lastInsertRowid;
+    next = { text: JSON.stringify({ documentType: "lab_report", documentTypeName: "Lab report", transcription: "", documentDate: "2024-02-13", extracted: { vitals: [], medications: [], symptoms: [],
+      labs: [{ marker: "hba1c", label: "HBA1C", value: 7.0, unit: "%" }, { marker: "procalcitonin", label: "Procalcitonin", value: 0.12, unit: "ng/mL" }, { marker: "bad", label: "", value: "n/a", unit: "" }],
+      texts: [{ test: "Urine Albumin", group: "Urine routine", result: "Absent", reference: "ABSENT" }, { test: "Pus cells", group: "Urine deposits", result: "20-30", reference: "0 - 5" }, { test: "", result: "x" }] } }) };
+    const x = await extractDocument(Number(docId));
+    assert.deepEqual(x!.labs.map((l) => l.marker), ["hba1c", "procalcitonin"]);
+    // Results that aren't numbers are kept, as printed, and filed with the report's date when the checker confirms.
+    assert.deepEqual(x!.texts!.map((r) => `${r.group}|${r.test}|${r.result}`), ["Urine routine|Urine Albumin|Absent", "Urine deposits|Pus cells|20-30"]);
+    const { autoFile } = await import("../lib/docauto");
+    const { all } = await import("../lib/db");
+    const filed = autoFile(Number(docId), "u_t_doc", Date.parse("2026-11-16T10:00:00+05:30"), { texts: [...x!.texts!, { test: "Colour", group: "Urine routine", result: "Yellow" }] });
+    assert.equal(filed.texts, 3);
+    const rows = all<{ test: string; result: string; taken_at: number; document_id: number }>("SELECT test, result, taken_at, document_id FROM lab_texts WHERE patient_id = 'p_t' ORDER BY id");
+    assert.deepEqual(rows.map((r) => `${r.test}=${r.result}`), ["Urine Albumin=Absent", "Pus cells=20-30", "Colour=Yellow"]);
+    assert.ok(rows.every((r) => r.taken_at === Date.parse("2024-02-13T09:00:00+05:30") && r.document_id === Number(docId)));
+    assert.equal(all("SELECT 1 FROM labs WHERE patient_id = 'p_t'").length, 2, "the numbers go to the lab history as before");
+    const { enterTexts } = await import("../lib/docauto");
+    assert.equal(enterTexts("p_t", [{ test: "Colour", group: "Urine routine", result: "Yellow" }], rows[0].taken_at, "u_t_doc", Number(docId)), 0, "filing the same report twice adds nothing");
+    assert.equal(LAB_META.procalcitonin.label, "Procalcitonin");
+    assert.match(String(seen.at(-1)!.body.system), /ldh = Lactate dehydrogenase \(U\/L\)/, "learned tests are offered on the next read");
+  });
+
+  it("a document added on the visit screen is also kept under Documents and read for lab values", async () => {
+    const { addSource } = await import("../lib/plandraft");
+    const { all } = await import("../lib/db");
+    const { deliveriesSettled } = await import("../lib/whatsapp");
+    next = { text: "Creatinine 2.91 mg/dL" };
+    const before = seen.length;
+    const src = await addSource("p_t", "rx", "JVBERi0xLjQ=", "application/pdf", undefined, Date.parse("2026-11-16T10:00:00+05:30"), "u_t_doc", "RFT Feb 2024.pdf");
+    assert.equal(src.text, "Creatinine 2.91 mg/dL");
+    const doc = all<{ id: number; title: string; notes: string }>("SELECT id, title, notes FROM patient_documents WHERE id = ?", src.docId!)[0];
+    assert.deepEqual({ title: doc.title, notes: doc.notes }, { title: "RFT Feb 2024", notes: "Added on the visit screen" });
+    await deliveriesSettled();
+    for (let i = 0; i < 50 && seen.length < before + 2; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(seen.length, before + 2, "read once for the draft and once for its lab values");
+  });
+
   it("parses WhatsApp messages with Claude", async () => {
     next = { text: JSON.stringify({ vitals: [{ type: "bp", v1: 150, v2: 95 }], meds: { allTaken: true, allMissed: false, taken: [], missed: [] }, physio: null, lifestyle: null, symptoms: [], noSymptoms: true, help: false, fluids: [], labs: [], medChanges: [], outsideVisit: false, language: "en" }) };
     const { parsed, parser } = await parseMessage("BP 150/95, took all tablets", [{ key: "lasix", name: "Lasix" }]);

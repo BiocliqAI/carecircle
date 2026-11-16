@@ -4,9 +4,11 @@ import { NextResponse } from "next/server";
 import { ensureSeeded } from "./seed";
 import { getPatient, getUser, runScheduler, type UserRow } from "./engine";
 import { get } from "./db";
+import { loadLearnedMarkers } from "./labmarkers";
 
 export async function ready() {
   await ensureSeeded();
+  loadLearnedMarkers();
   runScheduler();
 }
 

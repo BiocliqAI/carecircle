@@ -118,6 +118,22 @@ describe("visits entered from past records", () => {
     assert.ok(outCount(rp) > sent);
   });
 
+  it("a visit dated today doesn't start the plan when asked not to; starting stays a separate step", () => {
+    const pid2 = engine.onboardPatient({ name: "Second Test", age: 70, sex: "M", phone: "+919811100011", conditions: "", address: "", doctorId: doc, caregivers: [] }, t + 9500, doc);
+    const sent = outCount(pid2);
+    engine.createVisit(pid2, doc, visit(), t + 9600, visitAtFrom(dayKey(t - 40 * DAY), t) as number);
+    engine.createVisit(pid2, doc, visit(), t + 9700, t + 9700, { start: false });
+    assert.equal(engine.getVisits(pid2).length, 2);
+    assert.ok(engine.planPausedSince(pid2), "still waiting to be started");
+    assert.equal(engine.planRunning(pid2), false);
+    engine.tick(t + 9800);
+    assert.equal(pending(pid2).length, 0);
+    assert.equal(outCount(pid2), sent, "nothing sent");
+    engine.startCarePlan(pid2, t + 9900, doc);
+    assert.equal(engine.planRunning(pid2), true);
+    assert.ok(outCount(pid2) > sent);
+  });
+
   it("a visit can't be dated in the future", () => {
     assert.throws(() => engine.createVisit(pid, doc, visit(), t + 9000, t + 2 * DAY), /future/);
   });

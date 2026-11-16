@@ -7,9 +7,11 @@ import { getPrep } from "./prep";
 import { getBaseline } from "./clinic";
 import { buildPlanDraftAI, readPrescriptionAI, transcribeConversationAI, transcribeDictation, lastTranscribeError } from "./gemini";
 import { DEFAULT_THRESHOLDS, DEFAULT_TIMERS, SYMPTOMS, VITAL_META, type CarePlan, type Medication, type MonitorItem, type Thresholds, type VitalType } from "./types";
+import { addDocument } from "./records";
+import { extractDocument } from "./docauto";
 
 export type SourceKind = "rx" | "dictation" | "conversation";
-export interface DraftSource { id: string; kind: SourceKind; at: number; label: string; text: string; seconds?: number }
+export interface DraftSource { id: string; kind: SourceKind; at: number; label: string; text: string; seconds?: number; docId?: number }
 export type Tag = "rx" | "talk" | "keep" | "protocol" | "pa";
 export type Change = "new" | "changed" | "same" | "stopped";
 
@@ -80,10 +82,18 @@ export async function addSource(pid: string, kind: SourceKind, base64: string, m
     id: nid("s"), kind, at: t, text, seconds,
     label: kind === "rx" ? (name?.trim().slice(0, 80) || "Document") : kind === "dictation" ? "Dictation" : "Consultation",
   };
+  // A document is also kept under Documents and read there, so a lab report's values reach the lab history once
+  // someone checks them (the same check as an upload on the Documents tab). Recordings aren't kept.
+  if (kind === "rx") {
+    try {
+      src.docId = addDocument(pid, { title: (name || "Visit document").replace(/\.[^.]+$/, "").slice(0, 100), category: "other", mime, base64, notes: "Added on the visit screen" }, t, actor);
+      void extractDocument(src.docId);
+    } catch { /* too large to keep: it was still read for the draft */ }
+  }
   const d = getPlanDraft(pid);
   d.sources.push(src);
   savePlanDraft(pid, d, t);
-  audit(t, actor, "PLAN_SOURCE_ADDED", "patient", pid, { kind });
+  audit(t, actor, "PLAN_SOURCE_ADDED", "patient", pid, { kind, document: src.docId ?? null });
   return src;
 }
 

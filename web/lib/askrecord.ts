@@ -91,6 +91,8 @@ export function buildContext(pid: string, t: number) {
     // [date, total mg, drugs]
     diureticPerDay: dailyTotals(pid, "diuretic", from, t).map((x) => [day(x.day), x.v, x.drugs.join(" + ")]),
     labs,
+    // Lab results that aren't plain numbers: [date, panel, test, result]
+    textResults: all<{ at: number; grp: string | null; test: string; result: string }>("SELECT taken_at AS at, grp, test, result FROM lab_texts WHERE patient_id = ? AND taken_at > ? ORDER BY taken_at DESC, id LIMIT 80", pid, t - 365 * DAY).map((r) => [day(r.at), r.grp ?? "", r.test, r.result]),
     weeklyMedicineAdherence: weeks.map((w) => ({ weeksAgo: w.wk, dosesDue: w.due, dosesTaken: w.done })),
     alerts: all<{ started_at: number; type: string; title: string; state: string; outcome_code: string | null }>("SELECT started_at, type, title, state, outcome_code FROM escalations WHERE patient_id = ? AND started_at > ? ORDER BY started_at DESC LIMIT 25", pid, from).map((e) => ({ date: day(e.started_at), type: e.type, title: e.title, state: e.state, outcome: e.outcome_code })),
     symptoms: all<{ observed_at: number; text: string; severity: string | null }>("SELECT observed_at, text, severity FROM observations WHERE patient_id = ? AND type = 'symptom' AND text != 'none' AND observed_at > ? ORDER BY observed_at DESC LIMIT 20", pid, from).map((s) => ({ date: day(s.observed_at), symptom: s.text, severity: s.severity })),

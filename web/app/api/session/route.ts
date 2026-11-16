@@ -4,6 +4,7 @@ import { patientIdsForUser, getUser } from "@/lib/engine";
 import { err, json, ready, sessionUser } from "@/lib/server";
 import { getClinic } from "@/lib/clinic";
 import { MODE } from "@/lib/mode";
+import { loadLearnedMarkers } from "@/lib/labmarkers";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export async function GET() {
   const personas = all<{ id: string; name: string; role: string; title: string; phone: string }>(
     "SELECT id, name, role, title, phone FROM users ORDER BY CASE role WHEN 'ADMIN' THEN 0 WHEN 'DOCTOR' THEN 1 WHEN 'PA' THEN 2 WHEN 'PATIENT' THEN 3 ELSE 4 END, name",
   );
-  return json({ user, patientIds: user ? patientIdsForUser(user) : [], personas, mode: MODE, clinic: getClinic() });
+  return json({ user, patientIds: user ? patientIdsForUser(user) : [], personas, mode: MODE, clinic: getClinic(), labMarkers: loadLearnedMarkers() });
 }
 
 export async function POST(req: Request) {

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./client";
 import { LAB_META, ageFromDob, bmi, type Baseline, type BaselineLab, type BaselineMed } from "@/lib/types";
 import { fmtDate } from "@/lib/time";
+import { DOCUMENT_ACCEPT, mimeFor, readableType } from "@/lib/mimetypes";
 
 const COMMON_CONDITIONS = ["Hypertension", "Type 2 diabetes", "Chronic kidney disease", "Heart failure", "Coronary artery disease", "COPD", "Asthma", "Hypothyroidism", "Osteoarthritis", "Dyslipidaemia"];
 const FREQS: [string, string][] = [["OD", "Once daily"], ["BD", "Twice daily"], ["TDS", "Three times"], ["QID", "Four times"], ["HS", "At bedtime"], ["weekly", "Weekly"], ["PRN", "Only if needed"]];
@@ -314,23 +315,23 @@ export function mergeExtraction(b: Baseline, x: Extracted): { next: Baseline; ad
   return { next, added };
 }
 
-const fileToPayload = (f: File): Promise<{ base64: string; mime: string }> =>
+const fileToPayload = (f: File): Promise<{ base64: string; mime: string; name: string }> =>
   new Promise((resolve, reject) => {
     const r = new FileReader();
     r.onerror = () => reject(new Error(`Couldn't open ${f.name}`));
     r.onload = () => {
       const data = String(r.result);
       // Phone photos are huge; shrink them (text stays readable at 2000px) before uploading.
-      if (!f.type.startsWith("image/") || f.size < 1_500_000) return resolve({ base64: data.split(",")[1], mime: f.type || "image/jpeg" });
+      if (!f.type.startsWith("image/") || f.size < 1_500_000) return resolve({ base64: data.split(",")[1], mime: mimeFor(f.type, f.name), name: f.name });
       const img = new Image();
-      img.onerror = () => resolve({ base64: data.split(",")[1], mime: f.type });
+      img.onerror = () => resolve({ base64: data.split(",")[1], mime: f.type, name: f.name });
       img.onload = () => {
         const s = Math.min(1, 2000 / Math.max(img.width, img.height));
         const c = document.createElement("canvas");
         c.width = Math.round(img.width * s);
         c.height = Math.round(img.height * s);
         c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
-        resolve({ base64: c.toDataURL("image/jpeg", 0.85).split(",")[1], mime: "image/jpeg" });
+        resolve({ base64: c.toDataURL("image/jpeg", 0.85).split(",")[1], mime: "image/jpeg", name: f.name });
       };
       img.src = data;
     };
@@ -350,7 +351,7 @@ function FillFromDocuments({ value, onChange, pid }: { value: Baseline; onChange
     if (!pid) return;
     api<{ documents: { id: number; title: string; mime: string; size: number; uploaded_at: number }[] }>(`/api/patients/${pid}/documents`)
       .then((r) => {
-        const docs = r.documents.filter((d) => /^(image\/|application\/pdf$)/.test(d.mime));
+        const docs = r.documents.filter((d) => readableType(d.mime, d.title));
         setOnFile(docs);
         setPicked(docs.slice(0, 10).map((d) => d.id));
       })
@@ -389,7 +390,7 @@ function FillFromDocuments({ value, onChange, pid }: { value: Baseline; onChange
       <div className="card-head">
         <div>
           <h3>✨ Fill from documents</h3>
-          <small>{onFile.length ? "Pick documents already on this patient's record, or add more" : "Add old prescriptions, discharge summaries or lab reports"} (photos or PDFs, up to 10). The form fills in below and you check it. The form isn't saved until you save{pid ? "; new documents you add are kept under Documents" : ""}.</small>
+          <small>{onFile.length ? "Pick documents already on this patient's record, or add more" : "Add old prescriptions, discharge summaries or lab reports"} (photos, PDFs, Word or Excel files, up to 10). The form fills in below and you check it. The form isn't saved until you save{pid ? "; new documents you add are kept under Documents" : ""}.</small>
         </div>
       </div>
       {onFile.length > 0 && (
@@ -413,7 +414,7 @@ function FillFromDocuments({ value, onChange, pid }: { value: Baseline; onChange
         </div>
       )}
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <input ref={input} type="file" hidden multiple accept="image/*,application/pdf" onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
+        <input ref={input} type="file" hidden multiple accept={DOCUMENT_ACCEPT} onChange={(e) => { add(e.target.files); e.target.value = ""; }} />
         <button type="button" className="btn" onClick={() => input.current?.click()} disabled={busy || total >= 10}>📎 {onFile.length ? "Add more documents" : "Add documents"}</button>
         {files.map((f, i) => (
           <span key={i} className="badge brand">{f.name.slice(0, 28)} <button type="button" className="x-btn" aria-label={`Remove ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))}>×</button></span>

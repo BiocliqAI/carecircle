@@ -1,36 +1,11 @@
 // Turns an uploaded clinical document into parts the AI can read: photos and PDFs as they are; Word (.doc, .docx),
 // Excel (.xls, .xlsx), OpenDocument and plain-text files as their text. Anything else gets a clear message.
 import type { AIPart } from "./claude";
+import { mimeFor, SHEET_TYPES, TEXT_TYPE, WORD_TYPES } from "./mimetypes";
 
-const WORD = new Set([
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.oasis.opendocument.text",
-]);
-const SHEET = new Set([
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.oasis.opendocument.spreadsheet",
-]);
-const TEXT = /^text\/(plain|csv|markdown|tab-separated-values)$/;
-const EXT_MIME: Record<string, string> = {
-  pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp",
-  heic: "image/heic", heif: "image/heif", txt: "text/plain", csv: "text/csv", md: "text/markdown",
-  doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", odt: "application/vnd.oasis.opendocument.text",
-  xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ods: "application/vnd.oasis.opendocument.spreadsheet",
-};
-/** What the upload button offers. */
-export const DOCUMENT_ACCEPT = "image/*,.pdf,.doc,.docx,.odt,.xls,.xlsx,.ods,.csv,.txt,application/pdf,application/msword,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+export { mimeFor, DOCUMENT_ACCEPT } from "./mimetypes";
 
 const MAX_TEXT = 400_000; // characters: far more than any clinical document; a bigger file is almost certainly not one
-
-/** The file's type: from its extension when it has a known one (browsers often send "" or a generic type), else what the browser said. */
-export function mimeFor(mime: string | null | undefined, name?: string | null): string {
-  const ext = (name || "").toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? "";
-  if (EXT_MIME[ext]) return EXT_MIME[ext];
-  const m = (mime || "").split(";")[0].trim().toLowerCase();
-  return m === "image/jpg" ? "image/jpeg" : m || "application/octet-stream";
-}
 
 /** One file (base64, with or without a data: prefix) as AI input. Throws with a message for the user if it can't be read. */
 export async function documentParts(base64: string, mime: string, name?: string | null): Promise<AIPart[]> {
@@ -41,13 +16,13 @@ export async function documentParts(base64: string, mime: string, name?: string 
   if (type.startsWith("image/")) return [{ type: "image", data, mime_type: type }];
   let text: string;
   let kind: string;
-  if (TEXT.test(type)) {
+  if (TEXT_TYPE.test(type)) {
     text = Buffer.from(data, "base64").toString("utf8");
     kind = "a text file";
-  } else if (WORD.has(type)) {
+  } else if (WORD_TYPES.has(type)) {
     text = await wordText(Buffer.from(data, "base64"), label);
     kind = "a Word document";
-  } else if (SHEET.has(type)) {
+  } else if (SHEET_TYPES.has(type)) {
     text = await sheetText(Buffer.from(data, "base64"), label);
     kind = "a spreadsheet; each sheet as comma-separated rows";
   } else {

@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS labs (
   taken_at INTEGER NOT NULL, source TEXT NOT NULL, entered_by TEXT, message_id INTEGER, flag TEXT
 );
 CREATE INDEX IF NOT EXISTS labs_patient ON labs(patient_id, marker, taken_at);
+-- Lab results that aren't plain numbers (Absent, Normal, Yellow, 20-30 cells/hpf…), as printed on the report.
+CREATE TABLE IF NOT EXISTS lab_texts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, test TEXT NOT NULL, grp TEXT, result TEXT NOT NULL,
+  reference TEXT, taken_at INTEGER NOT NULL, source TEXT NOT NULL, entered_by TEXT, document_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS lab_texts_patient ON lab_texts(patient_id, taken_at);
 CREATE TABLE IF NOT EXISTS med_changes (
   id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, at INTEGER NOT NULL, med_name TEXT NOT NULL,
   change TEXT NOT NULL, detail TEXT, prescriber TEXT, reported_by TEXT, message_id INTEGER, source TEXT NOT NULL,
@@ -205,7 +211,7 @@ export function resetDb(): void {
     DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS visits;
     DROP TABLE IF EXISTS caregivers; DROP TABLE IF EXISTS patients; DROP TABLE IF EXISTS convo_state;
     DROP TABLE IF EXISTS audit; DROP TABLE IF EXISTS settings; DROP TABLE IF EXISTS users;
-    DROP TABLE IF EXISTS labs; DROP TABLE IF EXISTS med_changes; DROP TABLE IF EXISTS care_team;
+    DROP TABLE IF EXISTS labs; DROP TABLE IF EXISTS lab_texts; DROP TABLE IF EXISTS med_changes; DROP TABLE IF EXISTS care_team;
   `);
   db.exec(SCHEMA);
   migrate(db);
