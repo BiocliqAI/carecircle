@@ -167,6 +167,61 @@ describe("Claude for documents and reasoning, Gemini for speech", () => {
     assert.equal(seen.length, before + 2, "read once for the draft and once for its lab values");
   });
 
+  it("splits a note holding several visits into dated visits, and on a later copy records only the new one", async () => {
+    const { run, all } = await import("../lib/db");
+    const { extractDocument, autoFile } = await import("../lib/docauto");
+    const t0 = Date.parse("2026-11-16T10:00:00+05:30");
+    const shroff = { doctorName: "Dr Sunil Shroff", specialty: "Urology", hospital: "Madras Medical Mission" };
+    const v14 = { ...shroff, date: "2024-02-14", reason: "Recurrent UTI", findings: "Creat 2.91, PSA 0.99, urine 20-30 pus cells", tests: "USG KUB, urine culture" };
+    const v21 = { ...shroff, date: "2024-02-21", findings: "USG KUB normal, culture Klebsiella", advice: "Course of antibiotics for 2 weeks", medChanges: [{ medName: "Nitrofurantoin", change: "started", newDose: "100 mg", frequency: "BD", detail: "for 2 weeks" }] };
+    const reply = (visits: object[]) => JSON.stringify({ documentType: "handwritten_prescription", documentTypeName: "Dr Sunil Shroff review", transcription: "", documentDate: "2024-02-14",
+      extracted: { vitals: [], medications: [], symptoms: [], texts: [], labs: [{ marker: "creatinine", label: "Creat", value: 2.91, unit: "mg/dL", date: "2024-02-13" }, { marker: "tsh", label: "TSH", value: 0.514, unit: "mIU/L", date: "2024-02-13" }] }, visits });
+    const addDoc = () => Number(run("INSERT INTO patient_documents(patient_id, title, category, mime, size, data, source, uploaded_by, uploaded_at) VALUES('p_t','Dr Shroff review','other','application/pdf',4,?, 'clinic','u_t_doc',0)", new Uint8Array([37, 80, 68, 70])).lastInsertRowid);
+    const msgs = () => all("SELECT 1 FROM messages WHERE patient_id = 'p_t' AND direction = 'OUT'").length;
+
+    next = { text: reply([v21, v14]) };
+    const doc1 = addDoc();
+    const x = await extractDocument(doc1);
+    assert.deepEqual(x!.visits!.map((v) => `${v.date} ${v.kind}`), ["2024-02-14 outside", "2024-02-21 outside"], "two visits, oldest first, both to another doctor");
+    assert.deepEqual(x!.labs.map((l) => `${l.marker} ${l.date}`), ["creatinine 2024-02-13", "tsh 2024-02-13"], "values from the note keep the day they were taken");
+    assert.match(String(seen.at(-1)!.body.system), /several dated entries/i);
+
+    const sent = msgs();
+    const r = autoFile(doc1, "u_t_doc", t0);
+    assert.equal(r.visits, 2);
+    const ov = all<{ id: number; visit_at: number; doctor_name: string; status: string; source: string }>("SELECT id, visit_at, doctor_name, status, source FROM outside_visits WHERE patient_id = 'p_t' ORDER BY visit_at");
+    assert.deepEqual(ov.map((o) => `${o.doctor_name}|${new Date(o.visit_at + 5.5 * 3600e3).toISOString().slice(0, 10)}|${o.status}|${o.source}`), ["Dr Sunil Shroff|2024-02-14|COMPLETE|document", "Dr Sunil Shroff|2024-02-21|COMPLETE|document"]);
+    assert.equal(all("SELECT 1 FROM med_changes WHERE outside_visit_id = ? AND med_name = 'Nitrofurantoin'", ov[1].id).length, 1);
+    assert.equal(msgs(), sent, "nothing is sent to the family for visits read from records");
+    assert.equal(all("SELECT 1 FROM labs WHERE patient_id = 'p_t' AND marker = 'tsh'").length, 1, "TSH filed under 13 Feb");
+    assert.equal(all("SELECT 1 FROM care_team WHERE patient_id = 'p_t' AND name = 'Dr Sunil Shroff'").length, 1, "the doctor joins the care team");
+
+    // The same sheet, later, with a third entry (28 Feb) and an entry whose date may be misread (23 Feb, two days after 21 Feb).
+    next = { text: reply([v14, v21, { ...shroff, date: "2024-02-23", advice: "?" }, { ...shroff, date: "2024-03-28", findings: "Culture sterile", advice: "Stop antibiotics" }]) };
+    const doc2 = addDoc();
+    const y = await extractDocument(doc2);
+    assert.deepEqual(y!.visits!.map((v) => `${v.date} ${v.kind}${v.recorded ? " recorded" : ""}${v.nearby ? " nearby" : ""}`),
+      ["2024-02-14 skip recorded", "2024-02-21 skip recorded", "2024-02-23 skip nearby", "2024-03-28 outside"]);
+    const r2 = autoFile(doc2, "u_t_doc", t0 + 1000);
+    assert.equal(r2.visits, 1, "only the new visit is recorded");
+    assert.equal(r2.labs, 0, "values already on record for that day aren't entered again");
+    assert.equal(all("SELECT 1 FROM outside_visits WHERE patient_id = 'p_t'").length, 3);
+  });
+
+  it("medicine changes from a visit older than the treating doctor's latest visit are history, not to-do", async () => {
+    const { run, all } = await import("../lib/db");
+    const { saveDocumentVisit } = await import("../lib/outside");
+    const { DEFAULT_THRESHOLDS, DEFAULT_TIMERS } = await import("../lib/types");
+    const plan = { medications: [], monitoring: [], physio: [], lifestyle: [], checkinTime: "", watchSymptoms: [], thresholds: DEFAULT_THRESHOLDS, escalation: DEFAULT_TIMERS };
+    run("INSERT INTO visits(id, patient_id, doctor_id, visit_at, vitals, diagnosis, notes, plan, next_visit_at, created_at) VALUES('v_t_2025','p_t','u_t_doc',?, '{}', '', '', ?, NULL, ?)", Date.parse("2025-06-01T11:00:00+05:30"), JSON.stringify(plan), Date.now());
+    const t0 = Date.parse("2026-11-16T10:00:00+05:30");
+    const old = saveDocumentVisit("p_t", "u_t_doc", null, { date: "2024-05-10", doctorName: "Dr Old", medChanges: [{ medName: "Amlodipine", change: "started", newDose: "5 mg" }] }, t0);
+    const recent = saveDocumentVisit("p_t", "u_t_doc", null, { date: "2026-01-10", doctorName: "Dr New", medChanges: [{ medName: "Febuxostat", change: "started", newDose: "40 mg" }] }, t0);
+    assert.equal(all<{ status: string }>("SELECT status FROM med_changes WHERE outside_visit_id = ?", old)[0].status, "REVIEWED");
+    assert.equal(all<{ status: string }>("SELECT status FROM med_changes WHERE outside_visit_id = ?", recent)[0].status, "REPORTED");
+    assert.throws(() => saveDocumentVisit("p_t", "u_t_doc", null, { date: "2030-01-01", doctorName: "Dr Future" }, t0), /future/);
+  });
+
   it("parses WhatsApp messages with Claude", async () => {
     next = { text: JSON.stringify({ vitals: [{ type: "bp", v1: 150, v2: 95 }], meds: { allTaken: true, allMissed: false, taken: [], missed: [] }, physio: null, lifestyle: null, symptoms: [], noSymptoms: true, help: false, fluids: [], labs: [], medChanges: [], outsideVisit: false, language: "en" }) };
     const { parsed, parser } = await parseMessage("BP 150/95, took all tablets", [{ key: "lasix", name: "Lasix" }]);
