@@ -263,6 +263,8 @@ export interface OCROutput {
     labs: { marker: string; label: string; value: number; unit: string; flag?: string }[];
     medications: { name: string; dose: string; times: string[]; change?: string; prescriber?: string; instructions?: string }[];
     symptoms: { key: string; severity: string; text: string }[];
+    /** Results that aren't plain numbers, as printed: "Absent", "Normal", "Yellow", "20-30". */
+    texts?: { test: string; group?: string; result: string; reference?: string }[];
   };
 }
 
@@ -291,11 +293,12 @@ Extract all structured clinical entities conforming strictly to this JSON schema
     "vitals": [{"type": "bp"|"weight"|"glucose"|"hr"|"spo2"|"temp"|"pain", "label": "string", "v1": number, "v2": number|undefined, "unit": "string"}],
     "labs": [{"marker": one of the lab marker keys listed below, "label": "the test name as printed", "value": number, "unit": "string", "flag": "normal"|"high"|"low"|"critical"}],
     "medications": [{"name": "string", "dose": "string", "times": ["string"], "change": "started"|"stopped"|"dose_changed"|"continued", "prescriber": "string", "instructions": "string"}],
-    "symptoms": [{"key": "string", "severity": "mild"|"moderate"|"severe", "text": "string"}]
+    "symptoms": [{"key": "string", "severity": "mild"|"moderate"|"severe", "text": "string"}],
+    "texts": [{"test": "the test name as printed", "group": "its panel or specimen, e.g. 'Urine routine', 'Urine deposits', 'Differential count'", "result": "the result exactly as printed, e.g. 'Absent', 'Normal', 'Yellow', '20-30', 'Micro organisms present'", "reference": "the reference range or expected value as printed, or ''"}]
   }
 }
 
-${labInstructions()}`;
+${labInstructions(undefined, true)}`;
 
       const modelName = aiModel();
       const { documentParts } = await import("./docread");
@@ -319,6 +322,7 @@ ${labInstructions()}`;
             labs: Array.isArray(parsed.extracted?.labs) ? parsed.extracted.labs : [],
             medications: Array.isArray(parsed.extracted?.medications) ? parsed.extracted.medications : [],
             symptoms: Array.isArray(parsed.extracted?.symptoms) ? parsed.extracted.symptoms : [],
+            texts: Array.isArray(parsed.extracted?.texts) ? parsed.extracted.texts : [],
           },
         };
       }
@@ -654,10 +658,10 @@ Rules:
 }
 
 /** The lab tests the record tracks, for the AI: key = name (unit), and how to fill "labs" from a report. */
-function labInstructions(markers: string[] = Object.keys(LAB_META)): string {
+function labInstructions(markers: string[] = Object.keys(LAB_META), texts = false): string {
   const list = markers.filter((m) => LAB_META[m]).map((m) => `${m} = ${LAB_META[m].label} (${LAB_META[m].unit})`).join("; ");
   return `Lab marker keys (key = test (unit)): ${list}.
-Lab rules: put EVERY numeric result on the report whose test matches one of these keys into "labs" (one entry per test: a long report has many), using the key, not the printed name. Synonyms count: HbA1c / glycated haemoglobin = hba1c; Total WBC count / TLC = wbc; Platelet count = platelets; Glucose (fasting) / FBS = fbs; post-prandial / PPBS = ppbs; SGOT / AST = sgot; SGPT / ALT = sgpt; Bicarbonate / HCO3 / total CO2 = bicarbonate; Hb = hb. Give the value in the unit listed for its key; convert only when it is exact (platelets 194000 /µL or 194 ×10³/µL = 1.94 lakh/µL; WBC 7.9 ×10³/µL = 7900 /µL; creatinine in µmol/L ÷ 88.4 = mg/dL), otherwise leave it out. Leave out results that are not numbers (Absent, Normal, Positive) and urine dipstick tests unless a key is for urine.
+Lab rules: put EVERY numeric result on the report whose test matches one of these keys into "labs" (one entry per test: a long report has many), using the key, not the printed name. Synonyms count: HbA1c / glycated haemoglobin = hba1c; Total WBC count / TLC = wbc; Platelet count = platelets; Glucose (fasting) / FBS = fbs; post-prandial / PPBS = ppbs; SGOT / AST = sgot; SGPT / ALT = sgpt; Bicarbonate / HCO3 / total CO2 = bicarbonate; Hb = hb. Give the value in the unit listed for its key; convert only when it is exact (platelets 194000 /µL or 194 ×10³/µL = 1.94 lakh/µL; WBC 7.9 ×10³/µL = 7900 /µL; creatinine in µmol/L ÷ 88.4 = mg/dL), otherwise leave it out. ${texts ? `Every result that is not a single plain number goes in "texts" instead, exactly as printed and never dropped: words (Absent, Present, Normal, Nil, Positive, Reactive, Yellow, Clear, Slightly turbid), ranges (20-30, 1-2), "+"/"++", "<0.5", growth/organism notes, blood group. Each result goes in exactly one of "labs" and "texts". Keep the report's own order.` : "Leave out results that are not numbers (Absent, Normal, Positive)."}
 A numeric test that matches NO key (e.g. LDH, vitamin B12, procalcitonin) is still included: make up a short lowercase key from its usual abbreviation (letters, digits and underscores, e.g. "ldh", "vitamin_b12"), give its usual full name as "label" and its unit as printed as "unit". Never make a new key for a test that is already listed under another name; derived values (estimated average glucose, indirect bilirubin, LDL/HDL ratio) and red-cell indices count as tests too.`;
 }
 

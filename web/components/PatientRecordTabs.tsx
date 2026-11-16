@@ -300,7 +300,8 @@ export function NotesTab({ pid, notes, viewerId, viewerRole, onChange }: { pid: 
 
 // ---------------------------------------------------------------- documents
 
-interface ReadOut { title: string; date: string | null; prescriber: string | null; labs: { marker: string; value: number; unit: string }[]; meds: number; medList?: string[]; note: string | null; reread?: boolean; done?: boolean }
+type TextRow = { test: string; group?: string; result: string; reference?: string };
+interface ReadOut { title: string; date: string | null; prescriber: string | null; labs: { marker: string; value: number; unit: string }[]; texts?: TextRow[]; meds: number; medList?: string[]; note: string | null; reread?: boolean; done?: boolean }
 const readOut = (raw: string | null): ReadOut | null => { try { return raw ? (JSON.parse(raw) as ReadOut) : null; } catch { return null; } };
 const READ_WINDOW_MS = 3 * 60_000; // after this, an unread document is treated as "couldn't be read"
 const readable = (d: DocItem) => readableType(d.mime, d.title);
@@ -315,12 +316,16 @@ function ReadPanel({ d, busy, act, refresh }: { d: DocItem; busy: boolean; act: 
   const [rows, setRows] = useState<{ marker: string; value: string }[]>([]);
   const [date, setDate] = useState("");
   const [adding, setAdding] = useState("");
-  useEffect(() => { setRows(x?.labs.map((l) => ({ marker: l.marker, value: String(l.value) })) ?? []); setDate(x?.date ?? ""); }, [d.extract]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [texts, setTexts] = useState<TextRow[]>([]);
+  useEffect(() => { setRows(x?.labs.map((l) => ({ marker: l.marker, value: String(l.value) })) ?? []); setTexts(x?.texts ?? []); setDate(x?.date ?? ""); }, [d.extract]); // eslint-disable-line react-hooks/exhaustive-deps
   if (waiting) return <div className="callout" style={{ marginTop: 8 }}><span className="spin" /> Reading the document…</div>;
   if (!x) return <div className="callout" style={{ marginTop: 8 }}>The document couldn't be read automatically. Press Read again, or open it, enter any values by hand, then press Mark checked.</div>;
   const unit = (m: string) => x.labs.find((l) => l.marker === m)?.unit || LAB_META[m]?.unit || "";
-  const bad = rows.some((r) => r.value.trim() === "" || !Number.isFinite(Number(r.value)) || Number(r.value) < 0);
-  const changed = date !== (x.date ?? "") || rows.length !== x.labs.length || rows.some((r, i) => r.marker !== x.labs[i]?.marker || Number(r.value) !== x.labs[i]?.value);
+  const bad = rows.some((r) => r.value.trim() === "" || !Number.isFinite(Number(r.value)) || Number(r.value) < 0) || texts.some((r) => !r.result.trim());
+  const xt = x.texts ?? [];
+  const changed = date !== (x.date ?? "") || rows.length !== x.labs.length || rows.some((r, i) => r.marker !== x.labs[i]?.marker || Number(r.value) !== x.labs[i]?.value)
+    || texts.length !== xt.length || texts.some((r, i) => r.test !== xt[i]?.test || r.result !== xt[i]?.result);
+  const groups = [...new Set(texts.map((r) => r.group ?? ""))];
   const unused = Object.keys(LAB_META).filter((m) => !rows.some((r) => r.marker === m));
   return (
     <div className="callout" style={{ marginTop: 8 }}>
@@ -342,11 +347,29 @@ function ReadPanel({ d, busy, act, refresh }: { d: DocItem; busy: boolean; act: 
           {adding && <button type="button" className="btn sm" onClick={() => { setRows([...rows, { marker: adding, value: "" }]); setAdding(""); }}>Add</button>}
         </div>
       )}
+      {texts.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <b style={{ fontSize: 13 }}>Other results, as printed ({texts.length})</b>
+          {groups.map((g) => (
+            <div key={g || "-"} style={{ marginTop: 4 }}>
+              {g && <div className="muted" style={{ fontSize: 12.5, marginTop: 4 }}>{g}</div>}
+              {texts.map((r, i) => (r.group ?? "") !== g ? null : (
+                <div key={i} className="row" style={{ gap: 6, marginTop: 4, flexWrap: "nowrap", alignItems: "center" }}>
+                  <span style={{ minWidth: 130 }}>{r.test}</span>
+                  <input aria-label={`${r.test} result`} value={r.result} style={{ width: 200 }} onChange={(e) => setTexts(texts.map((o, k) => (k === i ? { ...o, result: e.target.value } : o)))} />
+                  {r.reference && <span className="muted" style={{ fontSize: 12.5 }}>ref. {r.reference}</span>}
+                  <button type="button" className="btn sm ghost" aria-label={`Remove ${r.test}`} onClick={() => setTexts(texts.filter((_, k) => k !== i))}>✕</button>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
       {x.medList && x.medList.length > 0 && <div className="muted" style={{ marginTop: 6 }}>Medicines seen (not entered from here): {x.medList.join("; ")}</div>}
       {x.note && <div className="muted" style={{ marginTop: 4 }}>Note: {x.note}</div>}
       <div className="row" style={{ gap: 6, marginTop: 8 }}>
-        <button className="btn sm primary" disabled={busy || bad} title={bad ? "Every value needs a number" : undefined} onClick={() => act({ action: "autofile", id: d.id, date: date || null, labs: rows.map((r) => ({ marker: r.marker, value: Number(r.value) })) })}>
-          ✓ {changed ? "Save corrections" : "Reading is correct"}: file{rows.length ? ` and enter ${rows.length} value${rows.length > 1 ? "s" : ""}` : ""}
+        <button className="btn sm primary" disabled={busy || bad} title={bad ? "Every value needs a number, and every result some text (or remove it)" : undefined} onClick={() => act({ action: "autofile", id: d.id, date: date || null, labs: rows.map((r) => ({ marker: r.marker, value: Number(r.value) })), texts })}>
+          ✓ {changed ? "Save corrections" : "Reading is correct"}: file{rows.length + texts.length ? ` and enter ${[rows.length ? `${rows.length} value${rows.length > 1 ? "s" : ""}` : "", texts.length ? `${texts.length} other result${texts.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ")}` : ""}
         </button>
         <button className="btn sm" disabled={busy} title="Files the document and enters nothing; add the values by hand" onClick={() => act({ action: "autofile", id: d.id, reject: true })}>✗ Not usable: file without values</button>
       </div>

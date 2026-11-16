@@ -139,7 +139,7 @@ export function PlanBuilder({ id }: { id: string }) {
                 <div key={s.id} className="pb-src">
                   <span className={`pb-src-ic ${SRC[s.kind].cls}`}><Icon name={SRC[s.kind].icon} /></span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="row between" style={{ flexWrap: "nowrap" }}><b style={{ fontSize: 14 }}>{s.kind === "rx" ? s.label : SRC[s.kind].label}</b><button className="pb-x" aria-label={`Remove ${s.kind === "rx" ? s.label : SRC[s.kind].label}`} onClick={() => act(`rm${s.id}`, { action: "removeSource", id: s.id })}>✕</button></div>
+                    <div className="row between" style={{ flexWrap: "nowrap" }}><b style={{ fontSize: 14 }}>{s.kind === "rx" ? s.label : SRC[s.kind].label}</b>{s.docId ? <a className="v2-sub" style={{ fontSize: 12.5, marginLeft: 8 }} href={`/patients/${id}?tab=documents`} title="Kept under Documents, where any lab values in it are read for you to check and file">saved to Documents ↗</a> : null}<button className="pb-x" aria-label={`Remove ${s.kind === "rx" ? s.label : SRC[s.kind].label}`} onClick={() => act(`rm${s.id}`, { action: "removeSource", id: s.id })}>✕</button></div>
                     <div className="v2-sub num">{fmtTime(s.at)}{s.seconds ? ` · ${Math.floor(s.seconds / 60)}:${String(s.seconds % 60).padStart(2, "0")} recorded` : ""} · {s.text.split(/\s+/).length} words</div>
                     <button className="tq-link" style={{ padding: "4px 0" }} onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? "Hide text" : s.kind === "rx" ? "Show what was read" : "Show transcript"}</button>
                     {open === s.id && <pre className="pb-text">{s.text}</pre>}

@@ -111,6 +111,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     prep: user.role === "DOCTOR" || user.role === "PA" ? getPrep(id) : null,
     documents: listDocuments(id),
     labMarkers: loadLearnedMarkers(),
+    // Results that aren't plain numbers (urine routine, deposits…), newest first.
+    labTexts: all<{ test: string; grp: string | null; result: string; reference: string | null; taken_at: number }>("SELECT test, grp, result, reference, taken_at FROM lab_texts WHERE patient_id = ? ORDER BY taken_at DESC, id LIMIT 500", id),
   });
 }
 

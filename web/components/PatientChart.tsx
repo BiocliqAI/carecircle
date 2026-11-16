@@ -165,8 +165,9 @@ export function PatientChart({ id }: { id: string }) {
                 </div>
                 {(() => { const vrange = vranged ?? s; return <section className="v2-card pad"><VitalCharts s={vrange} plan={cur.plan} base={cur.vitals} markers={[...d.visits.filter((v) => v.visit_at >= vrange.from).map((v) => ({ t: v.visit_at, label: `Visit ${d.visits.indexOf(v) + 1}` })), ...medMarkers(d.medChanges, vrange.from, vrange.to)]} /></section>; })()}
                 {d.kidney ? <KidneyTab lr={d.kidney} plan={cur.plan} sinceVisit={cur.visit_at} now={d.now} clinician pid={id} medChanges={d.medChanges} team={d.careTeam} onChange={changed} range={range} /> : <LabsCard d={d} />}
+                <TextResultsCard d={d} />
               </div>
-            ) : <Empty text="Vitals appear here once Visit 1 sets the care plan and readings start coming in." extra={<LabsCard d={d} />} />
+            ) : <Empty text="Vitals appear here once Visit 1 sets the care plan and readings start coming in." extra={<><LabsCard d={d} /><TextResultsCard d={d} /></>} />
           )}
 
           {sec === "meds" && (
@@ -405,6 +406,36 @@ function LabsCard({ d }: { d: Data }) {
         return <div key={l.marker} className="v2-kv num"><span>{meta?.label ?? l.marker}</span><span><b style={{ fontWeight: 600, color: l.flag && l.flag !== "up" ? "var(--c-red)" : undefined }}>{l.value}</b> <span className="v2-sub">{meta?.unit}{l.prev != null ? ` · ${arrow} from ${l.prev}` : ""}</span></span></div>;
       })}
       {!labs.length && <div className="v2-sub">No lab results yet.</div>}
+    </section>
+  );
+}
+
+/** Lab results that aren't plain numbers (urine routine, deposits…), by report date, newest first. */
+function TextResultsCard({ d }: { d: Data }) {
+  const rows = d.labTexts ?? [];
+  if (!rows.length) return null;
+  const dates = [...new Set(rows.map((r) => r.taken_at))];
+  return (
+    <section className="v2-card pad">
+      <h2 style={{ marginBottom: 6 }}>Other lab results</h2>
+      <div className="v2-sub" style={{ marginBottom: 6 }}>Results that aren&rsquo;t a single number, as printed on the report.</div>
+      {dates.map((at, i) => {
+        const day = rows.filter((r) => r.taken_at === at);
+        const groups = [...new Set(day.map((r) => r.grp ?? ""))];
+        return (
+          <details key={at} open={i === 0} style={{ marginTop: 6 }}>
+            <summary><b style={{ fontWeight: 600 }}>{fmtDate(at, { day: "numeric", month: "short", year: "numeric" })}</b> <span className="v2-sub">· {day.length} result{day.length > 1 ? "s" : ""}</span></summary>
+            {groups.map((g) => (
+              <div key={g || "-"} style={{ marginTop: 4 }}>
+                {g && <div className="v2-sub" style={{ fontSize: 12.5, marginTop: 4 }}>{g}</div>}
+                {day.filter((r) => (r.grp ?? "") === g).map((r, k) => (
+                  <div key={k} className="v2-kv"><span>{r.test}</span><span><b style={{ fontWeight: 600 }}>{r.result}</b>{r.reference ? <span className="v2-sub"> · ref. {r.reference}</span> : null}</span></div>
+                ))}
+              </div>
+            ))}
+          </details>
+        );
+      })}
     </section>
   );
 }
