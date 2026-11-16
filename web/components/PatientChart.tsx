@@ -12,7 +12,7 @@ import { ClinicalSummaryCard } from "./ClinicalSummaryCard";
 import { DocumentOcrModal } from "./DocumentOcrModal";
 import { ClinicOutsideVisits } from "./OutsideVisits";
 import { BaselineCard } from "./baseline";
-import { CareCircleCard, DeletePatientCard, DetailsCard, DocumentsTab, NotesTab } from "./PatientRecordTabs";
+import { CareCircleCard, ClearRecordsCard, DeletePatientCard, DetailsCard, DocumentsTab, NotesTab } from "./PatientRecordTabs";
 import { PlanTab, Timeline, type Data, type TL } from "./PatientView";
 import { Icon } from "./Icon";
 import { Spark } from "./Spark";
@@ -165,9 +165,10 @@ export function PatientChart({ id }: { id: string }) {
                 </div>
                 {(() => { const vrange = vranged ?? s; return <section className="v2-card pad"><VitalCharts s={vrange} plan={cur.plan} base={cur.vitals} markers={[...d.visits.filter((v) => v.visit_at >= vrange.from).map((v) => ({ t: v.visit_at, label: `Visit ${d.visits.indexOf(v) + 1}` })), ...medMarkers(d.medChanges, vrange.from, vrange.to)]} /></section>; })()}
                 {d.kidney ? <KidneyTab lr={d.kidney} plan={cur.plan} sinceVisit={cur.visit_at} now={d.now} clinician pid={id} medChanges={d.medChanges} team={d.careTeam} onChange={changed} range={range} /> : <LabsCard d={d} />}
-                <TextResultsCard d={d} />
+                <TextResultsCard d={d} onChange={changed} />
+                <LabValuesCard d={d} onChange={changed} />
               </div>
-            ) : <Empty text="Vitals appear here once Visit 1 sets the care plan and readings start coming in." extra={<><LabsCard d={d} /><TextResultsCard d={d} /></>} />
+            ) : <Empty text="Vitals appear here once Visit 1 sets the care plan and readings start coming in." extra={<><LabsCard d={d} /><TextResultsCard d={d} onChange={changed} /><LabValuesCard d={d} onChange={changed} /></>} />
           )}
 
           {sec === "meds" && (
@@ -238,7 +239,7 @@ export function PatientChart({ id }: { id: string }) {
             <div className="v2-grid12">
               <div className="span7 stack gap16">
                 <DetailsCard p={d.patient} onChange={changed} />
-                {isDoctor && d.patient.doctor_id === d.viewer.id && <DeletePatientCard p={d.patient} />}
+                {isDoctor && d.patient.doctor_id === d.viewer.id && <><ClearRecordsCard p={d.patient} onChange={changed} /><DeletePatientCard p={d.patient} /></>}
               </div>
               <div className="span5"><BaselineCard b={d.baseline} pid={id} canEdit now={d.now} /></div>
             </div>
@@ -411,8 +412,9 @@ function LabsCard({ d }: { d: Data }) {
 }
 
 /** Lab results that aren't plain numbers (urine routine, deposits…), by report date, newest first. */
-function TextResultsCard({ d }: { d: Data }) {
+function TextResultsCard({ d, onChange }: { d: Data; onChange: () => void }) {
   const rows = d.labTexts ?? [];
+  const clinician = d.viewer.role === "DOCTOR" || d.viewer.role === "PA";
   if (!rows.length) return null;
   const dates = [...new Set(rows.map((r) => r.taken_at))];
   return (
@@ -429,13 +431,44 @@ function TextResultsCard({ d }: { d: Data }) {
               <div key={g || "-"} style={{ marginTop: 4 }}>
                 {g && <div className="v2-sub" style={{ fontSize: 12.5, marginTop: 4 }}>{g}</div>}
                 {day.filter((r) => (r.grp ?? "") === g).map((r, k) => (
-                  <div key={k} className="v2-kv"><span>{r.test}</span><span><b style={{ fontWeight: 600 }}>{r.result}</b>{r.reference ? <span className="v2-sub"> · ref. {r.reference}</span> : null}</span></div>
+                  <div key={k} className="v2-kv"><span>{r.test}</span><span><b style={{ fontWeight: 600 }}>{r.result}</b>{r.reference ? <span className="v2-sub"> · ref. {r.reference}</span> : null}{clinician && <DeleteLab pid={d.patient.id} kind="text" labId={r.id} what={`${r.test}: ${r.result}`} onChange={onChange} />}</span></div>
                 ))}
               </div>
             ))}
           </details>
         );
       })}
+    </section>
+  );
+}
+
+/** Removes one wrong lab value or result (asks first). */
+function DeleteLab({ pid, kind, labId, what, onChange }: { pid: string; kind: "value" | "text"; labId: number; what: string; onChange: () => void }) {
+  return (
+    <button type="button" className="tq-link" style={{ marginLeft: 8, color: "var(--c-mute)" }} aria-label={`Delete ${what}`} title="Delete this value"
+      onClick={async () => { if (!window.confirm(`Delete ${what} from the lab history?`)) return; try { await api(`/api/patients/${pid}/labs`, { body: { action: "delete", kind, labId } }); onChange(); } catch (e) { window.alert((e as Error).message); } }}>✕</button>
+  );
+}
+
+/** Every lab value by report date, for the care team to check and remove a wrong one. */
+function LabValuesCard({ d, onChange }: { d: Data; onChange: () => void }) {
+  const rows = d.labValues ?? [];
+  if (!rows.length) return null;
+  const dates = [...new Set(rows.map((r) => r.taken_at))];
+  return (
+    <section className="v2-card pad">
+      <details>
+        <summary><h2 style={{ display: "inline" }}>All lab values</h2> <span className="v2-sub">· {rows.length} on {dates.length} date{dates.length > 1 ? "s" : ""} · check or remove a wrong value</span></summary>
+        {dates.map((at) => (
+          <div key={at} style={{ marginTop: 8 }}>
+            <b style={{ fontWeight: 600 }}>{fmtDate(at, { day: "numeric", month: "short", year: "numeric" })}</b>
+            {rows.filter((r) => r.taken_at === at).map((r) => {
+              const meta = LAB_META[r.marker];
+              return <div key={r.id} className="v2-kv num"><span>{meta?.label ?? r.marker}</span><span><b style={{ fontWeight: 600 }}>{r.value}</b> <span className="v2-sub">{meta?.unit}{r.source === "BASELINE" ? " · baseline" : ""}</span><DeleteLab pid={d.patient.id} kind="value" labId={r.id} what={`${meta?.label ?? r.marker} ${r.value}`} onChange={onChange} /></span></div>;
+            })}
+          </div>
+        ))}
+      </details>
     </section>
   );
 }

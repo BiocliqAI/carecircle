@@ -11,7 +11,7 @@ import { DOCUMENT_ACCEPT, mimeFor, readableType } from "@/lib/mimetypes";
 export interface ProfilePatient { id: string; name: string; age: number | null; sex: string; phone: string; conditions: string; address: string; user_id?: string | null; doctor_id?: string }
 export interface ProfileCaregiver { id: string; name: string; relation: string | null; phone: string; level: number; user_id: string | null; dashboard?: number }
 export interface NoteItem { id: number; author_id: string; author_name: string | null; author_role: string | null; kind: string; body: string; created_at: number; updated_at: number }
-export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null; extract: string | null }
+export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null; extract: string | null; filed_labs?: number; filed_visits?: number }
 
 const CATS: [string, string][] = [["prescription", "Prescription"], ["lab", "Lab report"], ["discharge", "Discharge summary"], ["imaging", "Imaging"], ["voice", "Voice note"], ["other", "Other"]];
 const catLabel = (c: string) => CATS.find((x) => x[0] === c)?.[1] ?? "Other";
@@ -100,6 +100,64 @@ export function DetailsCard({ p, onChange }: { p: ProfilePatient; onChange: () =
 }
 
 /** Removes the patient and their whole record, after typing their name. Shown to the patient's doctor only. */
+/** Clears chosen kinds of records while keeping the patient, their profile, care circle and care team. */
+export function ClearRecordsCard({ p, onChange }: { p: ProfilePatient; onChange: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [info, setInfo] = useState<{ parts: Record<string, string>; counts: Record<string, number> } | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [typed, setTyped] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const matches = typed.trim().toLowerCase() === p.name.trim().toLowerCase();
+  async function load() {
+    try { setInfo(await api(`/api/patients/${p.id}/clear`)); } catch (e) { setErr((e as Error).message); }
+  }
+  async function clear() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await api<{ removed: Record<string, number> }>(`/api/patients/${p.id}/clear`, { body: { parts: picked, confirmName: typed } });
+      const total = Object.values(r.removed).reduce((a, b) => a + b, 0);
+      setDone(`Cleared ${total} record${total === 1 ? "" : "s"}.`);
+      setOpen(false); setPicked([]); setTyped("");
+      onChange();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h3>Clear records</h3>
+        {!open && <button className="btn sm" onClick={() => { setOpen(true); setDone(null); load(); }}>Clear…</button>}
+      </div>
+      {!open ? (
+        <p className="muted">Removes chosen records (visits, labs, documents…) but keeps {p.name}, the profile, care circle and care team.{done ? ` ${done}` : ""}</p>
+      ) : !info ? (err ? <div className="alert bad">{err}</div> : <span className="spin" />) : (
+        <div className="stack">
+          {Object.entries(info.parts).map(([k, label]) => (
+            <label key={k} className="row" style={{ gap: 8, flexWrap: "nowrap", alignItems: "center" }}>
+              <input type="checkbox" style={{ width: 16, height: 16, minHeight: 0, margin: 0, flex: "none" }} disabled={!info.counts[k]} checked={picked.includes(k)} onChange={(e) => setPicked(e.target.checked ? [...picked, k] : picked.filter((x) => x !== k))} />
+              <span style={{ flex: 1 }}>{label}</span>
+              <span className="muted">{info.counts[k] || "none"}</span>
+            </label>
+          ))}
+          {picked.length > 0 && <div className="alert bad"><div>This permanently deletes the ticked records for {p.name}. It can&rsquo;t be undone. The patient, profile, care circle, consents and care team are kept.</div></div>}
+          <label className="f">Type <b>{p.name}</b> to confirm<input value={typed} onChange={(e) => setTyped(e.target.value)} /></label>
+          {err && <div className="alert bad">{err}</div>}
+          <div className="row">
+            <button className="btn danger" disabled={!matches || !picked.length || busy} onClick={clear}>{busy ? <span className="spin" /> : null} Clear {picked.length ? `${picked.length} kind${picked.length > 1 ? "s" : ""} of record` : "records"}</button>
+            <button className="btn" onClick={() => { setOpen(false); setPicked([]); setTyped(""); setErr(null); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function DeletePatientCard({ p }: { p: ProfilePatient }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
@@ -442,7 +500,18 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
     } finally {
       setBusy(false);
     }
+  }  // A document with values or visits filed from it: offer to remove those too, so nothing is left pointing at a deleted file.
+  async function deleteDoc(d: DocItem) {
+    const labs = d.filed_labs ?? 0, visits = d.filed_visits ?? 0;
+    if (!labs && !visits) {
+      if (window.confirm(`Delete “${d.title}”?`)) await act({ action: "delete", id: d.id });
+      return;
+    }
+    const what = [labs ? `${labs} lab value${labs > 1 ? "s" : ""}` : "", visits ? `${visits} visit${visits > 1 ? "s" : ""} to other doctors` : ""].filter(Boolean).join(" and ");
+    if (window.confirm(`Delete “${d.title}” AND the ${what} filed from it?\n\nOK: delete both. Cancel: choose to keep them.`)) await act({ action: "delete", id: d.id, withData: true });
+    else if (window.confirm(`Delete only the document “${d.title}”, keeping the ${what} in the record?`)) await act({ action: "delete", id: d.id });
   }
+
   // One request per file, so each stays under the server's per-request limit and one bad file doesn't sink the rest.
   async function upload() {
     if (!files.length) return;
@@ -536,7 +605,7 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
                     {canEdit && readable(d) && <button className="btn sm ghost" disabled={busy} title="Have the AI read this document again and show what it finds for checking" onClick={async () => { setRereading(d.id); await act({ action: "reread", id: d.id }); setRereading(null); }}>{rereading === d.id ? <><span className="spin" /> Reading…</> : "↻ Read again"}</button>}
                     {canEdit && !d.filed_at && <button className="btn sm primary" disabled={busy} title="I have opened the original and the details are right" onClick={() => act({ action: "verify", id: d.id })}>Mark checked</button>}
                     {canEdit && <button className="btn sm ghost" onClick={() => setEditing({ id: d.id, title: d.title, category: d.category, notes: d.notes ?? "" })}>Edit</button>}
-                    {canEdit && <button className="btn sm ghost" onClick={() => window.confirm(`Delete “${d.title}”?`) && act({ action: "delete", id: d.id })}>Delete</button>}
+                    {canEdit && <button className="btn sm ghost" onClick={() => deleteDoc(d)}>Delete</button>}
                   </>
                 )}
               </div>
