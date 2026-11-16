@@ -80,12 +80,23 @@ export function startUpdate(pid: string, by: string, t: number): number {
     builtFrom: d.builtFrom ?? builtSoFar(base),
     points: d.points.map((x) => ({ ...x, old: true })),
     merges: [],
-    labs: d.labs.map(({ fresh: _f, ...x }) => x), texts: d.texts.map(({ fresh: _f, ...x }) => x), homes: d.homes.map(({ fresh: _f, ...x }) => x),
+    // The doctor has confirmed these values: their warnings are settled.
+    labs: d.labs.map(({ fresh: _f, ...x }) => (x.check ? { ...x, ok: true } : x)), texts: d.texts.map(({ fresh: _f, ...x }) => x), homes: d.homes.map(({ fresh: _f, ...x }) => x),
   };
   // It opens ready to correct; adding records sends it to reading first.
   const id = run("INSERT INTO onboardings(patient_id, status, draft, built_at, created_by, created_at, updated_at, base_id) VALUES(?,?,?,?,?,?,?,?)", pid, "REVIEW", JSON.stringify(copy), t, by, t, t, base.id).lastInsertRowid;
   audit(t, by, "HISTORY_UPDATE_STARTED", "patient", pid, { onboarding: id, base: base.id });
   return id;
+}
+
+/** An update opened before confirmed values were marked checked: settles their warnings (once; values from the
+ *  records added in the update keep theirs). */
+export function settleConfirmedLabs(o: OnboardingRow) {
+  if (!o.base_id || o.status === "CONFIRMED") return;
+  const d = draftOf(o);
+  if (!d || !d.labs.some((l) => l.check && !l.ok && !l.fresh)) return;
+  d.labs = d.labs.map((l) => (l.check && !l.ok && !l.fresh ? { ...l, ok: true } : l));
+  run("UPDATE onboardings SET draft = ? WHERE id = ?", JSON.stringify(d), o.id);
 }
 
 /** For drafts made before `builtFrom` was kept: the records that were read when the draft was put together. */
@@ -257,7 +268,7 @@ export function rebuildDraft(pid: string, by: string, t: number) {
   if (o.status === "SENT") throw new Error("This onboarding is with the doctor");
   // From scratch: a first onboarding forgets its draft; an update goes back to the confirmed history it started from.
   const base = o.base_id ? getOnboarding(o.base_id) : null;
-  const restart = base ? JSON.stringify({ ...draftOf(base)!, summary: unmarked(draftOf(base)!.summary), builtFrom: draftOf(base)!.builtFrom ?? builtSoFar(base), points: draftOf(base)!.points.map((x) => ({ ...x, old: true })), merges: [] }) : null;
+  const restart = base ? JSON.stringify({ ...draftOf(base)!, summary: unmarked(draftOf(base)!.summary), builtFrom: draftOf(base)!.builtFrom ?? builtSoFar(base), points: draftOf(base)!.points.map((x) => ({ ...x, old: true })), merges: [], labs: draftOf(base)!.labs.map((x) => (x.check ? { ...x, ok: true } : x)) }) : null;
   const hasRecords = !!get("SELECT 1 FROM patient_documents WHERE onboarding_id = ?", o.id);
   run("UPDATE onboardings SET status = ?, draft = ?, build_error = NULL, updated_at = ? WHERE id = ?", base && !hasRecords ? "REVIEW" : "COLLECTING", restart, t, o.id);
   audit(t, by, "ONBOARDING_REBUILD", "patient", pid, { onboarding: o.id });
@@ -767,7 +778,7 @@ export function confirmOnboarding(pid: string, by: UserRow, t: number) {
     }
     // What's confirmed is no longer "new": the marks go, and this becomes the history later updates start from.
     const final: Draft = { ...d, summary: unmarked(d.summary), points: d.points.map((x) => ({ ...x, old: true })), merges: [],
-      labs: d.labs.map(({ fresh: _f, ...x }) => x), texts: d.texts.map(({ fresh: _f, ...x }) => x), homes: d.homes.map(({ fresh: _f, ...x }) => x),
+      labs: d.labs.map(({ fresh: _f, ...x }) => (x.check ? { ...x, ok: true } : x)), texts: d.texts.map(({ fresh: _f, ...x }) => x), homes: d.homes.map(({ fresh: _f, ...x }) => x),
       builtFrom: d.builtFrom ?? [...mine] };
     run("UPDATE onboardings SET status = 'CONFIRMED', draft = ?, confirmed_by = ?, confirmed_at = ?, updated_at = ? WHERE id = ?", JSON.stringify(final), by.id, t, t, o.id);
     audit(t, by.id, "ONBOARDING_CONFIRMED", "patient", pid, { onboarding: o.id, ...counts });

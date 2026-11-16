@@ -474,7 +474,8 @@ function LabsTab({ draft, edit, locked }: { draft: Draft; edit: Edit; locked: bo
   const dates = [...new Set(dated.map((l) => l.date!))].sort();
   const markers = [...new Set(dated.map((l) => l.marker))].sort((a, b) => Object.keys(LAB_META).indexOf(a) - Object.keys(LAB_META).indexOf(b))
     .filter((m) => !onlyCheck || dated.some((l) => l.marker === m && l.check && !l.ok));
-  const setLab = (id: string, patch: Partial<LabItem>) => edit((x) => { const l = x.labs.find((y) => y.id === id); if (l) Object.assign(l, patch); });
+  // Correcting a value counts as checking it (its warning was about the value as read).
+  const setLab = (id: string, patch: Partial<LabItem>) => edit((x) => { const l = x.labs.find((y) => y.id === id); if (l) Object.assign(l, "value" in patch && patch.value !== null && patch.value !== l.value ? { ...patch, ok: true } : patch); });
   const freshCount = labs.filter((l) => l.fresh).length + draft.texts.filter((x) => x.fresh).length + draft.homes.filter((x) => x.fresh).length;
   const checks = labs.filter((l) => l.check && !l.ok && l.value !== null);
   const homesBy = (t: string) => draft.homes.filter((h) => h.type === t).sort((a, b) => a.date.localeCompare(b.date));

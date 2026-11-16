@@ -155,6 +155,14 @@ describe("adding records to a history", () => {
     assert.equal(onb.confirmedOnboarding(pid)!.id, o.id, "the confirmed history stays until the update is confirmed");
 
     assert.equal(up.status, "REVIEW", "an update opens ready to correct");
+    // Values the doctor confirmed don't come back as "to check".
+    const seeded = onb.draftOf(up)!;
+    assert.equal(onb.openItems(seeded).labs, 0);
+    // An update opened before that fix gets its confirmed values settled when it's opened.
+    seeded.labs = seeded.labs.map((l) => ({ ...l, check: "Hard to read.", ok: false }));
+    run("UPDATE onboardings SET draft = ? WHERE id = ?", JSON.stringify(seeded), upId);
+    onb.settleConfirmedLabs(onb.getOnboarding(upId)!);
+    assert.equal(onb.openItems(onb.draftOf(onb.getOnboarding(upId))!).labs, 0);
     // The confirmed history is locked: changes go through the update, where they're marked.
     const confirmedDraft = onb.draftOf(onb.confirmedOnboarding(pid))!;
     const hand = structuredClone(onb.draftOf(up)!);
@@ -189,6 +197,8 @@ describe("adding records to a history", () => {
     assert.equal(listOf(d.summary, "admissions")[0]._new, true);
     assert.equal(listOf(d.summary, "conditions")[0]._changed?.startsWith("Edited by"), true, "the hand edit is kept");
     assert.equal(onb.openItems(d).points, 2, "the new point and the disagreement");
+    assert.equal(onb.openItems(d).labs, 1, "only the new record's value needs checking, not the confirmed ones");
+    assert.match(d.labs.find((l) => l.fresh)!.check ?? "", /Big change/);
     onb.sendToDoctor(pid, pa, T + 2000);
     assert.equal(onb.draftOf(onb.getOnboarding(upId))!.points.filter((p) => p.status === "doctor" && !p.old).length, 2);
     assert.equal(onb.onboardingTasks(doc).find((x) => x.patientId === pid)!.forDoctor, 2);
