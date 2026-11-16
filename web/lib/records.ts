@@ -171,6 +171,7 @@ export interface DocumentRow {
   filed_at: number | null; // null = uploaded but not yet checked by a person
   filed_by_name: string | null;
   extract: string | null; // what the AI read from the file (JSON), for the checker to confirm
+  onboarding_id: number | null; // brought at onboarding: checked there, not on its own
   filed_labs: number; // lab values / results entered from it
   filed_visits: number; // visits to other doctors recorded from it
   patient_id: string;
@@ -187,7 +188,7 @@ export interface DocumentRow {
 
 export const listDocuments = (pid: string) =>
   all<DocumentRow>(
-    "SELECT d.id, d.filed_at, f.name AS filed_by_name, d.extract, (SELECT COUNT(*) FROM labs l WHERE l.document_id = d.id) + (SELECT COUNT(*) FROM lab_texts x WHERE x.document_id = d.id) AS filed_labs, (SELECT COUNT(*) FROM outside_visits o WHERE o.document_id = d.id) AS filed_visits, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by LEFT JOIN users f ON f.id = d.filed_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
+    "SELECT d.id, d.filed_at, f.name AS filed_by_name, d.extract, d.onboarding_id, (SELECT COUNT(*) FROM labs l WHERE l.document_id = d.id) + (SELECT COUNT(*) FROM lab_texts x WHERE x.document_id = d.id) AS filed_labs, (SELECT COUNT(*) FROM outside_visits o WHERE o.document_id = d.id) AS filed_visits, d.patient_id, d.title, d.category, d.mime, d.size, d.notes, d.source, d.uploaded_by, u.name AS uploaded_by_name, d.uploaded_at FROM patient_documents d LEFT JOIN users u ON u.id = d.uploaded_by LEFT JOIN users f ON f.id = d.filed_by WHERE d.patient_id = ? ORDER BY d.uploaded_at DESC",
     pid,
   );
 
@@ -327,7 +328,7 @@ export function deletePatient(pid: string, t: number, actor: string): { name: st
       run("DELETE FROM escalation_events WHERE escalation_id = ?", e.id);
       run("DELETE FROM settings WHERE key = ?", `loop:${e.id}`);
     }
-    for (const table of ["escalations", "observations", "labs", "lab_texts", "med_changes", "tasks", "visits", "messages", "patient_baseline", "patient_notes", "patient_documents",
+    for (const table of ["escalations", "observations", "labs", "lab_texts", "onboardings", "med_changes", "tasks", "visits", "messages", "patient_baseline", "patient_notes", "patient_documents",
       "patient_reviews", "plan_drafts", "visit_prep", "outside_visits", "watches", "consents", "care_team", "caregivers", "record_questions"]) {
       run(`DELETE FROM ${table} WHERE patient_id = ?`, pid);
     }

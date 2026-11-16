@@ -19,7 +19,13 @@ export interface DocExtract {
   date: string | null; // YYYY-MM-DD
   prescriber: string | null;
   /** `date` when the sample was taken on another day than the document's (a note quoting an earlier report). */
-  labs: { marker: string; value: number; unit: string; date?: string }[];
+  labs: { marker: string; value: number; unit: string; date?: string; uncertain?: boolean }[];
+  /** What the AI took the document to be (lab_report, vitals_diary, discharge_summary…): sorts onboarding records into piles. */
+  kind?: string;
+  /** The document's text as transcribed (capped): what the onboarding summary is built from. */
+  text?: string;
+  /** Home readings with their own dates (a BP or sugar diary). */
+  readings?: { type: string; v1: number; v2?: number; date: string; time?: string }[];
   /** Each separate consultation in the document, with its own date (a running note often has several). */
   visits?: DocVisit[];
   /** Results that aren't plain numbers, as printed (kept, never dropped). */
@@ -117,6 +123,20 @@ export function enterTexts(pid: string, texts: TextResult[], takenAt: number, us
   return n;
 }
 
+const READING_TYPES = new Set(["bp", "weight", "glucose", "hr", "spo2", "temp"]);
+/** Home readings that carry their own date (diaries); undated ones can't be charted and are left out. */
+export function cleanReadings(raw: unknown): NonNullable<DocExtract["readings"]> {
+  const out: NonNullable<DocExtract["readings"]> = [];
+  for (const r of Array.isArray(raw) ? (raw as Record<string, unknown>[]).slice(0, 2000) : []) {
+    const type = String(r?.type ?? ""), v1 = Number(r?.v1), v2 = r?.v2 == null ? undefined : Number(r.v2);
+    if (!READING_TYPES.has(type) || !Number.isFinite(v1) || !isDay(r?.date)) continue;
+    if (type === "bp" && !Number.isFinite(v2)) continue;
+    const time = typeof r.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(r.time) ? r.time : undefined;
+    out.push({ type, v1, ...(v2 !== undefined && Number.isFinite(v2) ? { v2 } : {}), date: r.date as string, ...(time ? { time } : {}) });
+  }
+  return out;
+}
+
 export const DOC_TYPE_CATEGORY: Record<string, string> = { handwritten_prescription: "prescription", lab_report: "lab", discharge_summary: "discharge", vitals_diary: "other", other: "other" };
 
 export function readExtract(raw: string | null | undefined): DocExtract | null {
@@ -146,10 +166,10 @@ export async function extractDocument(docId: number, opts: { reread?: boolean } 
       const marker = resolveMarker(l.marker, l.label, l.unit);
       const taken = isDay((l as { date?: unknown }).date) ? String((l as { date?: unknown }).date) : undefined;
       const on = taken && taken !== r.documentDate ? taken : undefined;
-      if (marker && !labs.some((x) => x.marker === marker && x.date === on)) labs.push({ marker, value, unit: l.unit || LAB_META[marker].unit, ...(on ? { date: on } : {}) });
+      if (marker && !labs.some((x) => x.marker === marker && x.date === on)) labs.push({ marker, value, unit: l.unit || LAB_META[marker].unit, ...(on ? { date: on } : {}), ...((l as { uncertain?: unknown }).uncertain === true ? { uncertain: true } : {}) });
     }
     const date = r.documentDate && /^\d{4}-\d{2}-\d{2}$/.test(r.documentDate) ? r.documentDate : null;
-    const x: DocExtract = { category: DOC_TYPE_CATEGORY[r.documentType] ?? "other", title: (r.documentTypeName || "Medical document").slice(0, 90), date, prescriber: r.prescriber, labs, texts: cleanTexts(r.extracted.texts), visits: cleanVisits(r.visits, d.patient_id, clockNow()), meds: r.extracted.medications.length, medList: r.extracted.medications.slice(0, 12).map((m) => `${m.name} ${m.dose ?? ""}`.trim().slice(0, 80)), note: r.doctorNotes?.slice(0, 300) ?? null, ...(opts.reread ? { reread: true } : {}) };
+    const x: DocExtract = { category: DOC_TYPE_CATEGORY[r.documentType] ?? "other", title: (r.documentTypeName || "Medical document").slice(0, 90), date, prescriber: r.prescriber, labs, texts: cleanTexts(r.extracted.texts), visits: cleanVisits(r.visits, d.patient_id, clockNow()), kind: r.documentType, text: (r.transcription || "").slice(0, 30_000), readings: cleanReadings(r.extracted.vitals), meds: r.extracted.medications.length, medList: r.extracted.medications.slice(0, 12).map((m) => `${m.name} ${m.dose ?? ""}`.trim().slice(0, 80)), note: r.doctorNotes?.slice(0, 300) ?? null, ...(opts.reread ? { reread: true } : {}) };
     run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify(x), docId);
     return x;
   } catch {

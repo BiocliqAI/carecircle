@@ -1,7 +1,9 @@
 import { now } from "@/lib/clock";
 import { cleanBaseline, deleteDraft, saveBaseline } from "@/lib/clinic";
 import { getUser, onboardPatient, type OnboardInput } from "@/lib/engine";
-import { get } from "@/lib/db";
+import { get, run } from "@/lib/db";
+import { normaliseLang, setLang } from "@/lib/lang";
+import { startOnboarding } from "@/lib/onboarding";
 import { err, isClinician, json, ready, sessionUser } from "@/lib/server";
 import { MAX_CAREGIVERS, ageFromDob, type Baseline } from "@/lib/types";
 
@@ -11,7 +13,7 @@ export async function POST(req: Request) {
   await ready();
   const user = await sessionUser();
   if (!isClinician(user)) return err("Doctor / PA only", 403);
-  const body = (await req.json()) as Partial<OnboardInput> & { baseline?: Partial<Baseline>; draftId?: string };
+  const body = (await req.json()) as Partial<OnboardInput> & { baseline?: Partial<Baseline>; draftId?: string; language?: string; hospitalId?: string; startOnboarding?: boolean };
   if (!body.name?.trim()) return err("Name is required");
   if (!body.phone || !/^\+?[\d\s-]{8,}$/.test(body.phone)) return err("A valid WhatsApp number is required");
   const cgs = (body.caregivers || []).filter((c) => c.name?.trim() && c.phone?.trim());
@@ -42,7 +44,13 @@ export async function POST(req: Request) {
     );
     if (baseline) saveBaseline(id, baseline, t, user!.id);
     if (body.draftId) deleteDraft(body.draftId);
-    return json({ id });
+    const hid = (body.hospitalId ?? "").trim().slice(0, 60);
+    if (hid) run("UPDATE patients SET hospital_id = ? WHERE id = ?", hid, id);
+    const lang = normaliseLang(body.language);
+    const puid = get<{ user_id: string | null }>("SELECT user_id FROM patients WHERE id = ?", id)?.user_id;
+    if (lang && puid) setLang(puid, lang);
+    const onboarding = body.startOnboarding ? startOnboarding(id, user!.id, t) : null;
+    return json({ id, onboarding });
   } catch (e) {
     return err((e as Error).message, 409);
   }

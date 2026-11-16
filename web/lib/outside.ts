@@ -234,7 +234,7 @@ export function normaliseChanges(raw: unknown, plan: CarePlan | undefined): OVMe
 // ---------------------------------------------------------------- storage
 export const getOutsideVisit = (id: number) => get<OutsideVisitRow>("SELECT * FROM outside_visits WHERE id = ?", id);
 
-function upsertCareTeam(pid: string, name: string, specialty: string | null, hospital: string | null): number {
+export function upsertCareTeam(pid: string, name: string, specialty: string | null, hospital: string | null): number {
   const norm = (s: string) => s.toLowerCase().replace(/^dr\.?\s*/, "").replace(/[^a-z]/g, "");
   const hit = all<{ id: number; name: string; specialty: string | null; hospital: string | null }>("SELECT id, name, specialty, hospital FROM care_team WHERE patient_id = ?", pid).find((r) => norm(r.name) === norm(name));
   if (hit) {

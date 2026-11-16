@@ -4,14 +4,15 @@ import { useEffect, useState } from "react";
 import { api } from "./client";
 import { ConsentList, type ConsentView } from "./baseline";
 import { Dictate } from "./Dictate";
+import { ClinicalHistoryCard } from "./ClinicalHistoryCard";
 import { fmtDate, fmtDateTime } from "@/lib/time";
 import { LAB_META, MAX_CAREGIVERS } from "@/lib/types";
 import { DOCUMENT_ACCEPT, mimeFor, readableType } from "@/lib/mimetypes";
 
-export interface ProfilePatient { id: string; name: string; age: number | null; sex: string; phone: string; conditions: string; address: string; user_id?: string | null; doctor_id?: string }
+export interface ProfilePatient { id: string; name: string; age: number | null; sex: string; phone: string; conditions: string; address: string; user_id?: string | null; doctor_id?: string; hospital_id?: string | null }
 export interface ProfileCaregiver { id: string; name: string; relation: string | null; phone: string; level: number; user_id: string | null; dashboard?: number }
 export interface NoteItem { id: number; author_id: string; author_name: string | null; author_role: string | null; kind: string; body: string; created_at: number; updated_at: number }
-export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null; extract: string | null; filed_labs?: number; filed_visits?: number }
+export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null; extract: string | null; filed_labs?: number; filed_visits?: number; onboarding_id?: number | null }
 
 const CATS: [string, string][] = [["prescription", "Prescription"], ["lab", "Lab report"], ["discharge", "Discharge summary"], ["imaging", "Imaging"], ["voice", "Voice note"], ["other", "Other"]];
 const catLabel = (c: string) => CATS.find((x) => x[0] === c)?.[1] ?? "Other";
@@ -25,6 +26,7 @@ export function ProfileTab({ patient, caregivers, consents, onChange, children }
     <div className="grid side">
       <div className="stack gap16">
         <DetailsCard p={patient} onChange={onChange} />
+        <ClinicalHistoryCard pid={patient.id} />
         <CareCircleCard pid={patient.id} patient={patient} caregivers={caregivers} consents={consents} onChange={onChange} />
       </div>
       <div className="stack gap16">{children}</div>
@@ -67,6 +69,7 @@ export function DetailsCard({ p, onChange }: { p: ProfilePatient; onChange: () =
           <dt>Name</dt><dd>{p.name}</dd>
           <dt>Age / sex</dt><dd>{p.age ?? "—"} · {p.sex === "M" ? "Male" : p.sex === "F" ? "Female" : p.sex || "—"}</dd>
           <dt>WhatsApp</dt><dd>{p.phone}</dd>
+          {p.hospital_id && <><dt>Hospital ID</dt><dd>{p.hospital_id}</dd></>}
           <dt>Address</dt><dd>{p.address || "—"}</dd>
           <dt>Conditions</dt><dd>{p.conditions || "—"}</dd>
         </dl>
@@ -588,7 +591,9 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
                     <b>{d.title}</b> <span className="badge">{catLabel(d.category)}</span> {d.source === "whatsapp" && <span className="badge good">via WhatsApp</span>} {d.filed_at ? <span className="badge good" title={fmtDateTime(d.filed_at)}>Checked{d.filed_by_name ? ` by ${d.filed_by_name.split(" ").slice(0, 2).join(" ")}` : ""}</span> : <span className="badge warn">Needs check</span>}
                     <div className="muted">{fmtDateTime(d.uploaded_at)}{d.uploaded_by_name ? ` · ${d.uploaded_by_name}` : ""} · {kb(d.size)}</div>
                     {d.notes && <div style={{ marginTop: 2 }}>{d.notes}</div>}
-                    {canEdit && readable(d) && awaitingCheck(d) && <ReadPanel d={d} pid={pid} busy={busy} act={act} refresh={onChange} />}
+                    {canEdit && readable(d) && awaitingCheck(d) && (d.onboarding_id && !d.filed_at
+                      ? <div className="callout" style={{ marginTop: 8 }}>Brought at onboarding: it&rsquo;s checked with the other records. <a href={`/patients/${pid}/onboarding`}>Open the onboarding</a></div>
+                      : <ReadPanel d={d} pid={pid} busy={busy} act={act} refresh={onChange} />)}
                     {d.mime.startsWith("audio/") && <audio src={`/api/documents/${d.id}`} controls preload="none" style={{ marginTop: 6, height: 32 }} />}
                   </>
                 )}

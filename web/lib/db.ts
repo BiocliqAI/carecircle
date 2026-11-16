@@ -115,6 +115,15 @@ CREATE TABLE IF NOT EXISTS onboarding_drafts (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, step INTEGER NOT NULL, data TEXT NOT NULL,
   created_by TEXT, created_at INTEGER NOT NULL, updated_by TEXT, updated_at INTEGER NOT NULL
 );
+-- Onboarding from past records: the assistant uploads the family's records, the AI reads them and drafts the
+-- clinical history, the assistant checks it and sends it to the doctor, who confirms (or sends it back).
+CREATE TABLE IF NOT EXISTS onboardings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'COLLECTING',
+  draft TEXT, built_at INTEGER, build_error TEXT,
+  created_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  sent_by TEXT, sent_at INTEGER, confirmed_by TEXT, confirmed_at INTEGER, returned_by TEXT, returned_at INTEGER, return_note TEXT
+);
+CREATE INDEX IF NOT EXISTS onboardings_patient ON onboardings(patient_id, status);
 CREATE TABLE IF NOT EXISTS outside_visits (
   id INTEGER PRIMARY KEY AUTOINCREMENT, patient_id TEXT NOT NULL REFERENCES patients(id), visit_at INTEGER NOT NULL,
   doctor_name TEXT, specialty TEXT, hospital TEXT, care_team_id INTEGER, reason TEXT, advice TEXT, tests TEXT,
@@ -165,6 +174,11 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["med_changes", "applied_at", "INTEGER"],
   ["labs", "document_id", "INTEGER"], // the document a value was read from (so deleting it can take its values along)
   ["outside_visits", "document_id", "INTEGER"],
+  ["patient_documents", "onboarding_id", "INTEGER"], // a record brought at onboarding
+  ["patient_documents", "pile", "TEXT"], // onboarding: 'clinical' or 'lab'
+  ["patient_documents", "pile_by", "TEXT"], // 'ai' or 'user' (a person's choice is kept when the AI re-reads)
+  ["patient_documents", "read_error", "TEXT"], // why it couldn't be read
+  ["patients", "hospital_id", "TEXT"],
 ];
 
 function migrate(db: DatabaseSyncT) {
@@ -213,7 +227,7 @@ export function resetDb(): void {
     DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS visits;
     DROP TABLE IF EXISTS caregivers; DROP TABLE IF EXISTS patients; DROP TABLE IF EXISTS convo_state;
     DROP TABLE IF EXISTS audit; DROP TABLE IF EXISTS settings; DROP TABLE IF EXISTS users;
-    DROP TABLE IF EXISTS labs; DROP TABLE IF EXISTS lab_texts; DROP TABLE IF EXISTS med_changes; DROP TABLE IF EXISTS care_team;
+    DROP TABLE IF EXISTS labs; DROP TABLE IF EXISTS lab_texts; DROP TABLE IF EXISTS onboardings; DROP TABLE IF EXISTS med_changes; DROP TABLE IF EXISTS care_team;
   `);
   db.exec(SCHEMA);
   migrate(db);
@@ -234,8 +248,10 @@ export function run(sql: string, ...params: Param[]): { lastInsertRowid: number;
   return { lastInsertRowid: Number(r.lastInsertRowid), changes: Number(r.changes) };
 }
 
+/** Runs fn in one transaction. Nested calls join the outer transaction (all or nothing). */
 export function tx<T>(fn: () => T): T {
   const db = getDb();
+  if (db.isTransaction) return fn();
   db.exec("BEGIN IMMEDIATE");
   try {
     const out = fn();
