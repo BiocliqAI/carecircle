@@ -67,18 +67,18 @@ export function clearPlanDraft(pid: string) {
 const nid = (p: string) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 
 /** Adds a source: reads the prescription photo, or transcribes dictation / the conversation. */
-export async function addSource(pid: string, kind: SourceKind, base64: string, mime: string, seconds: number | undefined, t: number, actor: string): Promise<DraftSource> {
+export async function addSource(pid: string, kind: SourceKind, base64: string, mime: string, seconds: number | undefined, t: number, actor: string, name?: string | null): Promise<DraftSource> {
   const visit = latestVisit(pid, t);
   const meds = visit?.plan.medications.map((m) => `${m.name} ${m.dose}`) ?? [];
   const p = getPatient(pid);
   let text: string | null = null;
-  if (kind === "rx") text = await readPrescriptionAI(base64, mime);
+  if (kind === "rx") text = await readPrescriptionAI(base64, mime, name);
   else if (kind === "dictation") text = await transcribeDictation(base64, mime, { meds, conditions: p?.conditions ?? "" });
   else text = await transcribeConversationAI(base64, mime, { meds, conditions: p?.conditions ?? "" });
   if (!text) throw new Error(lastTranscribeError ? `Couldn't read it: ${lastTranscribeError}` : "Nothing could be read from it");
   const src: DraftSource = {
     id: nid("s"), kind, at: t, text, seconds,
-    label: kind === "rx" ? "Prescription photo" : kind === "dictation" ? "Dictation" : "Consultation",
+    label: kind === "rx" ? (name?.trim().slice(0, 80) || "Document") : kind === "dictation" ? "Dictation" : "Consultation",
   };
   const d = getPlanDraft(pid);
   d.sources.push(src);

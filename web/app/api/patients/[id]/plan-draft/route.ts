@@ -32,7 +32,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const body = (await req.json()) as {
     action: "source" | "removeSource" | "build" | "resolve" | "confirm" | "remove" | "editMed" | "clear" | "send" | "familySummary";
-    kind?: SourceKind; base64?: string; mime?: string; seconds?: number; id?: string; option?: number;
+    kind?: SourceKind; base64?: string; mime?: string; name?: string; seconds?: number; id?: string; option?: number;
     patch?: Record<string, unknown>; nextVisit?: string | null; familySummary?: string; visitDate?: string | null;
   };
   const user = await guard(id, body.action === "send");
@@ -42,7 +42,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (body.action === "source") {
       if (!body.base64 || !body.kind) return err("Nothing to add");
       if (body.base64.length > 20_000_000) return err("That file or recording is too large");
-      await addSource(id, body.kind, body.base64, body.mime || "application/octet-stream", body.seconds, t, user.id);
+      await addSource(id, body.kind, body.base64, body.mime || "application/octet-stream", body.seconds, t, user.id, typeof body.name === "string" ? body.name : null);
     } else if (body.action === "removeSource") {
       removeSource(id, body.id ?? "", t);
     } else if (body.action === "build") {

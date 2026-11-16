@@ -582,11 +582,18 @@ async function geminiCall(system: string, input: unknown[], json = false): Promi
   }
 }
 
-/** Reads a printed (or handwritten) prescription photo into plain text, line by line. */
-export async function readPrescriptionAI(base64: string, mime: string): Promise<string | null> {
+/**
+ * Reads a visit document — a prescription, discharge summary, clinic note or lab report; a photo, PDF, Word, Excel
+ * or text file — into plain text, line by line. Throws with a message for the user when the file type can't be read.
+ */
+export async function readPrescriptionAI(base64: string, mime: string, name?: string | null): Promise<string | null> {
+  const { documentParts } = await import("./docread");
+  const parts = await documentParts(base64, mime, name);
   return aiCall(
-    "You read a photo of an Indian clinic's prescription. Transcribe every line faithfully as plain text: patient line, diagnosis, each medicine with strength, dose pattern (e.g. 1-0-1), timing (before/after food), duration, investigations ordered, advice lines and the review/next visit date. Keep the original order. Do not add anything that isn't on the paper. Output only the text.",
-    [{ type: "text", text: "Transcribe this prescription." }, { type: "image", data: base64.replace(/^data:[^;]+;base64,/, ""), mime_type: (mime || "image/jpeg").split(";")[0] }],
+    "You read a document from an Indian clinic's patient record: usually a prescription, sometimes a discharge summary, consultation note or lab report. It may be a photo, a PDF, or the text of a Word or Excel file. Transcribe faithfully as plain text, keeping the original order: the document's date, the doctor and hospital, the patient line, diagnosis, each medicine with strength, dose pattern (e.g. 1-0-1), timing (before/after food) and duration, investigations ordered and lab values with their dates, advice lines and the review/next visit date. Leave out administrative clutter (bills, barcodes, addresses). Do not add anything that isn't in the document. Output only the text.",
+    [{ type: "text", text: "Transcribe this document." }, ...parts],
+    false,
+    "medium",
   );
 }
 
