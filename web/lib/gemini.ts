@@ -2,6 +2,7 @@
 // Everything else — reading documents and photos (OCR), summaries, drafting, WhatsApp understanding, translation,
 // answering questions about the record — uses Claude when an Anthropic API key is set, and Gemini otherwise.
 import { createHash } from "node:crypto";
+import { historySchemaText } from "./historyspec";
 import { claudeCanRead, claudeError, claudeText, getClaudeModel, isClaudeConfigured, type AIPart, type Effort } from "./claude";
 import { all, get, getSetting, setSetting } from "./db";
 import { now } from "./clock";
@@ -259,7 +260,7 @@ export interface OCROutput {
   documentDate: string | null;
   doctorNotes: string | null;
   extracted: {
-    vitals: { type: string; label: string; v1: number; v2?: number; unit: string }[];
+    vitals: { type: string; label: string; v1: number; v2?: number; unit: string; date?: string; time?: string }[];
     labs: { marker: string; label: string; value: number; unit: string; flag?: string }[];
     medications: { name: string; dose: string; times: string[]; change?: string; prescriber?: string; instructions?: string }[];
     symptoms: { key: string; severity: string; text: string }[];
@@ -293,8 +294,8 @@ Extract all structured clinical entities conforming strictly to this JSON schema
   "visits": [{"date": "YYYY-MM-DD", "doctorName": "Dr …", "specialty": "e.g. Urology", "hospital": "", "reason": "why the patient came / presenting problem, short", "findings": "history, examination and results noted at this visit, short", "advice": "everything advised (other than medicine changes), short sentences", "tests": "tests ordered", "nextVisitDate": "YYYY-MM-DD or null", "medChanges": [{"medName": "", "change": "started"|"stopped"|"dose_changed"|"other", "newDose": "", "frequency": "OD|BD|TDS|QID|HS|SOS|weekly", "detail": "one plain line"}]}],
   "doctorNotes": "Clinical impression, advice, or remarks",
   "extracted": {
-    "vitals": [{"type": "bp"|"weight"|"glucose"|"hr"|"spo2"|"temp"|"pain", "label": "string", "v1": number, "v2": number|undefined, "unit": "string"}],
-    "labs": [{"marker": one of the lab marker keys listed below, "label": "the test name as printed", "value": number, "unit": "string", "flag": "normal"|"high"|"low"|"critical", "date": "YYYY-MM-DD the sample was taken, when it differs from documentDate (e.g. a consultation note quoting an earlier report), else omit"}],
+    "vitals": [{"type": "bp"|"weight"|"glucose"|"hr"|"spo2"|"temp"|"pain", "label": "string", "v1": number, "v2": number|undefined, "unit": "string", "date": "YYYY-MM-DD the reading was taken (a BP or sugar diary has one per row: give EVERY row its own entry and date)", "time": "HH:MM if written, else omit"}],
+    "labs": [{"marker": one of the lab marker keys listed below, "label": "the test name as printed", "value": number, "unit": "string", "flag": "normal"|"high"|"low"|"critical", "date": "YYYY-MM-DD the sample was taken, when it differs from documentDate (e.g. a consultation note quoting an earlier report), else omit", "uncertain": true only when the digits were hard to read or the value is approximate ("about 5,800"), else omit}],
     "medications": [{"name": "string", "dose": "string", "times": ["string"], "change": "started"|"stopped"|"dose_changed"|"continued", "prescriber": "string", "instructions": "string"}],
     "symptoms": [{"key": "string", "severity": "mild"|"moderate"|"severe", "text": "string"}],
     "texts": [{"test": "the test name as printed", "group": "its panel or specimen, e.g. 'Urine routine', 'Urine deposits', 'Differential count'", "result": "the result exactly as printed, e.g. 'Absent', 'Normal', 'Yellow', '20-30', 'Micro organisms present'", "reference": "the reference range or expected value as printed, or ''"}]
@@ -852,6 +853,55 @@ Rules:
   try {
     return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as { answer?: unknown; facts?: unknown; chart?: unknown; note?: unknown };
   } catch {
+    return null;
+  }
+}
+
+/**
+ * Onboarding: one clinical history from all the patient's clinical documents (already read one by one). Every item
+ * names the documents it rests on (their ids). Returns null on failure, with the reason in lastTranscribeError.
+ */
+export async function synthesizeHistoryAI(input: { today: string; treatingDoctor: string | null; patient: unknown; documents: unknown[]; reports: unknown[]; labTrends: unknown }): Promise<Record<string, unknown> | null> {
+  const system = `You build ONE patient history summary from a patient's old medical records, for an Indian clinic onboarding the patient. It follows the clinic's template, section by section. Each document was already read; you get:
+- "patient": name, age, sex, language and caregivers as registered.
+- "documents": the clinical records (consultation notes, prescriptions, discharge summaries), each with its id, title, date, type, transcribed text, the visits found in it and the medicines on it.
+- "reports": the lab, imaging, ECG and other study reports, each with id, title, date, type and a short transcription.
+- "labTrends": every numeric lab value already extracted, per test, oldest to latest ("date: value unit").
+The treating doctor at this clinic is given.
+
+Return JSON with exactly these keys:
+{
+ "history": {
+${historySchemaText()}
+ },
+ "doctors": [{"name": "Dr …", "specialty": "", "hospital": "", "role": "treating"|"consultant"|"lab", "seen": number of documents by them, "aliases": ["other spellings found"]}],
+ "merges": [{"a": "doctor name", "b": "doctor name", "reason": "why they look like the same person"}],
+ "points": [{"title": "short", "detail": "what disagrees, is missing or is unclear, naming the documents", "sources": [ids]}]
+}
+
+Rules:
+- Use only what the documents say. Never invent diagnoses, dates, doses, values or doctors. Leave a field "" when it is not documented (the screen shows "Not documented"); never write guesses into the documented sections.
+- Every row lists its source document ids in "sources", and each field object its ids. Cite the date in the text when it matters.
+- Dates are day first in Indian records (14/2/24 = 2024-02-14). Date columns marked YYYY-MM-DD must be that format; other date columns may be "2019", "Mar 2021" or "2021-03-04".
+- One row per real event: the same admission or visit described in several documents is ONE row listing all their ids.
+- snapshot.oneGlance: 2–3 lines: age, sex, main conditions, key events, current status.
+- alerts: allergies and adverse drug reactions as written (or "No known allergies" only if a record says so); implants and devices (stents, pacemaker, valves, grafts, AV fistula, catheters); current anticoagulant or antiplatelet; pregnancy only if relevant; code status only if written.
+- conditions: active problems, most important first, each with status and the latest supporting value and date (e.g. "uncontrolled, HbA1c 9.1% (Mar 2026)"). resolved: past problems (e.g. a treated TB, a healed fracture).
+- medicines: what the patient takes NOW, from the newest prescription or discharge list; a medicine stopped later is not current (add a point if unsure). Include OTC, supplements and AYUSH if reported.
+- medChanges: starts, stops, dose changes and switches across the records, newest first, with the reason when given; flag stops for side effects or non-response, and adherence problems.
+- labNotes: only abnormal or clinically significant tests, with the trend from labTrends (oldest to latest, a few values with dates) and a short comment. studies: imaging, ECG, echo, endoscopy, biopsy and other study reports with their key finding.
+- visits: every consultation with any doctor, newest first, one-line takeaway.
+- pending: tests, referrals, procedures or follow-ups that were advised and not shown as done in later records.
+- social: family history, occupation, living situation, caregiver and language when documented (caregiver and language may come from "patient").
+- inferences: things you can reasonably infer but that are not written (e.g. "likely CKD stage 4 from eGFR 22 in 2026, not named in any note"). Keep them out of the other sections.
+- doctors: every doctor who saw or treated the patient. role "treating" for the given treating doctor (match spellings), "lab" for names that only sign lab or imaging reports (pathologists, biochemists, radiologists), else "consultant". Put other spellings of the same doctor in aliases; if two entries might be one person but you are not sure, list both and add them to merges.
+- points: data gaps and conflicts that need a person: contradictions between documents (doses, procedure names, dates), unclear handwriting that matters, medicines that may have been stopped, values quoted without a report, missing records referred to (e.g. a discharge summary that is mentioned but not provided).`;
+  const text = await aiCall(system, [{ type: "text", text: JSON.stringify(input) }], true, "high");
+  if (!text) return null;
+  try {
+    return JSON.parse(text.replace(/^```json\s*|\s*```$/g, "")) as Record<string, unknown>;
+  } catch {
+    lastTranscribeError = "The AI returned an unreadable history";
     return null;
   }
 }

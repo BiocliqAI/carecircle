@@ -39,6 +39,7 @@ export interface PatientRow {
   address: string | null;
   doctor_id: string;
   created_at: number;
+  hospital_id?: string | null;
 }
 export interface CaregiverRow {
   id: string;

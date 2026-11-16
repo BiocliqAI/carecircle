@@ -4,6 +4,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api, useSession } from "../client";
+import { OnboardingWorklist } from "./OnboardingWorklist";
 import { Icon } from "../Icon";
 import { Spark } from "../Spark";
 import type { PatientRow } from "../PatientTable";
@@ -107,6 +108,7 @@ export function DoctorToday() {
 
       <div className="v2-grid12">
         <section className="span8 stack gap16">
+          <OnboardingWorklist doctor />
           <div className="dt-seg" role="tablist" aria-label="Lists">
             <button role="tab" aria-selected={tab === "review"} className={tab === "review" ? "on" : ""} onClick={() => setTab("review")}>Needs review <span className="num">{L.review.length}</span></button>
             <button role="tab" aria-selected={tab === "visits"} className={tab === "visits" ? "on" : ""} onClick={() => setTab("visits")}>Visits this week <span className="num">{L.visits.length}</span></button>

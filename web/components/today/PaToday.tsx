@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { api, useSession } from "../client";
 import { GettingStarted } from "../GettingStarted";
 import { Icon } from "../Icon";
+import { OnboardingWorklist } from "./OnboardingWorklist";
 import { greeting } from "./DoctorToday";
 import { fmtDate, fmtTime, relDays } from "@/lib/time";
 import type { PaTask, TaskKind } from "@/lib/patasks";
@@ -125,6 +126,7 @@ export function PaToday() {
           </section>
 
           <div className="span4 stack gap16">
+            <OnboardingWorklist />
             <section className="v2-card pad">
               <div className="row between" style={{ marginBottom: 12 }}><h2>Onboarding pipeline</h2><Link href="/patients/new" className="v2-sub" style={{ color: "var(--c-brand)", fontWeight: 600 }}>New patient</Link></div>
               <ol className="pipeline num">

@@ -49,7 +49,7 @@ export function clearRecords(pid: string, parts: RecordPart[], t: number, actor:
     }
     if (want.has("labs")) { del("labs"); del("lab_texts"); }
     if (want.has("readings")) del("observations");
-    if (want.has("documents")) del("patient_documents");
+    if (want.has("documents")) { del("patient_documents"); del("onboardings"); }
     if (want.has("outside")) {
       del("med_changes");
       run("UPDATE patient_documents SET outside_visit_id = NULL WHERE patient_id = ?", pid);

@@ -3,14 +3,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api, useSession } from "@/components/client";
-import { BaselineForm, baselineForSubmit } from "@/components/baseline";
+import { baselineForSubmit } from "@/components/baseline";
 import { EMPTY_BASELINE, LAB_META, MAX_CAREGIVERS, ageFromDob, bmi, type Baseline } from "@/lib/types";
 import { fmtDateTime } from "@/lib/time";
 
 interface Cg { name: string; relation: string; phone: string; dashboard: boolean }
 interface Doctor { id: string; name: string; role: string; title: string | null }
 
-const STEPS = ["Patient", "Care circle", "Baseline", "Review"];
+// The baseline now comes from the past records (step 2 of onboarding), so the form is patient, care circle, review.
+const STEPS = ["Patient", "Care circle", "Review"];
+// WhatsApp languages (same codes as lib/lang.ts, which is server-only).
+const LANGS: Record<string, string> = { ta: "Tamil", hi: "Hindi", te: "Telugu", kn: "Kannada", ml: "Malayalam", bn: "Bengali", gu: "Gujarati", pa: "Punjabi", mr: "Marathi" };
 const PHONE_RE = /^\+?[\d\s-]{8,}$/;
 const blankCg = (): Cg => ({ name: "", relation: "", phone: "+91 ", dashboard: true });
 
@@ -18,7 +21,7 @@ export default function NewPatient() {
   const router = useRouter();
   const { user, notifyChange } = useSession();
   const [step, setStep] = useState(0);
-  const [f, setF] = useState({ name: "", age: "", sex: "F", phone: "+91 ", address: "", doctorId: "" });
+  const [f, setF] = useState({ name: "", age: "", sex: "F", phone: "+91 ", address: "", doctorId: "", language: "", hospitalId: "" });
   const [cgs, setCgs] = useState<Cg[]>([blankCg()]);
   const [baseline, setBaseline] = useState<Baseline>({ ...EMPTY_BASELINE, vitals: {} });
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -40,7 +43,7 @@ export default function NewPatient() {
         if (draft.data.baseline) setBaseline({ ...EMPTY_BASELINE, ...draft.data.baseline, labs: (draft.data.baseline.labs ?? []).map((l) => ({ ...l, value: l.value ?? NaN })) });
         setDraftId(draft.id);
         setSavedAt(draft.updated_at);
-        setStep(draft.step);
+        setStep(Math.min(draft.step, STEPS.length - 1));
       })
       .catch((e) => { setErr((e as Error).message); window.history.replaceState(null, "", "/patients/new"); })
       .finally(() => setLoadingDraft(false));
@@ -80,7 +83,6 @@ export default function NewPatient() {
       const nums = cgs.filter((c) => c.name.trim()).map((c) => digits(c.phone));
       if (new Set(nums).size !== nums.length) return "Each caregiver needs a different WhatsApp number";
     }
-    if (s === 2 && baseline.labs.some((l) => !Number.isFinite(l.value))) return "Enter a value for every lab test, or remove the empty rows";
     return null;
   }
   /** Saves the wizard as a draft (server-side) so anyone in the clinic can resume it. */
@@ -119,8 +121,8 @@ export default function NewPatient() {
     router.push("/patients");
   }
 
-  async function submit(then: "visit" | "patient") {
-    for (const s of [0, 1, 2]) {
+  async function submit(then: "records" | "patient") {
+    for (const s of [0, 1]) {
       const e = validate(s);
       if (e) { setErr(e); setStep(s); return; }
     }
@@ -135,10 +137,11 @@ export default function NewPatient() {
           caregivers: cgs.filter((c) => c.name.trim()),
           baseline: hasBaseline(baseline) ? baselineForSubmit(baseline) : undefined,
           draftId,
+          startOnboarding: then === "records",
         },
       });
       notifyChange();
-      router.push(then === "visit" ? `/patients/${r.id}/visit` : `/patients/${r.id}`);
+      router.push(then === "records" ? `/patients/${r.id}/onboarding` : `/patients/${r.id}`);
     } catch (x) {
       setErr((x as Error).message);
       setBusy(null);
@@ -187,6 +190,13 @@ export default function NewPatient() {
             </Field>
             <Field label="Age (or enter date of birth in Baseline)"><input type="number" min={0} max={120} value={f.age} onChange={(e) => setF({ ...f, age: e.target.value })} /></Field>
             <Field label="Address / area"><input value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} /></Field>
+            <Field label="Preferred language (WhatsApp)">
+              <select value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })}>
+                <option value="">English</option>
+                {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </Field>
+            <Field label="Hospital ID (optional)"><input value={f.hospitalId} onChange={(e) => setF({ ...f, hospitalId: e.target.value })} placeholder="e.g. MMM 20191222123" /></Field>
             {user?.role === "PA" ? (
               <Field label="Treating doctor *">
                 <select value={f.doctorId} onChange={(e) => setF({ ...f, doctorId: e.target.value })}>
@@ -229,15 +239,14 @@ export default function NewPatient() {
         </div>
       )}
 
-      {step === 2 && <BaselineForm value={baseline} onChange={setBaseline} />}
-
-      {step === 3 && (
+      {step === 2 && (
         <div className="grid g2">
           <div className="card">
             <div className="card-head"><h3>Patient</h3><button className="btn sm ghost" onClick={() => setStep(0)}>Edit</button></div>
             <div><b>{f.name}</b></div>
             <div className="muted">{[age != null ? `${age} yrs` : null, f.sex === "M" ? "Male" : f.sex === "F" ? "Female" : "Other", f.phone].filter(Boolean).join(" · ")}</div>
             {f.address && <div className="muted">{f.address}</div>}
+            {f.hospitalId && <div className="muted">Hospital ID {f.hospitalId}</div>}
             <div style={{ marginTop: 6 }}>Treating doctor: <b>{doctorName ?? "—"}</b></div>
           </div>
           <div className="card">
@@ -249,8 +258,8 @@ export default function NewPatient() {
               </div>
             ))}
           </div>
-          <div className="card" style={{ gridColumn: "1 / -1" }}>
-            <div className="card-head"><h3>Baseline</h3><button className="btn sm ghost" onClick={() => setStep(2)}>Edit</button></div>
+          {hasBaseline(baseline) && <div className="card" style={{ gridColumn: "1 / -1" }}>
+            <div className="card-head"><h3>Baseline (from the draft)</h3></div>
             <div className="grid g3">
               <Summary label="Conditions" value={baseline.conditions.join(", ")} />
               <Summary label="Allergies" value={baseline.allergies} />
@@ -259,9 +268,9 @@ export default function NewPatient() {
               <Summary label={`Lab results (${baselineForSubmit(baseline).labs.length})`} value={baselineForSubmit(baseline).labs.map((l) => `${LAB_META[l.marker]?.label} ${l.value}`).join(", ")} />
               <Summary label="Lifestyle" value={[baseline.smoking && `Smoking ${baseline.smoking}`, baseline.alcohol && `Alcohol ${baseline.alcohol}`, baseline.activity].filter(Boolean).join(" · ")} />
             </div>
-          </div>
+          </div>}
           <div className="callout" style={{ gridColumn: "1 / -1" }}>
-            On create, {f.name.split(" ")[0] || "the patient"} and {cgs.filter((c) => c.name.trim()).length} caregiver(s) get a WhatsApp welcome asking them to reply <b>YES</b>. Reminders start only after Visit 1 sets the care plan.
+            Saving sends {f.name.split(" ")[0] || "the patient"} and {cgs.filter((c) => c.name.trim()).length} caregiver(s) a WhatsApp message asking them to agree to join (reply <b>YES</b>). Nothing else is sent until the doctor starts the care plan. Next, add the past records the family brought: notes, prescriptions, discharge summaries, lab reports, BP and sugar diaries.
           </div>
         </div>
       )}
@@ -269,16 +278,15 @@ export default function NewPatient() {
       {err && <div className="alert bad" style={{ marginTop: 14 }}>{err}</div>}
       <div className="row between" style={{ marginTop: 16 }}>
         <button type="button" className="btn" disabled={step === 0} onClick={() => { setErr(null); setStep(step - 1); }}>← Back</button>
-        {step < 3 ? (
+        {step < 2 ? (
           <div className="row">
-            {step === 2 && <button type="button" className="btn ghost" onClick={() => { setBaseline(baselineForSubmit(baseline)); setErr(null); setStep(3); }} title="Capture it later from the patient page">Skip for now</button>}
             <button type="button" className="btn" disabled={!!busy} onClick={saveAndExit} title="Save a draft and resume later from Patients or Today">{busy === "exit" ? <span className="spin" /> : null} Save & finish later</button>
             <button type="button" className="btn primary" disabled={!!busy} onClick={next}>{busy === "next" ? <span className="spin" /> : null} Continue →</button>
           </div>
         ) : (
           <div className="row">
-            <button type="button" className="btn" disabled={!!busy} onClick={() => submit("patient")}>{busy === "patient" ? <span className="spin" /> : null} Create, record visit later</button>
-            <button type="button" className="btn primary" disabled={!!busy} onClick={() => submit("visit")}>{busy === "visit" ? <span className="spin" /> : null} Create & record Visit 1 →</button>
+            <button type="button" className="btn" disabled={!!busy} onClick={() => submit("patient")}>{busy === "patient" ? <span className="spin" /> : null} Save: no records yet</button>
+            <button type="button" className="btn primary" disabled={!!busy} onClick={() => submit("records")}>{busy === "records" ? <span className="spin" /> : null} Save and add past records →</button>
           </div>
         )}
       </div>
