@@ -181,7 +181,7 @@ describe("ask the record", () => {
     assert.deepEqual(ask.cleanSpec({ series: ["creatinine", "made_up", "weight"], days: 90 }), { series: ["creatinine", "weight"], days: 90 });
     assert.equal(ask.cleanSpec({ series: ["nonsense"] }), null);
     assert.equal(ask.cleanSpec(null), null);
-    assert.equal(ask.cleanSpec({ series: ["bp"], days: 99999 })!.days, 730);
+    assert.equal(ask.cleanSpec({ series: ["bp"], days: 99999 })!.days, ask.MAX_DAYS, "capped at 10 years");
   });
   it("plots numbers from the database, with medicine changes alongside", () => {
     const c = ask.buildChart("p_gopal", ["creatinine", "weight"], 730, now())!;

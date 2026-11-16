@@ -8,6 +8,7 @@ import { getBaseline } from "./clinic";
 import { getVisits, getPatient } from "./engine";
 import { DAY, dayKey, dayStart, fmtDate } from "./time";
 import { LAB_META, VITAL_META, type VitalType } from "./types";
+import { HISTORY, listOf, rowText, type History, type ListSpec } from "./historyspec";
 import { medChanges } from "./summary";
 
 export interface Panel { name: string; label: string; unit: string; dual: boolean; points: { t: number; v1: number; v2?: number }[] }
@@ -36,9 +37,12 @@ export function dailyTotals(pid: string, type: string, from: number, t: number):
   return [...days.entries()].sort((a, b) => a[0] - b[0]).map(([day, x]) => ({ day, v: Math.round(x.v), drugs: [...x.drugs] }));
 }
 
+/** How far back a chart may go: lab histories from old records can span many years. */
+export const MAX_DAYS = 3650;
+
 /** Plotted points for the chosen series, straight from the database. */
 export function buildChart(pid: string, names: string[], days: number, t: number): ChartData | null {
-  const from = t - Math.max(7, Math.min(730, days)) * DAY;
+  const from = t - Math.max(7, Math.min(MAX_DAYS, days)) * DAY;
   const panels: Panel[] = [];
   for (const n of [...new Set(names)].slice(0, 3)) {
     if ((VITALS as string[]).includes(n)) {
@@ -71,12 +75,33 @@ export function buildContext(pid: string, t: number) {
     for (const r of all<{ v: number | null; at: number }>(`SELECT ${col} AS v, observed_at AS at FROM observations WHERE patient_id = ? AND type = ? AND observed_at > ? AND observed_at <= ?`, pid, type, from, t)) if (r.v != null) m.set(day(r.at), [...(m.get(day(r.at)) ?? []), r.v]);
     return thin([...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([d, v]) => [d, Math.round((v.reduce((s, x) => s + x, 0) / v.length) * 10) / 10]), 40);
   };
+  // Lab values from the whole record (old reports brought at onboarding go back years). A test with very many results
+  // keeps 60 spread over its whole span, always the first and the last, so "since when" and "trend" questions work.
   const labs: Record<string, [string, number][]> = {};
-  for (const r of all<{ marker: string; value: number; at: number }>("SELECT marker, value, taken_at AS at FROM labs WHERE patient_id = ? AND taken_at > ? ORDER BY taken_at", pid, t - 365 * DAY)) (labs[r.marker] ??= []).push([day(r.at), r.value]);
-  for (const k of Object.keys(labs)) labs[k] = labs[k].slice(-16); // the recent run of each marker is what questions are about
+  for (const r of all<{ marker: string; value: number; at: number }>("SELECT marker, value, taken_at AS at FROM labs WHERE patient_id = ? AND taken_at <= ? ORDER BY taken_at", pid, t)) (labs[r.marker] ??= []).push([day(r.at), r.value]);
+  let thinned = false;
+  const spread = <T,>(a: T[], n: number): T[] => [...new Set(Array.from({ length: n }, (_, i) => Math.round((i * (a.length - 1)) / (n - 1))))].map((i) => a[i]);
+  for (const k of Object.keys(labs)) if (labs[k].length > 60) { labs[k] = spread(labs[k], 60); thinned = true; }
+  const firstLab = get<{ at: number }>("SELECT MIN(taken_at) AS at FROM labs WHERE patient_id = ?", pid)?.at ?? null;
+  const confirmed = (() => {
+    try {
+      const raw = get<{ draft: string }>("SELECT draft FROM onboardings WHERE patient_id = ? AND status = 'CONFIRMED' ORDER BY id DESC LIMIT 1", pid)?.draft;
+      return raw ? (JSON.parse(raw) as { summary: History }).summary : null;
+    } catch { return null; }
+  })();
   const weeks = all<{ wk: number; due: number; done: number }>("SELECT CAST((? - due_at) / ? AS INTEGER) AS wk, COUNT(*) AS due, SUM(status = 'DONE') AS done FROM tasks WHERE patient_id = ? AND kind = 'med' AND status IN ('DONE','MISSED','NOT_DONE') AND due_at > ? AND due_at <= ? GROUP BY wk ORDER BY wk DESC", t, 7 * DAY, pid, t - 12 * 7 * DAY, t);
   return {
     today: day(t),
+    // What period each part covers, so a gap in one part isn't read as "nothing recorded".
+    coverage: {
+      labs: firstLab ? `the whole record, from ${day(firstLab)}${thinned ? " (tests with more than 60 results show 60 spread over their span, including the first and last)" : ""}` : "no lab values",
+      textResults: "the whole record (latest 150)",
+      readingsFluidsDiureticsAlertsSymptoms: "the last 180 days",
+      visits: "the treating doctor's last 6 visits",
+      otherDoctors: "visits to other doctors, the latest 40",
+      medicineChanges: "the latest 45",
+      clinicalHistory: confirmed ? "the clinical history confirmed by the doctor at onboarding" : "none confirmed",
+    },
     patient: { name: p.name, age: p.age, sex: p.sex, conditions: p.conditions, allergies: getBaseline(pid)?.allergies || null },
     // A different dose at each time ("40 mg" at 08:00, "20 mg" at 16:00) is spelled out, so totals come out right.
     currentPlan: getVisits(pid).at(-1)?.plan.medications.map((m) => ({ name: m.name, dose: doseText(m), times: m.times, by: m.prescriber ?? null })) ?? [],
@@ -92,7 +117,13 @@ export function buildContext(pid: string, t: number) {
     diureticPerDay: dailyTotals(pid, "diuretic", from, t).map((x) => [day(x.day), x.v, x.drugs.join(" + ")]),
     labs,
     // Lab results that aren't plain numbers: [date, panel, test, result]
-    textResults: all<{ at: number; grp: string | null; test: string; result: string }>("SELECT taken_at AS at, grp, test, result FROM lab_texts WHERE patient_id = ? AND taken_at > ? ORDER BY taken_at DESC, id LIMIT 80", pid, t - 365 * DAY).map((r) => [day(r.at), r.grp ?? "", r.test, r.result]),
+    textResults: all<{ at: number; grp: string | null; test: string; result: string }>("SELECT taken_at AS at, grp, test, result FROM lab_texts WHERE patient_id = ? AND taken_at <= ? ORDER BY taken_at DESC, id LIMIT 150", pid, t).map((r) => [day(r.at), r.grp ?? "", r.test, r.result]),
+    otherDoctorVisits: all<{ visit_at: number; doctor_name: string | null; specialty: string | null; hospital: string | null; reason: string | null; advice: string | null }>(
+      "SELECT visit_at, doctor_name, specialty, hospital, reason, advice FROM outside_visits WHERE patient_id = ? AND status = 'COMPLETE' ORDER BY visit_at DESC LIMIT 40", pid,
+    ).map((v) => ({ date: day(v.visit_at), doctor: [v.doctor_name, v.specialty, v.hospital].filter(Boolean).join(", "), what: [v.reason, v.advice].filter(Boolean).join(" · ").slice(0, 220) })),
+    // The doctor-confirmed history from old records: conditions, admissions, procedures, studies and key lab notes.
+    clinicalHistory: confirmed ? Object.fromEntries(HISTORY.filter((x): x is ListSpec => x.kind === "list" && ["conditions", "resolved", "admissions", "procedures", "studies", "labNotes", "medChanges"].includes(x.key))
+      .map((x) => [x.key, listOf(confirmed, x.key).slice(0, 40).map((r) => rowText(x, r).slice(0, 300))]).filter(([, v]) => (v as string[]).length)) : null,
     weeklyMedicineAdherence: weeks.map((w) => ({ weeksAgo: w.wk, dosesDue: w.due, dosesTaken: w.done })),
     alerts: all<{ started_at: number; type: string; title: string; state: string; outcome_code: string | null }>("SELECT started_at, type, title, state, outcome_code FROM escalations WHERE patient_id = ? AND started_at > ? ORDER BY started_at DESC LIMIT 25", pid, from).map((e) => ({ date: day(e.started_at), type: e.type, title: e.title, state: e.state, outcome: e.outcome_code })),
     symptoms: all<{ observed_at: number; text: string; severity: string | null }>("SELECT observed_at, text, severity FROM observations WHERE patient_id = ? AND type = 'symptom' AND text != 'none' AND observed_at > ? ORDER BY observed_at DESC LIMIT 20", pid, from).map((s) => ({ date: day(s.observed_at), symptom: s.text, severity: s.severity })),
@@ -111,7 +142,7 @@ const KEYWORDS: [RegExp, string][] = [
 export function questionSeries(q: string): string[] { return KEYWORDS.filter(([re]) => re.test(q)).map(([, n]) => n).filter((n, i, a) => a.indexOf(n) === i).slice(0, 3); }
 export function questionDays(q: string): number {
   const m = q.toLowerCase().match(/(\d+)\s*(day|week|month|year)s?/);
-  if (m) return Math.min(730, Number(m[1]) * ({ day: 1, week: 7, month: 30, year: 365 } as Record<string, number>)[m[2]]);
+  if (m) return Math.min(MAX_DAYS, Number(m[1]) * ({ day: 1, week: 7, month: 30, year: 365 } as Record<string, number>)[m[2]]);
   return /since (the )?last visit/.test(q.toLowerCase()) ? 60 : 120;
 }
 
@@ -129,7 +160,7 @@ export function statsFor(c: ChartData): string[] {
 export function cleanSpec(raw: unknown): { series: string[]; days: number } | null {
   const o = (raw ?? {}) as { series?: unknown; days?: unknown };
   const names = Array.isArray(o.series) ? (o.series as unknown[]).map(String).filter((n) => seriesNames().includes(n)) : [];
-  return names.length ? { series: names.slice(0, 3), days: Number.isFinite(Number(o.days)) ? Math.max(14, Math.min(730, Number(o.days))) : 120 } : null;
+  return names.length ? { series: names.slice(0, 3), days: Number.isFinite(Number(o.days)) ? Math.max(14, Math.min(MAX_DAYS, Number(o.days))) : 120 } : null;
 }
 
 export async function askRecord(pid: string, question: string, t: number): Promise<Answer> {

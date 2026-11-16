@@ -844,10 +844,12 @@ Return JSON: {"answer": "2-5 plain sentences answering the question, quoting dat
 
 Rules:
 - Use only values present in the record. If the record does not contain the answer, say what is missing and what is available. Never guess, extrapolate or invent a date or value.
+- "coverage" says what period each part of the record covers. Lab values cover the whole record. Say "nothing earlier is recorded" only when coverage shows the record really starts there; otherwise, if a part covers less than the period asked about, say so.
+- Old history (admissions, procedures, conditions, other doctors' visits) is in clinicalHistory and otherDoctorVisits.
 - "When did X start rising/falling" = the first date in the data after which it moves consistently in that direction; say how sure that is given how often it was measured.
 - When asked about the effect of a medicine change, show the readings before and after the change date from the record and say only what the numbers show. You may note that other changes happened around the same time. Do not claim cause.
 - You are not prescribing. Never recommend starting, stopping or changing a medicine, and never advise on treatment. Describe what the record shows.
-- Today's date is in the record. Choose chart "days" so the period in question is visible with some history before it.`;
+- Today's date is in the record. Choose chart "days" so the period in question is visible with some history before it (up to 3650 days; for "since the start" or "all values", cover back to the first value).`;
   const text = await aiCall(system, [{ type: "text", text: JSON.stringify({ record: context, question }) }], true);
   if (!text) return null;
   try {
