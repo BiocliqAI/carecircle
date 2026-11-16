@@ -14,9 +14,12 @@ import type { DraftMed, PlanDraft, SourceKind, Tag } from "@/lib/plandraft";
 interface Resp { draft: PlanDraft; blockers: { conflicts: number; toConfirm: number } | null; prep?: { flags: { text: string }[]; questions: string; readyAt: number | null }; hasVisit?: boolean; now?: number }
 interface PatientInfo { name: string; age: number | null; sex: string; conditions: string; visits: number; allergy: string | null }
 
+// Photos, PDFs, Word, Excel and text files (the server reads each one; see lib/docread.ts).
+const DOC_ACCEPT = "image/*,.pdf,.doc,.docx,.odt,.xls,.xlsx,.ods,.csv,.txt,application/pdf,application/msword,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
 const TAG: Record<Tag, [string, string]> = { rx: ["Prescription", "t-rx"], talk: ["Conversation", "t-talk"], keep: ["Carried forward", "t-keep"], protocol: ["Protocol", "t-prot"], pa: ["PA flag", "t-pa"] };
 const CHG: Record<string, [string, string]> = { new: ["New", "c-new"], changed: ["Changed", "c-chg"], same: ["No change", "c-same"], stopped: ["Stopped", "c-stop"] };
-const SRC: Record<SourceKind, { icon: string; label: string; cls: string }> = { rx: { icon: "file", label: "Prescription photo", cls: "s-rx" }, conversation: { icon: "mic", label: "Consultation", cls: "s-talk" }, dictation: { icon: "mic", label: "Dictation", cls: "s-dict" } };
+const SRC: Record<SourceKind, { icon: string; label: string; cls: string }> = { rx: { icon: "file", label: "Document", cls: "s-rx" }, conversation: { icon: "mic", label: "Consultation", cls: "s-talk" }, dictation: { icon: "mic", label: "Dictation", cls: "s-dict" } };
 
 function Tags({ list }: { list: Tag[] }) {
   return <>{list.map((t) => <span key={t} className={`pb-tag ${TAG[t][1]}`}>{TAG[t][0]}</span>)}</>;
@@ -64,11 +67,14 @@ export function PlanBuilder({ id }: { id: string }) {
       setBusy(null);
     }
   }
+  // Several files at once: each is read in turn; a file that can't be read stops there with its reason shown.
   async function addFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
+    const files = [...(e.target.files ?? [])];
     e.target.value = "";
-    if (!f) return;
-    await act("rx", { action: "source", kind: "rx", base64: await blobToDataUrl(f), mime: f.type || "image/jpeg" });
+    for (const f of files) {
+      const ok = await act("rx", { action: "source", kind: "rx", base64: await blobToDataUrl(f), mime: f.type || "", name: f.name });
+      if (!ok) break;
+    }
   }
   async function draftFamily() {
     setFamBusy(true);
@@ -135,7 +141,7 @@ export function PlanBuilder({ id }: { id: string }) {
                 <div key={s.id} className="pb-src">
                   <span className={`pb-src-ic ${SRC[s.kind].cls}`}><Icon name={SRC[s.kind].icon} /></span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="row between" style={{ flexWrap: "nowrap" }}><b style={{ fontSize: 14 }}>{SRC[s.kind].label}</b><button className="pb-x" aria-label={`Remove ${SRC[s.kind].label}`} onClick={() => act(`rm${s.id}`, { action: "removeSource", id: s.id })}>✕</button></div>
+                    <div className="row between" style={{ flexWrap: "nowrap" }}><b style={{ fontSize: 14 }}>{s.kind === "rx" ? s.label : SRC[s.kind].label}</b><button className="pb-x" aria-label={`Remove ${s.kind === "rx" ? s.label : SRC[s.kind].label}`} onClick={() => act(`rm${s.id}`, { action: "removeSource", id: s.id })}>✕</button></div>
                     <div className="v2-sub num">{fmtTime(s.at)}{s.seconds ? ` · ${Math.floor(s.seconds / 60)}:${String(s.seconds % 60).padStart(2, "0")} recorded` : ""} · {s.text.split(/\s+/).length} words</div>
                     <button className="tq-link" style={{ padding: "4px 0" }} onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? "Hide text" : s.kind === "rx" ? "Show what was read" : "Show transcript"}</button>
                     {open === s.id && <pre className="pb-text">{s.text}</pre>}
@@ -150,8 +156,8 @@ export function PlanBuilder({ id }: { id: string }) {
               )}
 
               <div className="pb-add">
-                <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden onChange={addFile} />
-                <button className="v2-btn" disabled={!!busy} onClick={() => fileRef.current?.click()}>{busy === "rx" ? <><span className="spin" /> Reading…</> : <><Icon name="file" size={16} />Prescription photo</>}</button>
+                <input ref={fileRef} type="file" multiple accept={DOC_ACCEPT} hidden onChange={addFile} />
+                <button className="v2-btn" disabled={!!busy} onClick={() => fileRef.current?.click()}>{busy === "rx" ? <><span className="spin" /> Reading…</> : <><Icon name="file" size={16} />Prescription or document</>}</button>
                 <Recorder kind="conversation" label="Listen to consultation" disabled={!!busy && busy !== "conversation"} onDone={(base64, mime, seconds) => act("conversation", { action: "source", kind: "conversation", base64, mime, seconds })} busy={busy === "conversation"} />
                 <Recorder kind="dictation" label="Dictate" disabled={!!busy && busy !== "dictation"} onDone={(base64, mime, seconds) => act("dictation", { action: "source", kind: "dictation", base64, mime, seconds })} busy={busy === "dictation"} />
               </div>
@@ -171,7 +177,7 @@ export function PlanBuilder({ id }: { id: string }) {
             {!b && (
               <div className="v2-card pad pb-empty">
                 <h2>No draft yet</h2>
-                <p className="v2-sub" style={{ fontSize: 14 }}>Add at least one source, then build the draft. Typical: take a photo of the printed prescription and listen to the consultation, so advice given verbally (and answers to the family’s questions) is captured too.</p>
+                <p className="v2-sub" style={{ fontSize: 14 }}>Add at least one source, then build the draft. Typical: add the prescription (a photo, PDF, Word or Excel file) and listen to the consultation, so advice given verbally (and answers to the family’s questions) is captured too.</p>
               </div>
             )}
             {b && stale && <div className="alert warn"><div>New sources were added after this draft was built. Rebuild to include them.</div></div>}

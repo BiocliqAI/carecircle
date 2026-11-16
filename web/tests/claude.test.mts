@@ -88,6 +88,17 @@ describe("Claude for documents and reasoning, Gemini for speech", () => {
     assert.deepEqual(seen.at(-1)!.body.output_config, { effort: "high" });
   });
 
+  it("reads a Word prescription on the visit screen as text", async () => {
+    const { readFileSync } = await import("node:fs");
+    next = { text: "Lasix 40 mg 1-1/2-0" };
+    const doc = readFileSync(new URL("./fixtures/rx.doc", import.meta.url)).toString("base64");
+    assert.equal(await ai.readPrescriptionAI(doc, "", "rx.doc"), "Lasix 40 mg 1-1/2-0");
+    const content = (seen.at(-1)!.body.messages as { content: { type: string; text?: string }[] }[])[0].content;
+    assert.ok(content.every((c) => c.type === "text"));
+    assert.ok(content.some((c) => /Dr Dileep KS/.test(c.text ?? "")));
+    await assert.rejects(ai.readPrescriptionAI("AAAA", "application/zip", "x.zip"), /can't be read/);
+  });
+
   it("parses WhatsApp messages with Claude", async () => {
     next = { text: JSON.stringify({ vitals: [{ type: "bp", v1: 150, v2: 95 }], meds: { allTaken: true, allMissed: false, taken: [], missed: [] }, physio: null, lifestyle: null, symptoms: [], noSymptoms: true, help: false, fluids: [], labs: [], medChanges: [], outsideVisit: false, language: "en" }) };
     const { parsed, parser } = await parseMessage("BP 150/95, took all tablets", [{ key: "lasix", name: "Lasix" }]);
