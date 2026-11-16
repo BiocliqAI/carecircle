@@ -1,4 +1,5 @@
 import { all } from "@/lib/db";
+import { keyLabs } from "@/lib/keylabs";
 import { now } from "@/lib/clock";
 import { dayFluid, getConsents, getCaregivers, getPatient, getUser, getVisits, latestVisit, planPausedSince, type EscalationRow } from "@/lib/engine";
 import { outsideVisits } from "@/lib/outside";
@@ -98,6 +99,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     baseline: getBaseline(id),
     consents: getConsents(id),
     notes: user.role === "DOCTOR" || user.role === "PA" ? listNotes(id) : [],
+    keyLabs: keyLabs(id),
     latestLabs: (() => {
       const rows = all<{ marker: string; value: number; taken_at: number; flag: string | null }>("SELECT marker, value, taken_at, flag FROM labs WHERE patient_id = ? ORDER BY taken_at DESC, id DESC", id);
       const out: { marker: string; value: number; at: number; flag: string | null; prev: number | null }[] = [];
