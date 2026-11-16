@@ -398,17 +398,34 @@ function MedsTable({ plan, prescriber }: { plan: CarePlan; prescriber?: string }
   );
 }
 
-function LabsCard({ d }: { d: Data }) {
-  const labs = d.latestLabs ?? [];
+/** The few lab results worth a glance: the most relevant tests from the last two lab reports, latest against the one before. */
+function LabsCard({ d, onAll }: { d: Data; onAll?: () => void }) {
+  const k = d.keyLabs;
+  const rows = k?.rows ?? [];
+  const day = (t: number | null) => (t ? fmtDate(t, { day: "numeric", month: "short", year: "2-digit" }) : "");
+  const bad = (f: string | null) => f === "high" || f === "low" || f === "critical";
   return (
     <section className="v2-card pad">
-      <div className="row between" style={{ marginBottom: 4 }}><h2>Latest labs</h2>{labs[0] && <span className="v2-sub">{fmtDate(labs[0].at, { day: "numeric", month: "short" })}</span>}</div>
-      {labs.slice(0, 8).map((l) => {
+      <div className="row between" style={{ marginBottom: 4 }}>
+        <h2>Key labs</h2>
+        {k?.latestAt && <span className="v2-sub">Latest report {day(k.latestAt)}</span>}
+      </div>
+      {rows.map((l) => {
         const meta = LAB_META[l.marker];
         const arrow = l.prev == null ? "" : l.value > l.prev ? "↑" : l.value < l.prev ? "↓" : "→";
-        return <div key={l.marker} className="v2-kv num"><span>{meta?.label ?? l.marker}</span><span><b style={{ fontWeight: 600, color: l.flag && l.flag !== "up" ? "var(--c-red)" : undefined }}>{l.value}</b> <span className="v2-sub">{meta?.unit}{l.prev != null ? ` · ${arrow} from ${l.prev}` : ""}</span></span></div>;
+        return (
+          <div key={l.marker} className="v2-kv num">
+            <span>{meta?.label ?? l.marker}{l.at !== k!.latestAt && k!.latestAt && new Date(l.at).toDateString() !== new Date(k!.latestAt).toDateString() ? <span className="v2-sub"> · {day(l.at)}</span> : null}</span>
+            <span>
+              <b style={{ fontWeight: 600, color: bad(l.flag) ? "var(--c-red)" : undefined }}>{l.value}</b> <span className="v2-sub">{meta?.unit}</span>
+              {l.prev != null && <span className="v2-sub" title={l.prevAt ? `Previous: ${l.prev} on ${day(l.prevAt)}` : undefined}> · {arrow} from {l.prev}{l.prevAt ? ` (${fmtDate(l.prevAt, { month: "short", year: "2-digit" })})` : ""}</span>}
+            </span>
+          </div>
+        );
       })}
-      {!labs.length && <div className="v2-sub">No lab results yet.</div>}
+      {!rows.length && <div className="v2-sub">No lab results yet.</div>}
+      {rows.length > 0 && onAll && <button className="tq-link" style={{ marginTop: 6 }} onClick={onAll}>{k!.more ? `${k!.more} more in these reports · ` : ""}All labs and trends →</button>}
+      {rows.length > 0 && !onAll && k!.more > 0 && <div className="v2-sub" style={{ marginTop: 6 }}>{k!.more} more in these reports below.</div>}
     </section>
   );
 }
@@ -479,7 +496,7 @@ function SideCards({ d, onSec }: { d: Data; onSec: (x: Section) => void }) {
   const consent = (uid: string | null) => d.consents.find((c) => c.user_id === uid)?.status;
   return (
     <>
-      <LabsCard d={d} />
+      <LabsCard d={d} onAll={() => onSec("vitals")} />
       <section className="v2-card pad">
         <div className="row between" style={{ marginBottom: 4 }}><h2>Care circle</h2><button className="tq-link" onClick={() => onSec("alerts")}>Manage</button></div>
         {d.caregivers.map((c) => {
