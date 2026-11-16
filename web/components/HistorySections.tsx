@@ -2,6 +2,7 @@
 // The patient history summary, section by section (lib/historyspec.ts): an editor for the onboarding review and a
 // read-only view for the chart. Empty parts read "Not documented", as the clinic's template asks.
 import { Fragment, useState } from "react";
+import { LazyText } from "./LazyText";
 import { HISTORY, cell, fieldsOf, listOf, type ColSpec, type HistRow, type History, type ListSpec } from "@/lib/historyspec";
 import { fmtDate } from "@/lib/time";
 
@@ -18,8 +19,8 @@ export const Sources = ({ ids }: { ids: number[] }) => (ids?.length ? (
 function Input({ c, value, onChange, disabled }: { c: ColSpec; value: string; onChange: (v: string) => void; disabled?: boolean }) {
   const common = { "aria-label": c.label, value, disabled, placeholder: ND, title: c.hint };
   if (c.type === "date") return <input type="date" {...common} onChange={(e) => onChange(e.target.value)} style={{ width: "100%" }} />;
-  if (c.type === "long") return <textarea {...common} rows={2} onChange={(e) => onChange(e.target.value)} style={{ width: "100%", minHeight: 0 }} />;
-  return <input {...common} onChange={(e) => onChange(e.target.value)} style={{ width: "100%" }} list={c.options ? `opts-${c.key}` : undefined} />;
+  if (c.type === "long") return <LazyText multiline {...common} rows={2} onCommit={onChange} style={{ width: "100%", minHeight: 0 }} />;
+  return <LazyText {...common} onCommit={onChange} style={{ width: "100%" }} list={c.options ? `opts-${c.key}` : undefined} />;
 }
 
 const grow = (c: ColSpec) => (c.type === "long" ? "3 1 260px" : c.options ? "2 1 240px" : c.type === "date" ? "0 0 150px" : "1 1 150px");

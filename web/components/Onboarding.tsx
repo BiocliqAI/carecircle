@@ -9,6 +9,7 @@ import { DOCUMENT_ACCEPT, mimeFor } from "@/lib/mimetypes";
 import { LAB_META, VITAL_META, type VitalType } from "@/lib/types";
 import { fmtDate, fmtDateTime } from "@/lib/time";
 import { HistoryEditor } from "./HistorySections";
+import { LazyText } from "./LazyText";
 import type { Draft, DoctorItem, LabItem, OnbStatus, Point, RecordView } from "@/lib/onboarding";
 
 interface Resp {
@@ -46,11 +47,14 @@ export function Onboarding({ pid }: { pid: string }) {
   const [note, setNote] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Unsaved edits are never replaced by what the server sends back (refreshes while reading, after a save, etc.).
+  const dirtyRef = useRef(false);
+  const version = useRef(0);
   const load = useCallback(() => api<Resp>(`/api/patients/${pid}/onboarding`).then((r) => {
     setD(r);
     setErr(null);
-    setDraft((cur) => (dirty && cur ? cur : r.draft));
-  }).catch((e) => setErr((e as Error).message)), [pid, dirty]);
+    setDraft((cur) => (dirtyRef.current && cur ? cur : r.draft));
+  }).catch((e) => setErr((e as Error).message)), [pid]);
   useEffect(() => { void load(); }, [load]);
 
   const status = d?.onboarding?.status ?? null;
@@ -69,19 +73,26 @@ export function Onboarding({ pid }: { pid: string }) {
     const h = setTimeout(async () => {
       setSaving(true);
       try {
+        const at = version.current;
         await api(`/api/patients/${pid}/onboarding`, { body: { action: "save", edits: draft } });
-        setDirty(false);
+        // Only "saved" if nothing was typed while saving; otherwise the next save picks it up.
+        if (version.current === at) { dirtyRef.current = false; setDirty(false); }
       } catch (e) { setErr((e as Error).message); } finally { setSaving(false); }
     }, 800);
     return () => clearTimeout(h);
   }, [dirty, draft, pid]);
-  const edit = (fn: (x: Draft) => void) => setDraft((cur) => { if (!cur) return cur; const n = JSON.parse(JSON.stringify(cur)) as Draft; fn(n); setDirty(true); return n; });
+  const edit = (fn: (x: Draft) => void) => {
+    version.current++;
+    dirtyRef.current = true;
+    setDirty(true);
+    setDraft((cur) => { if (!cur) return cur; const n = structuredClone(cur); fn(n); return n; });
+  };
 
   async function act(key: string, body: Record<string, unknown>) {
     setBusy(key);
     setErr(null);
     try {
-      if (dirty && draft) { await api(`/api/patients/${pid}/onboarding`, { body: { action: "save", edits: draft } }); setDirty(false); }
+      if (dirty && draft) { await api(`/api/patients/${pid}/onboarding`, { body: { action: "save", edits: draft } }); dirtyRef.current = false; setDirty(false); }
       const r = await api<Record<string, unknown>>(`/api/patients/${pid}/onboarding`, { body });
       await load();
       notifyChange();
@@ -269,8 +280,8 @@ function Records({ d, uploads, busy, act, onPick, onDrop, onReview }: { d: Resp;
 type Edit = (fn: (x: Draft) => void) => void;
 const Src = ({ ids }: { ids: number[] }) => (ids.length ? <small className="row" style={{ gap: 6 }}>{ids.slice(0, 3).map((id, i) => <a key={id} href={`/api/documents/${id}`} target="_blank" rel="noreferrer">source{ids.length > 1 ? ` ${i + 1}` : ""}</a>)}{ids.length > 3 && <span className="muted">+{ids.length - 3}</span>}</small> : null);
 const In = ({ value, onChange, label, w, disabled, multiline }: { value: string; onChange: (v: string) => void; label: string; w?: number | string; disabled?: boolean; multiline?: boolean }) =>
-  multiline ? <textarea aria-label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} rows={2} style={{ width: w ?? "100%", minHeight: 0 }} />
-    : <input aria-label={label} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} style={{ width: w ?? "100%" }} />;
+  multiline ? <LazyText multiline aria-label={label} value={value} disabled={disabled} onCommit={onChange} rows={2} style={{ width: w ?? "100%", minHeight: 0 }} />
+    : <LazyText aria-label={label} value={value} disabled={disabled} onCommit={onChange} style={{ width: w ?? "100%" }} />;
 
 const Row = ({ children }: { children: React.ReactNode }) => <div className="row" style={{ gap: 8, padding: "8px 0", borderTop: "1px solid var(--line-2)", alignItems: "flex-start" }}>{children}</div>;
 
@@ -392,8 +403,8 @@ function LabsTab({ draft, edit, locked }: { draft: Draft; edit: Edit; locked: bo
                       const flag = !!l.check && !l.ok;
                       return (
                         <td key={dt} style={{ padding: 3 }}>
-                          <input aria-label={`${LAB_META[m]?.label ?? m} ${day(dt)}`} title={l.check} value={l.value ?? ""} disabled={locked} inputMode="decimal"
-                            onChange={(e) => setLab(l.id, { value: e.target.value.trim() === "" ? null : Number(e.target.value) })}
+                          <LazyText aria-label={`${LAB_META[m]?.label ?? m} ${day(dt)}`} title={l.check} value={l.value === null ? "" : String(l.value)} disabled={locked} inputMode="decimal"
+                            onCommit={(v) => { const t = v.trim().replace(",", "."); if (t === "") setLab(l.id, { value: null }); else if (Number.isFinite(Number(t))) setLab(l.id, { value: Number(t) }); }}
                             style={{ width: 76, textAlign: "right", background: flag ? "#FEF0E1" : l.value === null ? "#F4F6F5" : "#fff", borderColor: flag ? "#E8A55A" : undefined }} />
                         </td>
                       );
