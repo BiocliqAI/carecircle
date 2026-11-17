@@ -11,6 +11,7 @@ import { KidneyTab, RANGES } from "./kidney";
 import { ClinicalSummaryCard } from "./ClinicalSummaryCard";
 import { DocumentOcrModal } from "./DocumentOcrModal";
 import { PlanBuilder } from "./PlanBuilder";
+import { HistoryPopup } from "./HistoryPopup";
 import { ClinicOutsideVisits } from "./OutsideVisits";
 import { BaselineCard } from "./baseline";
 import { ClinicalHistoryCard } from "./ClinicalHistoryCard";
@@ -374,6 +375,7 @@ function Overview({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s: In
 
 /** The overview's summary: who this is (from their records), the last visit, what changed since, why they are coming, and what the family reported. */
 function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s: IntervalSummary | null; onSec: (x: Section) => void; showAi: boolean; setShowAi: (b: boolean) => void; onChange: () => void }) {
+  const [fullHistory, setFullHistory] = useState(false);
   const cur = d.current; // null until a visit is recorded here
   const b = d.baseline;
   const r = d.fromRecords ?? null;
@@ -403,17 +405,28 @@ function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s:
         <div>
           {r?.oneGlance ? <p>{clip(r.oneGlance, 600)}</p> : d.patient.conditions ? <p><b style={{ fontWeight: 600 }}>{d.patient.conditions}</b></p> : null}
           {r && r.conditions.length > 0 && (
-            <p className="ps-conds">
+            <ul className="ps-condlist">
               {r.conditions.map((c) => {
-                // The pill is a label (name and one status word); the whole sentence shows on hover or keyboard focus.
+                // Newest diagnosis first. Each row carries the whole entry: status with its value, when diagnosed, treatment.
                 const word = c.status.match(/uncontrolled|controlled|improving|worsening|stable/i)?.[0].toLowerCase();
-                return <span key={c.name} tabIndex={0} className={`v2-pill tip ${/uncontrolled|worsening/i.test(c.status) ? "amber" : "grey"}`} data-tip={c.detail} aria-label={c.detail}>{c.name}{word ? ` · ${word}` : ""}</span>;
+                const rest = c.status.replace(/^(uncontrolled|controlled|improving|worsening|stable)\b[\s,;:.-]*/i, "").trim();
+                const meta = [c.diagnosed ? `Diagnosed ${c.diagnosed}` : "", rest, c.treatment ? `On ${c.treatment}` : ""].filter(Boolean);
+                return (
+                  <li key={c.name}>
+                    <div className="row between" style={{ gap: 8, flexWrap: "nowrap", alignItems: "baseline" }}>
+                      <b style={{ fontWeight: 600 }}>{c.name}</b>
+                      {word && <span className={`v2-pill ${/uncontrolled|worsening/.test(word) ? "amber" : /controlled|improving/.test(word) ? "green" : "grey"}`}>{word}</span>}
+                    </div>
+                    {meta.length > 0 && <div className="v2-sub">{meta.join(" · ")}</div>}
+                  </li>
+                );
               })}
-            </p>
+            </ul>
           )}
           {!r?.oneGlance && history.map((h, i) => <p key={i}>{clip(h, 320)}</p>)}
           {!r?.oneGlance && !d.patient.conditions && !history.length && <p className="v2-sub">No history recorded yet. Add the patient&rsquo;s past records on the Profile tab to build one.</p>}
-          <button className="tq-link" style={{ padding: 0 }} onClick={() => onSec("profile")}>Full history</button>
+          <button className="tq-link" style={{ padding: 0 }} onClick={() => setFullHistory(true)}>Full history</button>
+          {fullHistory && <HistoryPopup pid={d.patient.id} patient={d.patient} fallback={[d.patient.conditions, ...history].filter(Boolean)} onClose={() => setFullHistory(false)} onProfile={() => { setFullHistory(false); onSec("profile"); }} />}
         </div>
       </div>
 

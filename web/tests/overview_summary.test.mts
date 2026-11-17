@@ -34,7 +34,7 @@ describe("patient overview summary", () => {
     const treating = getUser(getPatient("p_gopal")!.doctor_id)!.name;
     const h = emptyHistory();
     (h.snapshot as Record<string, { text: string; sources: number[] }>).oneGlance = { text: "68-year-old man with CKD stage 4.", sources: [] };
-    h.conditions = [{ name: "CKD stage 4", status: "Worsening, creatinine 2.85", diagnosed: "2019", treatment: "furosemide", sources: [] }];
+    h.conditions = [{ name: "Anaemia", status: "stable", sources: [] }, { name: "Hypertension", diagnosed: "since 2010", sources: [] }, { name: "CKD stage 4", status: "Worsening, creatinine 2.85", diagnosed: "2019", treatment: "furosemide", sources: [] }, { name: "Gout", diagnosed: "March 2024", sources: [] }];
     h.visits = [
       { date: "2026-10-20", doctor: "Dr Other Person", specialty: "Cardiology", hospital: "", takeaway: "Echo reviewed", sources: [] },
       { date: "2026-09-12", doctor: treating, specialty: "Nephrology", hospital: "City Clinic", takeaway: "Leg swelling · Creatinine 2.6 · Increase furosemide", sources: [] },
@@ -46,7 +46,8 @@ describe("patient overview summary", () => {
       JSON.stringify({ summary: h, doctors: [], points: [], merges: [], labs: [], texts: [], homes: [] }), t, t, t);
     const r = recordSummary("p_gopal")!;
     assert.equal(r.oneGlance, "68-year-old man with CKD stage 4.");
-    assert.deepEqual(r.conditions, [{ name: "CKD stage 4", status: "Worsening, creatinine 2.85", detail: "CKD stage 4 is worsening, creatinine 2.85. Diagnosed 2019. Current treatment: furosemide." }]);
+    assert.deepEqual(r.conditions.map((c) => c.name), ["Gout", "CKD stage 4", "Hypertension", "Anaemia"], "newest diagnosis first, undated last");
+    assert.deepEqual(r.conditions[1], { name: "CKD stage 4", status: "Worsening, creatinine 2.85", diagnosed: "2019", treatment: "furosemide", detail: "CKD stage 4 is worsening, creatinine 2.85. Diagnosed 2019. Current treatment: furosemide." });
     assert.equal(r.lastVisit?.date, "2026-09-12");
     assert.equal(r.lastVisit?.treating, true);
     assert.deepEqual(r.lastVisit?.changes, ["Furosemide increased to 40 mg BD (oedema)"]);
