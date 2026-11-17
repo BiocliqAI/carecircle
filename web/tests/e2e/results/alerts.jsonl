@@ -30,3 +30,12 @@
 {"id":"ESC-01","title":"L1 notified","status":"PASS","note":"","ms":4792}
 {"id":"ESC-02","title":"L1 acknowledges (ACK / ok / on it / I'll handle it / 👍)","status":"PASS","note":"","ms":4911}
 {"id":"ESC-03","title":"Outcome recorded (2)","status":"FAIL","note":"PLAN: \"2\" does not resolve the alert by itself — it asks for a note first (\"Got it. Briefly, what did the doctor / clinic advise?\"; lib/engine.ts:810-815) and resolves with outcome 2 once the note arrives; L1 thanked and patient told as expected. Only \"1\" resolves at once.","ms":5071}
+{"id":"ESC-04","title":"Outcome with a note (4)","status":"PASS","note":"","ms":5233}
+{"id":"ESC-05","title":"Timeout moves to L2 (deviation 60 min)","status":"PASS","note":"","ms":4949}
+{"id":"ESC-06","title":"Urgent timer 15 min","status":"PASS","note":"","ms":5776}
+{"id":"ESC-07","title":"Compliance timer 120 min","status":"PASS","note":"","ms":5761}
+{"id":"ESC-08","title":"L1 passes it on","status":"PASS","note":"","ms":5845}
+{"id":"ESC-09","title":"Exhausted","status":"PASS","note":"","ms":5420}
+{"id":"ESC-10","title":"Others told when one acknowledges","status":"PASS","note":"","ms":5170}
+{"id":"ESC-11","title":"Only circle members can ACK","status":"PASS","note":"","ms":5780}
+{"id":"ESC-12","title":"Ack after close","status":"PASS","note":"","ms":5644}

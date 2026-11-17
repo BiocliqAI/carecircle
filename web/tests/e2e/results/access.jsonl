@@ -21,3 +21,16 @@
 {"id":"WS-08","title":"Care team","status":"PASS","note":"","ms":27}
 {"id":"WS-09","title":"AI summary / pre-visit brief [AI off]","status":"PASS","note":"","ms":589}
 {"id":"WS-10","title":"Ask the record [AI off]","status":"PASS","note":"","ms":36}
+{"id":"WS-11","title":"Med change review","status":"PASS","note":"","ms":10012}
+{"id":"WS-12","title":"Kidney view","status":"FAIL","note":"BUG: no \"fluid today vs limit\" badge (expected like \"💧 Today 1325 / 1000 ml\"). The API returns fluidToday (app/api/patients/[id]/route.ts:109) and KidneyBadges renders it (components/kidney.tsx:25-30), but KidneyBadges is only used by components/PatientView.tsx:142, which no page renders; the patient chart (components/PatientChart.tsx) never shows it.","ms":3461}
+{"id":"WS-13","title":"Assistants page","status":"PASS","note":"","ms":416}
+{"id":"WS-14","title":"Dashboard API isolation","status":"PASS","note":"","ms":64}
+{"id":"FAM-01","title":"Family home","status":"PASS","note":"","ms":754}
+{"id":"FAM-02","title":"Nothing scheduled","status":"PASS","note":"","ms":6131}
+{"id":"FAM-03","title":"Read-only for patient","status":"PASS","note":"","ms":815}
+{"id":"FAM-04","title":"Caregiver closes an alert from the web","status":"PASS","note":"","ms":6523}
+{"id":"FAM-05","title":"Outside visit from the web","status":"PASS","note":"","ms":6533}
+{"id":"FAM-06","title":"Mobile layout","status":"FAIL","note":"BUG: u_lakshmi@390: horizontal scroll (420 > 390); u_lakshmi@390: off-screen controls BUTTON:⇄ Switch persona; u_ramesh@390: horizontal scroll (420 > 390); u_ramesh@390: off-screen controls BUTTON:⇄ Switch persona. The family top bar (Brand + Help + name chip + \"⇄ Switch persona\") does not wrap or shrink: .topbar is a single nowrap flex row with 24px padding and no mobile rule (app/globals.css:45-49; markup components/AppShell.tsx SimpleBar), so at 390 px the page is 420 px wide and the Switch persona button sits partly off-screen.","ms":5808}
+{"id":"SEC-01","title":"Changing ids in URLs","status":"PASS","note":"","ms":612}
+{"id":"SEC-02","title":"Document download access","status":"PASS","note":"","ms":96}
+{"id":"SEC-03","title":"Escalation actions access","status":"PASS","note":"","ms":162}
