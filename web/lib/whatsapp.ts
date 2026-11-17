@@ -190,6 +190,18 @@ async function hold(cfg: TwilioConfig, row: Row, to: string) {
       }
     }
   }
+  // A caregiver's invitation to join (or a reminder of it): the consent template asks the question itself, with
+  // [YES] [NO] on the notification, so they needn't tap "Show message" first. Tapping sends "YES"/"NO", answered as usual.
+  if (!alert && cfg.templates.consent && lang === "en") {
+    const vars = await consentVars(row);
+    if (vars) {
+      try {
+        return void mark(row.id, "sent", await twilioSend(cfg, to, { contentSid: cfg.templates.consent, variables: vars }));
+      } catch (e) {
+        console.error("[whatsapp] consent template failed, using the update template", row.id, (e as Error).message);
+      }
+    }
+  }
   // "No news is good news": a caregiver's update that asks nothing of them waits for their next message, without a template.
   if (!alert && !row.quick && get<{ role: string }>("SELECT role FROM users WHERE id = ?", row.user_id)?.role === "CAREGIVER")
     return void mark(row.id, "waiting", null, "Held until they next write (a caregiver update that needs no action)");
@@ -211,6 +223,28 @@ async function hold(cfg: TwilioConfig, row: Row, to: string) {
     mark(row.id, "waiting", null, `Template not sent: ${errorText(e)}`.slice(0, 300));
     console.error("[whatsapp] template failed", row.id, (e as Error).message);
   }
+}
+
+/**
+ * Variables of the caregiver consent template (1 caregiver, 2 clinic, 3 primary/backup, 4 patient) when this message is a
+ * caregiver's YES/NO invitation for a patient whose consent is still pending; otherwise null.
+ */
+async function consentVars(row: Row): Promise<Record<"1" | "2" | "3" | "4", string> | null> {
+  if (!row.patient_id || row.kind !== "info" || row.quick !== JSON.stringify(["YES", "NO"])) return null;
+  const c = get<{ name: string; level: number; patient: string }>(
+    `SELECT c.name, c.level, p.name AS patient FROM consents k
+       JOIN caregivers c ON c.patient_id = k.patient_id AND c.user_id = k.user_id
+       JOIN patients p ON p.id = k.patient_id
+     WHERE k.patient_id = ? AND k.user_id = ? AND k.role = 'CAREGIVER' AND k.status = 'PENDING'`, row.patient_id, row.user_id);
+  if (!c) return null;
+  const { clinicLabel } = await import("./engine");
+  const { shortName } = await import("./types");
+  return {
+    "1": templateLine(shortName(c.name), 60),
+    "2": templateLine(clinicLabel() || "Your clinic", 80),
+    "3": c.level === 1 ? "primary" : "backup",
+    "4": templateLine(c.patient, 80),
+  };
 }
 
 /**

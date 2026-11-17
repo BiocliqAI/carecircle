@@ -48,6 +48,13 @@ Meta may re-classify a template as **Marketing**, which costs more and can be ca
 - Sample values: `{{1}}` = `Lakshmi`, `{{2}}` = `Rao Family Clinic`, `{{3}}` = `Ramesh`, `{{4}}` = `BP above doctor's limit. BP 182/110 mmHg (limit 140/90)`, `{{5}}` = `Rest for 15 minutes and recheck. Confirm the BP tablets were taken`, `{{6}}` = `+91 98860 20001`
 - Submit with category changes turned off, so Meta rejects rather than re-classifies it as Marketing.
 
+**`carecircle_caregiver_consent_v1`** (buttons **YES** `cc_yes`, **NO** `cc_no`), created 17 Nov 2026 as `HX4f35571d7127d4ac7633e680815361c0`
+
+> Hello {{1}}, {{2}} has added you as the {{3}} caregiver for {{4}} in their CareCircle. If a medicine is missed or a reading is outside the doctor's limits, you will get an alert here on WhatsApp. Do you agree to join the care circle?
+
+- Sample values: `{{1}}` = `Lakshmi`, `{{2}}` = `Rao Family Clinic`, `{{3}}` = `primary`, `{{4}}` = `Ramesh Kumar`
+- Sent instead of the "new message" template when a caregiver's invitation (or a consent reminder) can't go as normal text. They answer YES / NO on the notification itself. English only; caregivers set to another language get the "new message" template.
+
 Copy each approved template's **Content SID** (starts with `HX`).
 
 Templates in other languages (optional): create the same template in, say, Hindi, keeping button ID `cc_show`. Then set `TWILIO_TEMPLATE_UPDATE_HI` / `TWILIO_TEMPLATE_ALERT_HI`. Anyone without a template in their language gets the English one.
@@ -64,6 +71,7 @@ Templates in other languages (optional): create the same template in, say, Hindi
 | `TWILIO_TEMPLATE_ALERT` | `HX…` of `carecircle_alert_v2` |
 | `TWILIO_TEMPLATE_ESCALATE` | `HX…` of `carecircle_escalate_v1` |
 | `TWILIO_TEMPLATE_ESCALATE_SOLO` | `HX…` of `carecircle_escalate_solo_v1` |
+| `TWILIO_TEMPLATE_CONSENT` | `HX…` of `carecircle_caregiver_consent_v1` (optional: without it, caregivers get the "new message" template and must tap *Show message* to see the invitation) |
 | `WHATSAPP_ALLOWLIST` | while testing: comma-separated numbers allowed to receive messages, e.g. `+9198xxxxxxxx,+9199xxxxxxxx`. Remove it to go live for everyone. |
 | `WHATSAPP_GATEWAY` | `off` stops all real sending (kill switch). The simulator keeps working. |
 

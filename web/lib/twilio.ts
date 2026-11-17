@@ -9,7 +9,7 @@ export interface TwilioConfig {
   token: string;
   from: string; // E.164, e.g. +919035913536
   baseUrl: string | null; // public https origin of this app, used for webhook signatures and status callbacks
-  templates: { update: string | null; alert: string | null; escalate: string | null; escalateSolo: string | null };
+  templates: { update: string | null; alert: string | null; escalate: string | null; escalateSolo: string | null; consent: string | null };
   allow: Set<string> | null; // when set, only these numbers are ever messaged (go-live testing)
 }
 
@@ -28,6 +28,7 @@ export function twilioConfig(): TwilioConfig | null {
       alert: e.TWILIO_TEMPLATE_ALERT || null,
       escalate: e.TWILIO_TEMPLATE_ESCALATE || null, // [I'll handle it] [Pass to backup]
       escalateSolo: e.TWILIO_TEMPLATE_ESCALATE_SOLO || null, // [I'll handle it] only: no backup caregiver
+      consent: e.TWILIO_TEMPLATE_CONSENT || null, // a caregiver's invitation to join, answered with [YES] [NO] on the notification
     },
     allow: allow.length ? new Set(allow) : null,
   };

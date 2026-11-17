@@ -14,6 +14,7 @@ process.env.TWILIO_TEMPLATE_UPDATE = "HXupdate";
 process.env.TWILIO_TEMPLATE_ALERT = "HXalert";
 process.env.TWILIO_TEMPLATE_ESCALATE = "HXescalate";
 process.env.TWILIO_TEMPLATE_ESCALATE_SOLO = "HXescalateSolo";
+process.env.TWILIO_TEMPLATE_CONSENT = "HXconsent";
 delete process.env.GEMINI_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.WHATSAPP_ALLOWLIST;
@@ -279,6 +280,29 @@ describe("twilio: delivery", () => {
     wa.deliveryStatus(sid, "read", null);
     wa.deliveryStatus(sid, "failed", "30008");
     assert.equal(status(id).wa_status, "read");
+  });
+
+  it("invites a caregiver outside the window with the consent template, answered from the notification", async () => {
+    run("INSERT OR IGNORE INTO caregivers(id, patient_id, user_id, name, relation, phone, level, dashboard) VALUES('cg1','p1','u_cg','Lakshmi Kumar','Wife','098860 20002',1,1)");
+    run("INSERT OR REPLACE INTO consents(patient_id, user_id, role, status, requested_at) VALUES('p1','u_cg','CAREGIVER','PENDING',?)", now());
+    closeWindow("u_cg");
+    const id = send("u_cg", "Hi Lakshmi, Ramesh Kumar has added you… Reply YES to join, or NO to decline.", { quick: ["YES", "NO"], kind: "info" });
+    await wa.deliveriesSettled();
+    const last = sends().at(-1)!.form!;
+    assert.equal(last.get("ContentSid"), "HXconsent");
+    const vars = JSON.parse(last.get("ContentVariables")!);
+    assert.equal(vars["1"], "Lakshmi");
+    assert.equal(vars["3"], "primary");
+    assert.equal(vars["4"], "Ramesh Kumar");
+    assert.equal(status(id).wa_status, "sent", "the template carries the question, so nothing waits to be re-sent");
+
+    // Once they've answered, a YES/NO message is an ordinary one again: the generic template, and it waits.
+    run("UPDATE consents SET status = 'GIVEN' WHERE user_id = 'u_cg'");
+    closeWindow("u_cg");
+    const later = send("u_cg", "Did Ramesh take his evening tablets?", { quick: ["YES", "NO"], kind: "info" });
+    await wa.deliveriesSettled();
+    assert.equal(sends().at(-1)!.form!.get("ContentSid"), "HXupdate");
+    assert.equal(status(later).wa_status, "waiting");
   });
 
   it("explains each person's latest delivery to the clinic", async () => {
