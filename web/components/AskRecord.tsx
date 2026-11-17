@@ -1,6 +1,7 @@
 "use client";
 // "Ask the record": a question about this patient, answered from their own record, with the chart.
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "./client";
 import { Dictate } from "./Dictate";
 import { LineChart, medMarkers } from "./charts";
@@ -16,17 +17,27 @@ export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: st
   const [err, setErr] = useState<string | null>(null);
   const [a, setA] = useState<{ q: string; res: Answer; at: number; by?: string } | null>(null);
   const [past, setPast] = useState<AskedQuestion[]>([]);
+  const [show, setShow] = useState(false); // the answer opens in a pop-up over the chart
+  const [asking, setAsking] = useState("");
 
   const loadPast = useCallback(() => {
     api<{ questions: AskedQuestion[] }>(`/api/patients/${pid}/ask`).then((r) => setPast(r.questions)).catch(() => undefined);
   }, [pid]);
   useEffect(loadPast, [loadPast]);
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setShow(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [show]);
 
   /** `fresh` reads the record again instead of showing the answer kept from the last time this was asked. */
   async function ask(text: string, fresh = false) {
     if (text.trim().length < 3 || busy) return;
     setBusy(true);
     setErr(null);
+    setAsking(text.trim());
+    setShow(true);
     try {
       const res = await api<Answer & { id: number; at: number; by: string }>(`/api/patients/${pid}/ask`, { body: { question: text.trim(), fresh } });
       setA({ q: text.trim(), res, at: res.at, by: res.by });
@@ -74,10 +85,32 @@ export function AskRecord({ pid, patientFirst }: { pid: string; patientFirst: st
           {earlier.map((x) => <button key={x.id} type="button" disabled={busy} title={`${x.question} · asked ${fmtDateTime(x.at)} by ${x.by}. Select to answer it again from the record as it is now.`} onClick={() => pick(x.question, true)}>{x.question}</button>)}
         </div>
       )}
-      {byVoice && !busy && a && <div className="v2-sub" style={{ marginTop: 8 }}>Heard: “{a.q}”. If that isn't what you said, correct it in the box above and press Ask.</div>}
-      {busy && <div className="v2-sub" style={{ marginTop: 8 }}>Reading the whole record carefully. This can take up to half a minute.</div>}
-      {err && <div className="alert bad" style={{ marginTop: 10 }}>{err}</div>}
-      {a && <AnswerView q={a.q} res={a.res} at={a.at} by={a.by} />}
+      {!show && a && !busy && <div className="v2-sub" style={{ marginTop: 8 }}>Last answer: “{a.q}” <button type="button" className="tq-link" onClick={() => setShow(true)}>Show</button></div>}
+      {!show && err && <div className="alert bad" style={{ marginTop: 10 }}>{err}</div>}
+      {show && createPortal(
+        <div className="hx-backdrop" role="dialog" aria-modal="true" aria-label="Answer from the record" onClick={() => setShow(false)}>
+          <div className="hx-box ask-pop" onClick={(e) => e.stopPropagation()}>
+            <header className="hx-head">
+              <div>
+                <h2>{patientFirst}&rsquo;s record</h2>
+                <div className="v2-sub">Answers come only from this record</div>
+              </div>
+              <button type="button" className="v2-btn" onClick={() => setShow(false)}>Close</button>
+            </header>
+            <div className="hx-body" aria-live="polite">
+              {busy && <div className="ask-wait"><span className="spin" /><div><div className="ask-q">“{asking}”</div><div className="v2-sub">Reading the whole record carefully. This can take up to half a minute.</div></div></div>}
+              {!busy && err && <div className="alert bad">{err}</div>}
+              {!busy && !err && a && (
+                <>
+                  {byVoice && <div className="v2-sub" style={{ marginBottom: 8 }}>Heard: “{a.q}”. If that isn&rsquo;t what you said, close this, correct it in the box and press Ask.</div>}
+                  <AnswerView q={a.q} res={a.res} at={a.at} by={a.by} />
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </section>
   );
 }
