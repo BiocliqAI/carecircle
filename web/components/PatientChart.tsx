@@ -291,17 +291,17 @@ function Overview({ d, s, onSec, showAi, setShowAi }: { d: Data; s: IntervalSumm
   const meds = s.adherence.filter((a) => a.kind === "med");
   const days = s.days.slice(-14);
   return (
-    <div className="v2-grid12">
-      <div className="span8 stack gap16">
-        <section className="v2-card pad">
-          <div className="row between" style={{ marginBottom: 8 }}>
-            <h2>Since last visit</h2>
-            <div className="row" style={{ gap: 10 }}><span className="v2-sub">{fmtDate(cur.visit_at, { day: "numeric", month: "short" })} → today · {s.days.length} days</span><button className="tq-link" onClick={() => setShowAi(!showAi)}>{showAi ? "Hide AI summary" : "AI summary"}</button></div>
-          </div>
-          <ul className="pc-bullets num">{s.highlights.slice(0, 5).map((h, i) => <li key={i} className={h.tone === "bad" ? "bad" : h.tone === "warn" ? "warn" : ""}>{h.text}</li>)}</ul>
-          {showAi && <div style={{ marginTop: 12 }}><ClinicalSummaryCard patientId={d.patient.id} patientName={d.patient.name} /></div>}
-        </section>
+    <div className="stack gap16">
+      {/* patient summary beside the labs, then the baseline headline, then the detail */}
+      <div className="v2-grid12">
+        <SummaryPane d={d} s={s} onSec={onSec} showAi={showAi} setShowAi={setShowAi} />
+        <div className="span4"><LabsCard d={d} onAll={() => onSec("vitals")} /></div>
+      </div>
 
+      <BaselineCard b={d.baseline} pid={d.patient.id} canEdit now={d.now} compact />
+
+      <div className="v2-grid12">
+      <div className="span8 stack gap16">
         {vitals.length > 0 && (
           <section className="pc-vitals">
             {vitals.map((v) => {
@@ -348,9 +348,76 @@ function Overview({ d, s, onSec, showAi, setShowAi }: { d: Data; s: IntervalSumm
       </div>
       <div className="span4 stack gap16">
         <MedsCard plan={cur.plan} onSec={onSec} />
-        <SideCards d={d} onSec={onSec} />
+        <SideCards d={d} onSec={onSec} labs={false} />
+      </div>
       </div>
     </div>
+  );
+}
+
+/** The overview's summary: who this is, what changed since the last visit, why they are coming, and what the family reported. */
+function SummaryPane({ d, s, onSec, showAi, setShowAi }: { d: Data; s: IntervalSummary; onSec: (x: Section) => void; showAi: boolean; setShowAi: (b: boolean) => void }) {
+  const cur = d.current!;
+  const b = d.baseline;
+  const day = (t: number) => (relDays(t, d.now) === 0 ? "today" : fmtDate(t, { day: "numeric", month: "short" }));
+  const history = [b?.history?.trim(), b?.familyHistory?.trim() ? `Family: ${b.familyHistory.trim()}` : null].filter(Boolean) as string[];
+  const next = cur.next_visit_at;
+  const flags = d.prep?.flags ?? [];
+  const questions = d.prep?.questions?.trim();
+  // Readings the patient or family logged that fell outside the plan's limits, per vital.
+  const abnormal = s.vitals.map((v) => {
+    const off = v.series.filter((x) => x.flag);
+    const last = off[off.length - 1];
+    return last ? { label: VITAL_META[v.type].label, unit: VITAL_META[v.type].unit, n: off.length, of: v.count, last } : null;
+  }).filter(Boolean) as { label: string; unit: string; n: number; of: number; last: IntervalSummary["vitals"][number]["series"][number] }[];
+  return (
+    <section className="v2-card pad span8 ps">
+      <div className="row between" style={{ marginBottom: 4 }}>
+        <h2>Patient summary</h2>
+        <button className="tq-link" onClick={() => setShowAi(!showAi)}>{showAi ? "Hide AI summary" : "AI summary"}</button>
+      </div>
+
+      <div className="ps-sec">
+        <h3>History</h3>
+        <div>
+          {d.patient.conditions && <p><b style={{ fontWeight: 600 }}>{d.patient.conditions}</b></p>}
+          {history.map((h, i) => <p key={i}>{h.length > 320 ? `${h.slice(0, 320)}…` : h}</p>)}
+          {cur.diagnosis && <p><span className="v2-sub">At the last visit ({fmtDate(cur.visit_at, { day: "numeric", month: "short" })}):</span> {cur.diagnosis}</p>}
+          {!d.patient.conditions && !history.length && !cur.diagnosis && <p className="v2-sub">No history recorded yet.</p>}
+          <button className="tq-link" style={{ padding: 0 }} onClick={() => onSec("profile")}>Full history</button>
+        </div>
+      </div>
+
+      <div className="ps-sec">
+        <h3>Since last visit</h3>
+        <div>
+          <p className="v2-sub num">{fmtDate(cur.visit_at, { day: "numeric", month: "short" })} → today · {s.days.length} days</p>
+          {s.highlights.length > 0 ? <ul className="pc-bullets num">{s.highlights.slice(0, 5).map((h, i) => <li key={i} className={h.tone === "bad" ? "bad" : h.tone === "warn" ? "warn" : ""}>{h.text}</li>)}</ul> : <p className="v2-sub">Nothing notable recorded.</p>}
+        </div>
+      </div>
+
+      <div className="ps-sec">
+        <h3>Reason for this visit</h3>
+        <div className="num">
+          <p>{next ? <>Follow-up booked for <b style={{ fontWeight: 600 }}>{fmtDate(next, { weekday: "short", day: "numeric", month: "short" })}, {fmtTime(next)}</b>.</> : <span className="v2-sub">No visit is booked.</span>}</p>
+          {flags.length > 0 && <ul className="pc-bullets">{flags.map((f) => <li key={f.id} className="warn">{f.text}</li>)}</ul>}
+          {questions && <p><span className="v2-sub">The family wants to ask:</span> {questions}</p>}
+          {next && !flags.length && !questions && <p className="v2-sub">{d.prep?.readyAt ? "The assistant flagged nothing for this visit." : "The visit has not been prepared yet, so nothing is flagged."}</p>}
+        </div>
+      </div>
+
+      <div className="ps-sec">
+        <h3>Reported by the patient and family</h3>
+        <div className="num">
+          {s.symptoms.length > 0 && <ul className="pc-bullets">{s.symptoms.map((x) => <li key={x.key} className={/severe|high/i.test(x.maxSeverity) ? "bad" : "warn"}><b style={{ fontWeight: 600 }}>{x.label}</b> on {x.days} day{x.days > 1 ? "s" : ""}, last {day(x.last)}{x.maxSeverity ? ` · worst: ${x.maxSeverity.toLowerCase()}` : ""}</li>)}</ul>}
+          {d.symptomDetails.slice(0, 3).map((x, i) => <p key={i} className="v2-sub">{fmtDate(x.at, { day: "numeric", month: "short" })} · {x.key.replace(/_/g, " ")}: {x.answers.join(" · ")}</p>)}
+          {abnormal.length > 0 && <ul className="pc-bullets">{abnormal.map((x) => <li key={x.label} className="bad"><b style={{ fontWeight: 600 }}>{x.label}</b> outside limits in {x.n} of {x.of} readings, last {x.last.v1}{x.last.v2 ? `/${x.last.v2}` : ""} {x.unit} {day(x.last.t)}</li>)}</ul>}
+          {!s.symptoms.length && !abnormal.length && <p className="v2-sub">No symptoms and no out-of-range readings logged{s.symptomFreeDays ? ` · ${s.symptomFreeDays} symptom-free days` : ""}.</p>}
+        </div>
+      </div>
+
+      {showAi && <div style={{ marginTop: 12 }}><ClinicalSummaryCard patientId={d.patient.id} patientName={d.patient.name} /></div>}
+    </section>
   );
 }
 
@@ -492,11 +559,11 @@ function LabValuesCard({ d, onChange }: { d: Data; onChange: () => void }) {
   );
 }
 
-function SideCards({ d, onSec }: { d: Data; onSec: (x: Section) => void }) {
+function SideCards({ d, onSec, labs = true }: { d: Data; onSec: (x: Section) => void; labs?: boolean }) {
   const consent = (uid: string | null) => d.consents.find((c) => c.user_id === uid)?.status;
   return (
     <>
-      <LabsCard d={d} onAll={() => onSec("vitals")} />
+      {labs && <LabsCard d={d} onAll={() => onSec("vitals")} />}
       <section className="v2-card pad">
         <div className="row between" style={{ marginBottom: 4 }}><h2>Care circle</h2><button className="tq-link" onClick={() => onSec("alerts")}>Manage</button></div>
         {d.caregivers.map((c) => {

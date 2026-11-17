@@ -233,7 +233,9 @@ export function ConsentList({ consents, people }: { consents: ConsentView[]; peo
   );
 }
 
-export function BaselineCard({ b, pid, canEdit, now }: { b: StoredBaseline | null; pid: string; canEdit: boolean; now: number }) {
+/** `compact`: the headline pills only, with everything else folded under "Show details". */
+export function BaselineCard({ b, pid, canEdit, now, compact }: { b: StoredBaseline | null; pid: string; canEdit: boolean; now: number; compact?: boolean }) {
+  if (compact) return <BaselineCompact b={b} pid={pid} canEdit={canEdit} now={now} />;
   if (!b) {
     return (
       <div className="card">
@@ -282,6 +284,54 @@ export function BaselineCard({ b, pid, canEdit, now }: { b: StoredBaseline | nul
         {b.notes && <div className="callout">{b.notes}</div>}
       </div>
     </div>
+  );
+}
+
+function BaselineCompact({ b, pid, canEdit, now }: { b: StoredBaseline | null; pid: string; canEdit: boolean; now: number }) {
+  if (!b) {
+    return (
+      <section className="v2-card pad">
+        <div className="row between"><h2>Baseline</h2>{canEdit && <Link className="tq-link" href={`/patients/${pid}/baseline`}>Capture baseline</Link>}</div>
+        <div className="v2-sub" style={{ marginTop: 4 }}>No baseline intake recorded.</div>
+      </section>
+    );
+  }
+  const age = ageFromDob(b.dob, now);
+  const bmiV = bmi(b.heightCm, b.vitals.weight);
+  const v = b.vitals;
+  const allergy = b.allergies && !/^(none|nil|nkda|no)/i.test(b.allergies) ? b.allergies : null;
+  const pills = [age != null ? `${age} yrs` : null, b.bloodGroup, b.heightCm ? `${b.heightCm} cm` : null, v.weight ? `${v.weight} kg` : null, bmiV ? `BMI ${bmiV}` : null, v.sys ? `BP ${v.sys}/${v.dia}` : null, b.language].filter(Boolean) as string[];
+  const vitals = [v.hr ? `Pulse ${v.hr}` : null, v.glucose ? `Sugar ${v.glucose}` : null, v.spo2 ? `SpO₂ ${v.spo2}%` : null].filter(Boolean);
+  const life = [b.smoking && `Smoking: ${b.smoking}`, b.alcohol && `Alcohol: ${b.alcohol}`, b.activity && `Activity: ${b.activity}`, b.diet && `Diet: ${b.diet}`].filter(Boolean);
+  const more = vitals.length > 0 || b.currentMeds.length > 0 || b.labs.length > 0 || !!b.history || !!b.familyHistory || life.length > 0 || !!b.notes || (!!b.allergies && !allergy);
+  return (
+    <section className="v2-card pad bl-compact">
+      <div className="row between" style={{ marginBottom: 8, alignItems: "baseline" }}>
+        <h2>Baseline <span className="v2-sub" style={{ fontWeight: 400 }}>· captured {fmtDate(b.capturedAt)}{b.capturedBy ? ` by ${b.capturedBy}` : ""}</span></h2>
+        {canEdit && <Link className="tq-link" href={`/patients/${pid}/baseline`}>Edit</Link>}
+      </div>
+      <div className="row" style={{ gap: 6 }}>
+        {allergy && <span className="v2-pill red">Allergy: {allergy}</span>}
+        {pills.map((x) => <span key={x} className="v2-pill grey">{x}</span>)}
+        {b.conditions.map((c) => <span key={c} className="v2-pill green">{c}</span>)}
+        {!allergy && !pills.length && !b.conditions.length && <span className="v2-sub">Nothing recorded in the headline fields.</span>}
+      </div>
+      {more && (
+        <details>
+          <summary>Show details</summary>
+          <div className="bl-rest num">
+            {b.allergies && !allergy && <div><small>Allergies</small>{b.allergies}</div>}
+            {vitals.length > 0 && <div><small>Other intake vitals</small>{vitals.join(" · ")}</div>}
+            {b.currentMeds.length > 0 && <div><small>Medicines at onboarding</small>{b.currentMeds.map((m, i) => <div key={i}><b style={{ fontWeight: 600 }}>{m.name}</b> {m.dose} · {m.frequency}{m.purpose ? <span className="v2-sub"> · {m.purpose}</span> : null}</div>)}</div>}
+            {b.labs.length > 0 && <div><small>Baseline labs</small>{b.labs.map((l) => `${LAB_META[l.marker]?.label ?? l.marker} ${l.value}`).join(" · ")}</div>}
+            {b.history && <div><small>History</small>{b.history}</div>}
+            {b.familyHistory && <div><small>Family history</small>{b.familyHistory}</div>}
+            {life.length > 0 && <div><small>Lifestyle</small>{life.join(" · ")}</div>}
+            {b.notes && <div><small>Notes</small>{b.notes}</div>}
+          </div>
+        </details>
+      )}
+    </section>
   );
 }
 

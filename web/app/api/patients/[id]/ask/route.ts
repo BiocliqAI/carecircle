@@ -12,13 +12,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const user = await sessionUser();
   if (!user || !isClinician(user) || !getPatient(id) || !canView(user, id)) return err("Care team only", 403);
-  const b = (await req.json().catch(() => ({}))) as { question?: string };
+  const b = (await req.json().catch(() => ({}))) as { question?: string; fresh?: boolean };
   const q = (b.question ?? "").trim();
   if (q.length < 3) return err("Ask a question, for example “when did creatinine start rising?”");
   const t = now();
   audit(t, user.id, "RECORD_ASKED", "patient", id, { question: q.slice(0, 200) });
   try {
-    const a = await askRecord(id, q, t);
+    const a = await askRecord(id, q, t, { fresh: b.fresh === true });
     const qid = saveQuestion(id, user.id, q, a, t);
     return json({ ...a, id: qid, at: t, by: user.name });
   } catch (e) {

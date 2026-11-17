@@ -8,7 +8,7 @@ import { blobToDataUrl, speechCtor, type SpeechRec } from "./speech";
 
 type State = "idle" | "recording" | "transcribing";
 
-export function Dictate({ patientId, onText, label = "Dictate", noun = "note" }: { patientId: string; onText: (text: string) => void; label?: string; noun?: string }) {
+export function Dictate({ patientId, onText, label = "Dictate", noun = "note", compact }: { patientId: string; onText: (text: string) => void; label?: string; noun?: string; compact?: boolean }) {
   const [state, setState] = useState<State>("idle");
   const [secs, setSecs] = useState(0);
   const [preview, setPreview] = useState("");
@@ -111,8 +111,10 @@ export function Dictate({ patientId, onText, label = "Dictate", noun = "note" }:
   }
 
   return (
-    <div className="dict">
-      {state === "idle" && <button type="button" className="v2-btn" onClick={start} title="Dictate this note"><Icon name="mic" size={16} />{label}</button>}
+    <div className={`dict${state !== "idle" || err ? " live" : ""}`}>
+      {state === "idle" && (compact
+        ? <button type="button" className="v2-btn dict-mic" onClick={start} title={label} aria-label={label}><Icon name="mic" size={18} /></button>
+        : <button type="button" className="v2-btn" onClick={start} title="Dictate this note"><Icon name="mic" size={16} />{label}</button>)}
       {state === "recording" && (
         <div className="dict-live">
           <div className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
