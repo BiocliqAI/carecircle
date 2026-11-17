@@ -939,11 +939,10 @@ details.bl-compact[open] > summary { margin-bottom: 10px; }
 .vc-step.done { color: var(--c-brand); } .vc-step.done span { background: var(--c-brand-soft); color: var(--c-brand); }
 .consult-bar.vc-bar { position: static; margin: 10px 0 0; padding: 14px 16px; border: 1px solid var(--c-line); border-radius: 12px; box-shadow: none; }
 .vc-load { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 22px; }
-/* Conditions in the patient summary: a pill each (name, then when diagnosed and status), newest diagnosis first. */
+/* Conditions in the patient summary: a short pill each (name and one status word), newest diagnosis first. */
 .ps-conds { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
-.ps-conds .v2-pill { white-space: normal; gap: 0; font-weight: 500; border-radius: 14px; padding: 4px 10px; cursor: default; }
-.ps-conds .v2-pill b { font-weight: 700; }
-.ps-conds .v2-pill span { white-space: pre-wrap; }
+.ps-conds .v2-pill { cursor: default; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.v2-pill.yellow { background: #FEF7C3; color: #7A5A00; }
 /* Full history pop-up: scrolls inside; "Download as PDF" prints only this. */
 .hx-backdrop { position: fixed; inset: 0; z-index: 9000; display: flex; justify-content: center; align-items: center; padding: 16px; background: rgba(12, 43, 42, 0.45); }
 .hx-box { width: 100%; max-width: 960px; max-height: 92vh; display: flex; flex-direction: column; background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(12, 43, 42, 0.25); }

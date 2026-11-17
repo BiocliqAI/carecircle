@@ -407,12 +407,14 @@ function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s:
           {r && r.conditions.length > 0 && (
             <p className="ps-conds">
               {r.conditions.map((c) => {
-                // A pill per condition, newest diagnosis first: the name, then when it was diagnosed and its status with the
-                // latest value. The whole entry (treatment and advice too) shows on hover.
-                const year = c.diagnosed.match(/\b(19|20)\d{2}\b/g)?.pop();
-                const data = [year ?? clip(c.diagnosed, 24), c.status ? clip(c.status.charAt(0).toLowerCase() + c.status.slice(1), 48) : ""].filter(Boolean).join(" · ");
-                const tone = /uncontrolled|worsening/i.test(c.status) ? "amber" : /controlled|improving/i.test(c.status) ? "green" : "grey";
-                return <span key={c.name} className={`v2-pill ${tone}`} title={c.detail}><b>{c.name}</b>{data ? <span> · {data}</span> : null}</span>;
+                // A short pill: the name and one status word, coloured by how it is going (improving green, controlled
+                // yellow, getting worse red, anything else grey). The whole entry shows on hover.
+                const st = c.status.toLowerCase();
+                const [word, tone] = /uncontrolled|worsen|deteriorat/.test(st) ? [st.match(/uncontrolled|worsening|deteriorating/)?.[0] ?? "worsening", "red"]
+                  : /improv/.test(st) ? [st.match(/improving|improved/)?.[0] ?? "improving", "green"]
+                  : /controlled/.test(st) ? ["controlled", "yellow"]
+                  : [st.match(/stable|resolved|fluctuating/)?.[0] ?? "", "grey"];
+                return <span key={c.name} className={`v2-pill ${tone}`} title={c.detail}>{c.name}{word ? ` · ${word}` : ""}</span>;
               })}
             </p>
           )}
