@@ -916,8 +916,6 @@ td.lab-yellow, .lab-legend .lab-yellow { background: #fef08a; }
 .ps-sec .pc-bullets { margin-bottom: 4px; }
 @media (max-width: 700px) { .ps-sec { grid-template-columns: 1fr; } }
 .ps-sec h3 small { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--c-mute); }
-.ps-conds { display: flex; flex-wrap: wrap; gap: 6px; }
-.ps-conds .v2-pill { white-space: normal; }
 .ps-reason { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
 .ps-reason input { flex: 1 1 220px; min-height: 36px; border: 1px solid #CFD8D5; border-radius: 8px; padding: 0 10px; font: inherit; }
 .ps-reason input:focus { outline: 2px solid var(--c-accent); outline-offset: 1px; border-color: transparent; }
@@ -927,7 +925,41 @@ details.bl-compact > summary::-webkit-details-marker { display: none; }
 details.bl-compact > summary::before { content: "▸"; font-size: 11px; color: var(--c-mute); }
 details.bl-compact[open] > summary::before { content: "▾"; }
 details.bl-compact[open] > summary { margin-bottom: 10px; }
-/* A label that shows its full sentence on hover or keyboard focus. */
-.tip { position: relative; cursor: help; }
-.tip:hover::after, .tip:focus-visible::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 6px); z-index: 30; width: max-content; max-width: min(360px, 80vw); white-space: normal; text-align: left; background: #14201F; color: #fff; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 500; line-height: 1.45; box-shadow: 0 6px 20px rgba(20, 32, 31, 0.18); }
-.tip:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+/* Visit pop-up on the patient page: one action at the top, then Draft, Review, Submit. */
+.vc-backdrop { position: fixed; inset: 0; z-index: 9000; display: flex; justify-content: center; align-items: flex-start; padding: 3vh 16px; overflow-y: auto; background: rgba(12, 43, 42, 0.45); }
+.vc-box { width: 100%; max-width: 980px; background: var(--c-bg); border-radius: 16px; box-shadow: 0 24px 60px rgba(12, 43, 42, 0.25); }
+.vc-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 22px 14px; background: #fff; border-radius: 16px 16px 0 0; border-bottom: 1px solid var(--c-line); }
+.vc-head h2 { font-size: 20px; font-weight: 700; margin: 0 0 2px; }
+.vc-action { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 22px; background: #fff; border-bottom: 1px solid var(--c-line); }
+.vc-action .pb-rec { flex: 1 1 100%; }
+.vc-body { padding: 18px 22px 22px; }
+.vc-step { display: flex; align-items: center; gap: 10px; margin: 4px 0 0; font-size: 15px; font-weight: 700; color: var(--c-mute); }
+.vc-step span { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12.5px; background: #E3E8E6; color: var(--c-ink2); }
+.vc-step.on { color: var(--c-ink); } .vc-step.on span { background: var(--c-side); color: #fff; }
+.vc-step.done { color: var(--c-brand); } .vc-step.done span { background: var(--c-brand-soft); color: var(--c-brand); }
+.consult-bar.vc-bar { position: static; margin: 10px 0 0; padding: 14px 16px; border: 1px solid var(--c-line); border-radius: 12px; box-shadow: none; }
+.vc-load { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 22px; }
+/* Conditions in the patient summary: one full-width row each, newest diagnosis first. */
+.ps-condlist { list-style: none; margin: 6px 0 8px; padding: 0; border: 1px solid var(--c-line2); border-radius: 10px; }
+.ps-condlist li { padding: 8px 12px; }
+.ps-condlist li + li { border-top: 1px solid var(--c-line2); }
+.ps-condlist .v2-sub { margin-top: 1px; }
+/* Full history pop-up: scrolls inside; "Download as PDF" prints only this. */
+.hx-backdrop { position: fixed; inset: 0; z-index: 9000; display: flex; justify-content: center; align-items: center; padding: 16px; background: rgba(12, 43, 42, 0.45); }
+.hx-box { width: 100%; max-width: 960px; max-height: 92vh; display: flex; flex-direction: column; background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(12, 43, 42, 0.25); }
+.hx-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 22px 14px; border-bottom: 1px solid var(--c-line); }
+.hx-head h2 { font-size: 20px; font-weight: 700; margin: 0 0 2px; }
+.hx-body { padding: 18px 22px 22px; overflow-y: auto; font-size: 14px; }
+.hx-printed { display: none; margin-top: 18px; }
+@media print {
+  body.print-hist > *:not(.hx-backdrop) { display: none !important; }
+  body.print-hist { background: #fff; }
+  body.print-hist .hx-backdrop { position: static; display: block; padding: 0; background: none; }
+  body.print-hist .hx-box { max-width: none; max-height: none; display: block; border-radius: 0; box-shadow: none; }
+  body.print-hist .hx-body { overflow: visible; padding: 12px 0 0; }
+  body.print-hist .hx-head { padding: 0 0 10px; }
+  body.print-hist .hx-actions { display: none !important; }
+  body.print-hist .hx-printed { display: block; }
+  body.print-hist .hx-body [style*="overflow"] { overflow: visible !important; }
+  body.print-hist tr { break-inside: avoid; }
+}

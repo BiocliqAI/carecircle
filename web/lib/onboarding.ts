@@ -71,8 +71,17 @@ export interface RecordSummary {
   confirmedAt: number | null;
   oneGlance: string;
   /** `detail` is the whole entry as a sentence (status with its value, when diagnosed, treatment, advice). */
-  conditions: { name: string; status: string; detail: string }[];
+  conditions: { name: string; status: string; diagnosed: string; treatment: string; detail: string }[];
   lastVisit: { date: string; doctor: string; specialty: string; hospital: string; takeaway: string; treating: boolean; changes: string[] } | null;
+}
+/** A sortable number for "2019", "March 2021", "2021-03-04" or "since 2010": the latest year in it, plus the month when there is one. */
+function whenOf(text: string): number | null {
+  const iso = text.match(/(\d{4})-(\d{2})/);
+  if (iso) return Number(iso[1]) * 12 + Number(iso[2]);
+  const years = [...text.matchAll(/\b(19|20)\d{2}\b/g)].map((m) => Number(m[0]));
+  if (!years.length) return null;
+  const mon = text.toLowerCase().match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+  return Math.max(...years) * 12 + (mon ? ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].indexOf(mon[1]) + 1 : 0);
 }
 function conditionSentence(c: HistRow): string {
   const end = (x: string) => (/[.!?]$/.test(x) ? x : `${x}.`);
@@ -97,7 +106,10 @@ export function recordSummary(pid: string): RecordSummary | null {
   return {
     confirmedAt: o.confirmed_at ?? null,
     oneGlance: fieldsOf(s, "snapshot").oneGlance?.text?.trim() ?? "",
-    conditions: listOf(s, "conditions").filter((c) => cell(c, "name")).slice(0, 8).map((c) => ({ name: cell(c, "name"), status: cell(c, "status"), detail: conditionSentence(c) })),
+    // Newest diagnosis first; conditions with no date keep their order after the dated ones.
+    conditions: listOf(s, "conditions").filter((c) => cell(c, "name")).map((c, i) => ({ c, i, when: whenOf(cell(c, "diagnosed")) }))
+      .sort((a, b) => (b.when ?? -1) - (a.when ?? -1) || a.i - b.i).slice(0, 20)
+      .map(({ c }) => ({ name: cell(c, "name"), status: cell(c, "status"), diagnosed: cell(c, "diagnosed"), treatment: cell(c, "treatment"), detail: conditionSentence(c) })),
     lastVisit: v ? {
       date: cell(v, "date"), doctor: cell(v, "doctor"), specialty: cell(v, "specialty"), hospital: cell(v, "hospital"), takeaway: cell(v, "takeaway"), treating: !!mine,
       // Medicine changes the records put on that same day.
