@@ -830,6 +830,22 @@ await T("WATCH-01", "Weight creep", async () => {
   assert.ok(localHHMM(opened) >= "09:30");
 });
 
+await T("WATCH-06", "Turn a pattern off", async () => {
+  if (!w01.ok) blocked("WATCH-01 sequence did not run");
+  assert.equal(watch("p_gopal", "weight_creep").filter((x) => x.started_at > w01.t).length, 0, "no weight-creep watch for Gopal (pattern off) despite the same rising weights");
+  const chart = await app.api("u_dr_dileep", "GET", "/api/patients/p_gopal");
+  assert.ok((chart.data.watchOff as string[]).includes("weight_creep"));
+  // control: turned back on, the same weights do open a watch; turning it off again closes that open one
+  assert.equal((await app.api("u_dr_dileep", "POST", "/api/patients/p_gopal/watches", { action: "on", key: "weight_creep" })).status, 200);
+  await send("u_gopal", "weight 59.4");
+  const openW = watch("p_gopal", "weight_creep").find((x) => x.state === "OPEN");
+  assert.ok(openW, "control: with the pattern on, Gopal's rising weights open a watch");
+  assert.equal((await app.api("u_dr_dileep", "POST", "/api/patients/p_gopal/watches", { action: "off", key: "weight_creep" })).status, 200);
+  assert.notEqual(app.q1<any>("SELECT state FROM watches WHERE id = ?", openW.id).state, "OPEN", "open watch closed when the pattern is turned off");
+  await send("u_gopal", "weight 59.4");
+  assert.equal(watch("p_gopal", "weight_creep").filter((x) => x.state === "OPEN").length, 0, "stays off");
+});
+
 await T("WATCH-07", "Not repeated next morning", async () => {
   if (!w01.ok) blocked("WATCH-01 did not open a watch");
   await advanceTo("10:00");
@@ -852,22 +868,6 @@ await T("WATCH-05", "Dismiss", async () => {
   await app.clock.advance(24 * 60);
   await send("u_ramesh", `weight ${Math.round((last + 0.8) * 10) / 10}`);
   assert.equal(watch("p_ramesh", "weight_creep").filter((x) => x.state === "OPEN").length, 0, "not reopened within 3 days");
-});
-
-await T("WATCH-06", "Turn a pattern off", async () => {
-  if (!w01.ok) blocked("WATCH-01 sequence did not run");
-  assert.equal(watch("p_gopal", "weight_creep").filter((x) => x.started_at > w01.t).length, 0, "no weight-creep watch for Gopal (pattern off) despite the same rising weights");
-  const chart = await app.api("u_dr_dileep", "GET", "/api/patients/p_gopal");
-  assert.ok((chart.data.watchOff as string[]).includes("weight_creep"));
-  // control: turned back on, the same weights do open a watch; turning it off again closes that open one
-  assert.equal((await app.api("u_dr_dileep", "POST", "/api/patients/p_gopal/watches", { action: "on", key: "weight_creep" })).status, 200);
-  await send("u_gopal", "weight 59.4");
-  const openW = watch("p_gopal", "weight_creep").find((x) => x.state === "OPEN");
-  assert.ok(openW, "control: with the pattern on, Gopal's rising weights open a watch");
-  assert.equal((await app.api("u_dr_dileep", "POST", "/api/patients/p_gopal/watches", { action: "off", key: "weight_creep" })).status, 200);
-  assert.notEqual(app.q1<any>("SELECT state FROM watches WHERE id = ?", openW.id).state, "OPEN", "open watch closed when the pattern is turned off");
-  await send("u_gopal", "weight 59.4");
-  assert.equal(watch("p_gopal", "weight_creep").filter((x) => x.state === "OPEN").length, 0, "stays off");
 });
 
 await T("WATCH-02", "BP drift", async () => {

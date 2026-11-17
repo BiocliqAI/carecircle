@@ -1,4 +1,0 @@
-{"id":"WATCH-01","title":"Weight creep","status":"FAIL","note":"PLAN: heads-up sent to patient and L1 once and the watch is on the chart, but not \"next morning after 09:30\": evaluateWatches also runs right after each reading (lib/engine.ts:1056), so it opened at 21:49 IST right after the 3rd reading.","ms":6340}
-{"id":"WATCH-07","title":"Not repeated next morning","status":"PASS","note":"","ms":77}
-{"id":"WATCH-05","title":"Dismiss","status":"PASS","note":"","ms":232}
-{"id":"WATCH-06","title":"Turn a pattern off","status":"FAIL","note":"control: with the pattern on, Gopal's rising weights open a watch","ms":105}
