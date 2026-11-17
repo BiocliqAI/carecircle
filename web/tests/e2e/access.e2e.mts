@@ -1000,7 +1000,7 @@ await app.stop();
 // =====================================================================================================
 // LIVE MODE
 // =====================================================================================================
-const live = await startApp({ mode: "live", port: 3211, suite: "access-live" });
+const live = await startApp({ mode: "live", port: 3211, suite: "access-live", env: { CARECIRCLE_MODE: undefined, E2E_FORCE_LIVE: "1", NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require ${path.join(import.meta.dirname, "live-mode-preload.cjs")}`.trim() } });
 let clinicName = "E2E Heart Clinic";
 let drId = "", paId = "", dr2Id = "", livePid = "";
 

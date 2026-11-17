@@ -1,0 +1,64 @@
+{"id":"WA-CON-01","title":"Patient says YES","status":"PASS","note":"","ms":19}
+{"id":"WA-CON-02","title":"Patient says NO","status":"PASS","note":"","ms":12}
+{"id":"WA-CON-03","title":"Patient changes mind (NO then YES)","status":"PASS","note":"","ms":12}
+{"id":"WA-CON-04","title":"Caregiver says YES, then receives alerts","status":"PASS","note":"","ms":66}
+{"id":"WA-CON-05","title":"Caregiver (L2) says NO: no alerts to L2, 'Caregiver declined' task","status":"FAIL","note":"BUG: declined L2 caregiver still received 1 alert message(s) after the L1 timeout (escalation 24 now level 2, NOTIFIED): \"🚨 URGENT — Circle Consent Patient Cg Gamma Yes hasn't responded in 15 min, so this is now\". timeoutCaregiver()/notifyLevel() never check consent (lib/engine.ts:422-427, 392-394). 1 !== 0 ","ms":50}
+{"id":"WA-CON-06","title":"Consent in Indian languages","status":"PASS","note":"","ms":93}
+{"id":"WA-CON-07","title":"YES while an alert is waiting = ACK, not consent","status":"PASS","note":"","ms":22}
+{"id":"WA-CON-08","title":"Caregiver in two circles answers the latest request","status":"PASS","note":"","ms":12}
+{"id":"WA-CON-11","title":"Declined caregiver gets no alerts; next consented level does","status":"FAIL","note":"BUG: urgent alert (escalation 26, level 1) went to the DECLINED L1 caregiver (1 msg: \"🚨 URGENT — Declined Level Patient Declined's BP is 190/115 \") and 0 to the consented L2. createEscalation starts at the lowest level (lib/engine.ts:366-367) and notifyLevel never checks consent (lib/engine.ts:392-394).","ms":44}
+{"id":"WA-LOG-01","title":"Single reading","status":"PASS","note":"","ms":44}
+{"id":"WA-LOG-02","title":"Several readings in one message (AI off)","status":"FAIL","note":"BUG: with AI off the rules parser logged only [bp:146/92, glucose:140, hr:78]; the bare \"72.8\" is dropped silently (no reading, no question) because the weight rule needs \"weight\"/\"wt\"/\"kg\" (lib/parser.ts:236) and the doubt/clarify checks only look at labelled numbers or a lone-number message. Reply: ✅ Logged: • Blood pressure: 146/92 mmHg • Pulse: 78 bpm • Blood sugar: 140 mg/dL + actual - expected + [ + 'weight:72.8' + ] - [] ","ms":16}
+{"id":"WA-LOG-03","title":"Natural language from a caregiver (A Gopal / Mom)","status":"PASS","note":"","ms":17}
+{"id":"WA-LOG-12","title":"Ambiguous number asks which one; chosen one logged","status":"PASS","note":"","ms":68}
+{"id":"WA-LOG-13","title":"Cancel the clarification","status":"PASS","note":"","ms":25}
+{"id":"WA-LOG-17","title":"Large but plausible jump (weight +3 kg vs yesterday)","status":"FAIL","note":"PLAN: 80.3 kg (+3.0 kg vs yesterday's 77.3) is logged and raises the \"Rapid weight gain\" alert, but no \"was that a typo?\" note: the note needs a jump of at least max(4 kg, 8% of the last weight) (lib/quality.ts:95, weightJumpNote). Reply: ✅ Logged: • Weight: 80.3 kg ⚠️ ⚠️ Rapid weight gain — Weight 80.3 kg — up 3.0 kg in 3 days (limit 2 kg). This can mean fluid build-up. Keep strictly to the fluid and salt limits today, check for swell","ms":25}
+{"id":"WA-LOG-14","title":"Impossible weight: not logged, suggests 59.2, Yes logs it","status":"PASS","note":"","ms":33}
+{"id":"WA-LOG-15","title":"Impossible BP 1400/80","status":"PASS","note":"","ms":23}
+{"id":"WA-LOG-16","title":"Sugar in mmol/L","status":"PASS","note":"","ms":22}
+{"id":"WA-LOG-18","title":"Correction replaces the reading and closes its alert","status":"PASS","note":"","ms":23}
+{"id":"WA-LOG-19","title":"'Sorry' alone changes nothing","status":"PASS","note":"","ms":12}
+{"id":"WA-LOG-20","title":"Correction outside the 36 h window","status":"FAIL","note":"BUG: the old reading is correctly left alone, but the reply does not explain why — it is the generic \"couldn't pick that up\" message: \"🤔 Sorry, I couldn't pick that up, but no problem. You can write it your own way, for example: “BP 130/80, weight 76.5, \". applyCorrections() finds no target in the 36 h window and returns nothing (lib/quality.ts:127-141), so ingestMessage falls through to clarifyFor (lib/engine.ts:1026-1029).","ms":24}
+{"id":"WA-LOG-22","title":"Caregiver logs for the patient; patient told of the alert","status":"PASS","note":"","ms":50}
+{"id":"WA-LOG-24","title":"Message length limit","status":"PASS","note":"","ms":14}
+{"id":"WA-LOG-23","title":"Unknown sender","status":"PASS","note":"","ms":35}
+{"id":"WA-LOG-21","title":"Reading before Visit 1","status":"PASS","note":"","ms":27}
+{"id":"LANG-01","title":"Indian script switches language [AI on]","status":"NOT_RUN","note":"Needs AI translation (GEMINI/ANTHROPIC keys are stripped in this environment); script detection alone only stores the preference.","ms":0}
+{"id":"LANG-02","title":"Romanised language needs two messages [AI on]","status":"NOT_RUN","note":"Romanised language is only recognised by the AI parser (parsed.language); AI is off here.","ms":0}
+{"id":"LANG-07","title":"No AI: 'reply in Tamil'","status":"PASS","note":"","ms":19}
+{"id":"LANG-04","title":"Ask directly: 'reply in Hindi', then 'english please'","status":"NOT_RUN","note":"Switching to Hindi needs AI translation (AI off: \"Sorry, I can't reply in Hindi right now, but I'll understand\", by design — see LANG-07). The English half works: \"Okay, I'll reply in English from now on.\".","ms":28}
+{"id":"LANG-05","title":"Per-person language","status":"PASS","note":"","ms":33}
+{"id":"LANG-03","title":"Switch back after three longer English messages","status":"PASS","note":"","ms":47}
+{"id":"LANG-06","title":"Translated quick-reply button understood as English","status":"PASS","note":"","ms":17}
+{"id":"TIME-08","title":"Timezone: plan times and messages in IST","status":"PASS","note":"","ms":19}
+{"id":"WA-LOG-04","title":"Medicines taken (tap after the prompt)","status":"PASS","note":"","ms":24}
+{"id":"WA-LOG-05","title":"Medicines missed","status":"PASS","note":"","ms":13}
+{"id":"WA-LOG-08","title":"Evening check-in","status":"PASS","note":"","ms":11}
+{"id":"WA-LOG-06","title":"One medicine missed: 'took all except amlodipine' (Abdul, 09:00 doses)","status":"FAIL","note":"BUG: only amlodipine should be NOT_DONE and the rest taken, but tasks are {\"med:amlodipine\":\"NOT_DONE\",\"med:tiotropium\":\"PENDING\",\"med:budesonide\":\"PENDING\"} — the rules parser sets allTaken=false whenever \"except\" appears (lib/parser.ts:289) so engine.ts:975 never marks the other doses taken; they stay PENDING and will later be MISSED and raise \"Medicines not logged\". Reply: ✅ Logged: • Not taken: Amlodipine","ms":36}
+{"id":"WA-LOG-07","title":"Physio done / skipped","status":"PASS","note":"","ms":12}
+{"id":"WA-LOG-25","title":"Rules parser with AI off (WA-LOG-01..08)","status":"FAIL","note":"with AI off: WA-LOG-02 FAIL, WA-LOG-06 FAIL (see those results) 2 !== 0 ","ms":8}
+{"id":"WA-REM-10","title":"Lab task: prompted on its day, missed only after 3 days (seeded history, A Gopal)","status":"PASS","note":"","ms":1}
+{"id":"DIG-03","title":"Medicine streak line (seeded digests)","status":"PASS","note":"","ms":0}
+{"id":"WA-REM-01","title":"Prompt at due time (Ramesh 08:00)","status":"PASS","note":"","ms":0}
+{"id":"WA-REM-02","title":"Reminder after 1 h lists the open items","status":"PASS","note":"","ms":0}
+{"id":"WA-REM-03","title":"Tasks marked MISSED after 3 h","status":"PASS","note":"","ms":0}
+{"id":"WA-REM-04","title":"Medicines missed → compliance alert to L1","status":"PASS","note":"","ms":1}
+{"id":"WA-REM-05","title":"No doctor or PA notified","status":"PASS","note":"","ms":0}
+{"id":"WA-REM-08","title":"Late completion resolves the compliance alert","status":"PASS","note":"","ms":8}
+{"id":"WA-LOG-09","title":"Fluid intake running total (A Gopal)","status":"PASS","note":"","ms":1}
+{"id":"WA-REM-11","title":"Paused plan: no prompts until started","status":"FAIL","note":"no 18:00 prompt after starting the plan","ms":1}
+{"id":"DIG-01","title":"Evening digest","status":"PASS","note":"","ms":1}
+{"id":"WA-CON-12","title":"Digest only to consented caregivers","status":"PASS","note":"","ms":0}
+{"id":"DIG-05","title":"No digest before the plan starts","status":"PASS","note":"","ms":0}
+{"id":"WA-LOG-10","title":"Fluid and urine day totals","status":"FAIL","note":"BUG: the day total \"intake 1400 ml … today\" was added to the earlier drinks (400 + 150) instead of replacing them, so the chart shows 1950 ml. parseFluids() only treats a volume as a day total when words like \"total\"/\"so far\"/\"today's\" are near it — \"today\" without \"'s\" does not match (lib/parser.ts:47, TOTAL) — and dayFluid() then sums 'add' rows (lib/engine.ts:595-606). The plan's own prompt asks for exactly this format. 1950 !== 1400 ","ms":72}
+{"id":"DIG-02","title":"Digest sent once","status":"PASS","note":"","ms":0}
+{"id":"WA-CON-10","title":"Consent task on Today","status":"PASS","note":"","ms":9}
+{"id":"WA-REM-07","title":"Physio missed 3 times in a row → one alert, not repeated within 3 days","status":"PASS","note":"","ms":0}
+{"id":"WA-REM-06","title":"Reading missed 2 days running (weight)","status":"PASS","note":"","ms":0}
+{"id":"WA-REM-09","title":"One compliance alert at a time (items ADDED)","status":"PASS","note":"","ms":1}
+{"id":"TIME-01","title":"Scheduler catches up in 15-min steps (one 6 h advance)","status":"PASS","note":"","ms":8}
+{"id":"WA-REM-12","title":"Old prompts not sent after a scheduler gap","status":"FAIL","note":"prompt sent for a task more than 2 h old","ms":7}
+{"id":"TIME-02","title":"No duplicates on re-run / reload","status":"PASS","note":"","ms":317}
+{"id":"TIME-05","title":"Clock indicator after advancing","status":"PASS","note":"","ms":15}
+{"id":"DIG-04","title":"Weekly summary (Sunday 19:00)","status":"PASS","note":"","ms":0}
+{"id":"WA-CON-09","title":"Automatic consent reminders (day 1, then 3 days, max 2)","status":"PASS","note":"","ms":1}

@@ -1,5 +1,13 @@
-{"id":"RULE-10","title":"Weight below band","status":"PASS","note":"","ms":4904}
-{"id":"RULE-11","title":"Very low sugar","status":"PASS","note":"","ms":5859}
-{"id":"RULE-12","title":"Low / high sugar","status":"PASS","note":"","ms":5204}
-{"id":"RULE-13","title":"Pulse outside limits (+ borderline recheck)","status":"PASS","note":"","ms":5242}
-{"id":"RULE-14","title":"Very low oxygen (Abdul)","status":"PASS","note":"","ms":5403}
+{"id":"ESC-01","title":"L1 notified","status":"PASS","note":"","ms":5840}
+{"id":"ESC-02","title":"L1 acknowledges (ACK / ok / on it / I'll handle it / 👍)","status":"PASS","note":"","ms":5637}
+{"id":"ESC-03","title":"Outcome recorded (2)","status":"FAIL","note":"PLAN: \"2\" does not resolve the alert by itself — it asks for a note first (\"Got it. Briefly, what did the doctor / clinic advise?\"; lib/engine.ts:810-815) and resolves with outcome 2 once the note arrives; L1 thanked and patient told as expected. Only \"1\" resolves at once.","ms":5515}
+{"id":"ESC-04","title":"Outcome with a note (4)","status":"PASS","note":"","ms":5908}
+{"id":"ESC-05","title":"Timeout moves to L2 (deviation 60 min)","status":"PASS","note":"","ms":5704}
+{"id":"ESC-06","title":"Urgent timer 15 min","status":"PASS","note":"","ms":5568}
+{"id":"ESC-07","title":"Compliance timer 120 min","status":"PASS","note":"","ms":5872}
+{"id":"ESC-08","title":"L1 passes it on","status":"PASS","note":"","ms":5046}
+{"id":"ESC-09","title":"Exhausted","status":"PASS","note":"","ms":5398}
+{"id":"ESC-10","title":"Others told when one acknowledges","status":"PASS","note":"","ms":5786}
+{"id":"ESC-11","title":"Only circle members can ACK","status":"PASS","note":"","ms":5301}
+{"id":"ESC-12","title":"Ack after close","status":"PASS","note":"","ms":5411}
+{"id":"ESC-13","title":"Acknowledge from the dashboard, then close","status":"PASS","note":"","ms":5241}

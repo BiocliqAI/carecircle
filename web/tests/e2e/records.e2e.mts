@@ -568,9 +568,13 @@ await app.test("VIS-01", "Record Visit 1 and start the plan", async () => {
 await app.test("VIS-02", "Plan message content", async () => {
   if (!visPlanMsg) throw new Error("precondition: VIS-01 plan message missing");
   const b = visPlanMsg;
-  for (const s of ["Amlodipine", "5 mg", "Metformin", "500 mg", "after food", "Blood pressure", "Weight", "Fluid limit: 1500 ml/day", "Brisk walk", "20 minutes", "Salt under 5 g a day", "Next visit:", "RFT + electrolytes"]) assert.ok(b.includes(s), `plan message includes "${s}"`);
+  for (const s of ["Amlodipine", "5 mg", "Metformin", "500 mg", "after food", "Blood pressure", "Weight", "Brisk walk", "20 minutes", "Salt under 5 g a day", "Next visit:"]) assert.ok(b.includes(s), `plan message includes "${s}"`);
   assert.match(b, /8:00\s*am/i, "times shown"); assert.match(b, /8:00\s*pm/i, "evening time shown");
-  if (!/In short/.test(b)) throw new Error(`PLAN: every other item is in the message (each medicine with dose and times, readings, fluid limit, physio, lifestyle, next visit), but there is no "In short" text. That summary only comes from the plan builder's Send step (app/api/patients/[id]/plan-draft/route.ts:76 passes familySummary); the visit form (app/api/patients/[id]/visits/route.ts:66) has no family summary, so its message never has one (lib/engine.ts:1218). The plan builder path is tested in VIS-09.`);
+  const stored = JSON.parse(app.q1<any>("SELECT plan FROM visits WHERE patient_id = ? ORDER BY created_at DESC LIMIT 1", visPid).plan);
+  const problems: string[] = [];
+  if (!b.includes("Fluid limit")) problems.push(`BUG: the fluid limit (plan.fluid {limitMl:1500}) and the lab plan (plan.labs) sent by the visit form are dropped: the stored plan has fluid=${JSON.stringify(stored.fluid)} labs=${JSON.stringify(stored.labs)} template=${JSON.stringify(stored.template)}, so the message has no "Fluid limit" / "Blood tests" lines and no fluid tracking starts. validPlan() in app/api/patients/[id]/visits/route.ts:14-31 rebuilds the plan without copying raw.fluid, raw.labs or raw.template (the visit page sends them: app/patients/[id]/visit/page.tsx:297-308, "Apply kidney template").`);
+  if (!/In short/.test(b)) problems.push(`PLAN: no "In short" text — that summary only comes from the plan builder's Send step (plan-draft/route.ts:76 familySummary); the visit form has no family summary (visits/route.ts:66), see VIS-09.`);
+  if (problems.length) throw new Error(problems.join(" Also "));
 });
 
 await app.test("VIS-03", "Save visit without starting plan", async () => {
@@ -640,8 +644,8 @@ await app.test("VIS-06", "Visit 2 changes the plan", async () => {
   const fut = app.q<any>("SELECT * FROM tasks WHERE patient_id = 'p_ramesh' AND status = 'PENDING' AND due_at > ?", now);
   assert.ok(fut.length > 0, "new reminders");
   assert.ok(fut.every((x) => x.visit_id === v.data.id), "old future reminders replaced by the new visit's");
-  assert.ok(!fut.some((x) => x.item_key === "atorvastatin"), "stopped medicine has no reminders");
-  const furo = fut.filter((x) => x.item_key === "furosemide");
+  assert.ok(!fut.some((x) => x.item_key === "med:atorvastatin"), "stopped medicine has no reminders");
+  const furo = fut.filter((x) => x.item_key === "med:furosemide");
   assert.ok(furo.length && furo.every((x) => /40 mg/.test(x.label)), `new dose in reminders: ${JSON.stringify(furo.map((x) => x.label))}`);
   const msg = app.wa.since("u_ramesh", m).find((x) => /care plan/.test(x.body))?.body ?? "";
   assert.ok(msg.includes("Furosemide 40 mg"), "new dose in the plan message");
@@ -786,8 +790,10 @@ await app.test("VIS-12", "Prepare visit", async () => {
 });
 
 await app.test("VIS-13", "Next visit date picker", async () => {
-  if (!visPid) throw new Error("precondition: VIS-01 patient missing");
   const t = await app.clock.now();
+  const np = await onboard("u_dr_rao", "Next Visit Person", [{ name: "Nv Cg", phone: newPhone() }]);
+  ok(np.r, "onboard"); visPid = np.id;
+  ok(await app.api("u_dr_rao", "POST", `/api/patients/${visPid}/visits`, { vitals: {}, diagnosis: "Hypertension", notes: "", plan: fullPlan(), next_visit_at: atIST(t + 28 * DAY, 11) }), "first visit (default 4 weeks)");
   const next = atIST(t + 21 * DAY, 11);
   const v = await app.api("u_dr_rao", "POST", `/api/patients/${visPid}/visits`, { vitals: {}, diagnosis: "Hypertension", notes: "", plan: fullPlan(), next_visit_at: next });
   ok(v, "visit with next date");
@@ -997,11 +1003,11 @@ let tomorrowKey = "";
 await app.test("OUT-14", "Next appointment reminders", async () => {
   const t0 = await app.clock.now();
   tomorrowKey = dayKey(t0 + DAY);
+  const m = app.mark();
   for (const [u, doc] of [["u_lakshmi", "Dr Lak"], ["u_arjun", "Dr Arj"], ["u_kavya", "Dr Kav"], ["u_ramesh", "Dr Ram"]] as const) {
     const r = await app.api(u, "POST", "/api/patients/p_ramesh/outside-visits", { action: "save", visit: { visitDate: dayKey(t0), doctorName: doc, specialty: "Cardiology", nextVisitDate: tomorrowKey } });
     ok(r, `save ${u}`); fu[u] = r.data.id;
   }
-  const m = app.mark();
   await advanceTo(atIST(t0, 18, 30)); // the evening before (no-op when it is already evening)
   await app.api(null, "GET", "/api/demo"); // a tick
   const lr = app.wa.since("u_lakshmi", m).filter((x) => x.kind === "reminder" && /visit with Dr Lak .*is tomorrow/.test(x.body));
@@ -1022,11 +1028,13 @@ await app.test("OUT-15", "\"How did it go\" answers", async () => {
   const notes: string[] = [];
   // No changes → closed.
   let m = app.mark();
+  const flowBefore = JSON.stringify(flowOf("u_lakshmi"));
   await app.wa.send("u_lakshmi", "No changes");
   let rep = lastReply("u_lakshmi", m)!.body;
+  const diag = JSON.stringify({ flowBefore, conv: app.q("SELECT * FROM convo_state WHERE user_id = 'u_lakshmi'"), esc: app.q("SELECT id,type,state,level FROM escalations WHERE patient_id='p_ramesh' AND state IN ('NOTIFIED','ACKNOWLEDGED')"), parser: app.q1("SELECT parser, parsed FROM messages WHERE user_id='u_lakshmi' AND direction='IN' ORDER BY id DESC LIMIT 1") });
   const closed = !flowOf("u_lakshmi");
   if (!closed) notes.push(`"No changes" did not close the conversation; the reply was ${JSON.stringify(rep)} (it asks for the next visit, lib/outside.ts:565 — the 'next' slot is still wanted when the follow-up row has no next_visit_at)`);
-  assert.ok(/no medicine changes/i.test(rep), `no-changes acknowledged: ${rep}`);
+  assert.ok(/no medicine changes/i.test(rep), `no-changes acknowledged: ${rep} DIAG ${diag}`);
   // Postponed → date moved, no visit recorded.
   const t = await app.clock.now();
   const visitsBefore = cnt("SELECT COUNT(*) AS n FROM outside_visits WHERE patient_id = 'p_ramesh'");

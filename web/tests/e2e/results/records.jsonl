@@ -1,34 +1,32 @@
-{"id":"ONB-01","title":"Add a new patient","status":"FAIL","note":"PLAN: the plan asks for caregivers L1–L3, but a care circle holds at most 2 by design (lib/types.ts:6 MAX_CAREGIVERS = 2; app/api/patients/route.ts:21). Sending 3 gave HTTP 400 \"A care circle has at most 2 caregivers (primary and backup)\". With 2 caregivers everything else passed: patient created with all fields, caregivers saved as levels 1–2, listed in Patients, PATIENT_ONBOARDED audited.","ms":105}
-{"id":"ONB-02","title":"Consent requests sent on WhatsApp","status":"PASS","note":"","ms":17}
-{"id":"ONB-03","title":"Duplicate WhatsApp number","status":"FAIL","note":"BUG: the same number written without spaces (\"+919886020001\") was accepted (HTTP 200, new patient p_dup_format_90603); patients with digits 919886020001 now: p_ramesh \"+91 98860 20001\", p_dup_format_90603 \"+919886020001\". onboardPatient checks duplicates with an exact string match: lib/engine.ts:1302 \"SELECT 1 FROM patients WHERE phone = ?\" (updatePatient in lib/records.ts:29 compares digits only, onboarding does not).","ms":49}
-{"id":"ONB-04","title":"Required fields and validation","status":"PASS","note":"","ms":1518}
-{"id":"ONB-05","title":"Draft saved and resumed","status":"PASS","note":"","ms":539}
-{"id":"ONB-06","title":"Draft deleted","status":"PASS","note":"","ms":36}
-{"id":"ONB-07","title":"PA onboards for a doctor","status":"PASS","note":"","ms":55}
-{"id":"ONB-08","title":"Edit patient profile","status":"PASS","note":"","ms":17}
-{"id":"ONB-09","title":"Change care circle order","status":"PASS","note":"","ms":24}
-{"id":"ONB-10","title":"Add a caregiver later","status":"FAIL","note":"PLAN: the plan adds \"a new L3\", but a care circle holds at most 2 caregivers by design (lib/types.ts:6; lib/records.ts:77 setCareCircle): adding a third gave HTTP 409 \"A care circle has at most 2 caregivers (primary and backup)\". Adding a new backup (L2) later works: the new person got the WhatsApp consent request (consent PENDING), the existing caregiver was not re-asked.","ms":14}
-{"id":"ONB-11","title":"Remove a caregiver","status":"PASS","note":"","ms":5440}
-{"id":"ONB-12","title":"Resend consent","status":"PASS","note":"","ms":5067}
-{"id":"ONB-13","title":"Delete patient","status":"PASS","note":"","ms":79}
-{"id":"ONB-14","title":"Clear selected records","status":"PASS","note":"","ms":5201}
-{"id":"BASE-01","title":"Enter baseline by hand","status":"PASS","note":"","ms":70}
-{"id":"BASE-02","title":"Baseline validation","status":"PASS","note":"","ms":50}
-{"id":"BASE-03","title":"Baseline from a document [AI off]","status":"PASS","note":"","ms":16}
-{"id":"BASE-04","title":"Onboarding from past records: upload [AI off]","status":"PASS","note":"","ms":42}
-{"id":"BASE-05","title":"Move and remove a record","status":"PASS","note":"","ms":50}
-{"id":"BASE-06","title":"Unreadable file","status":"PASS","note":"","ms":64}
-{"id":"BASE-07","title":"Typed record","status":"PASS","note":"","ms":72}
-{"id":"BASE-08","title":"Build history draft [AI off]","status":"PASS","note":"","ms":21}
-{"id":"BASE-09","title":"Edit draft and send to doctor","status":"PASS","note":"","ms":95}
-{"id":"BASE-10","title":"Doctor sends it back","status":"FAIL","note":"PLAN: the note reaches the assistant (Today task note \"Please add the 2023 echo report\"), but the status becomes RETURNED, not COLLECTING, by design (lib/onboarding.ts:719 sendBack sets status 'RETURNED'; adding a record then moves it to COLLECTING).","ms":22}
-{"id":"BASE-11","title":"Doctor confirms history","status":"PASS","note":"","ms":68}
-{"id":"BASE-12","title":"Update a confirmed history","status":"PASS","note":"","ms":69}
-{"id":"VIS-01","title":"Record Visit 1 and start the plan","status":"PASS","note":"","ms":173}
-{"id":"VIS-02","title":"Plan message content","status":"FAIL","note":"plan message includes \"Fluid limit: 1500 ml/day\"","ms":1}
-{"id":"VIS-03","title":"Save visit without starting plan","status":"PASS","note":"","ms":5237}
-{"id":"VIS-05","title":"Past visit from records","status":"PASS","note":"","ms":5109}
-{"id":"VIS-04","title":"Start care plan later","status":"PASS","note":"","ms":23}
-{"id":"VIS-06","title":"Visit 2 changes the plan","status":"FAIL","note":"new dose in reminders: []","ms":5424}
-{"id":"VIS-07","title":"Plan builder draft is kept","status":"PASS","note":"","ms":6197}
-{"id":"VIS-08","title":"Dictate a visit [AI off]","status":"PASS","note":"","ms":27}
+{"id":"ONB-01","title":"Add a new patient","status":"FAIL","note":"PLAN: the plan asks for caregivers L1–L3, but a care circle holds at most 2 by design (lib/types.ts:6 MAX_CAREGIVERS = 2; app/api/patients/route.ts:21). Sending 3 gave HTTP 400 \"A care circle has at most 2 caregivers (primary and backup)\". With 2 caregivers everything else passed: patient created with all fields, caregivers saved as levels 1–2, listed in Patients, PATIENT_ONBOARDED audited.","ms":100}
+{"id":"ONB-02","title":"Consent requests sent on WhatsApp","status":"PASS","note":"","ms":21}
+{"id":"ONB-03","title":"Duplicate WhatsApp number","status":"FAIL","note":"BUG: the same number written without spaces (\"+919886020001\") was accepted (HTTP 200, new patient p_dup_format_67785); patients with digits 919886020001 now: p_ramesh \"+91 98860 20001\", p_dup_format_67785 \"+919886020001\". onboardPatient checks duplicates with an exact string match: lib/engine.ts:1302 \"SELECT 1 FROM patients WHERE phone = ?\" (updatePatient in lib/records.ts:29 compares digits only, onboarding does not).","ms":74}
+{"id":"ONB-04","title":"Required fields and validation","status":"PASS","note":"","ms":1742}
+{"id":"ONB-05","title":"Draft saved and resumed","status":"PASS","note":"","ms":655}
+{"id":"ONB-06","title":"Draft deleted","status":"PASS","note":"","ms":41}
+{"id":"ONB-07","title":"PA onboards for a doctor","status":"PASS","note":"","ms":68}
+{"id":"ONB-08","title":"Edit patient profile","status":"PASS","note":"","ms":23}
+{"id":"ONB-09","title":"Change care circle order","status":"PASS","note":"","ms":27}
+{"id":"ONB-10","title":"Add a caregiver later","status":"FAIL","note":"PLAN: the plan adds \"a new L3\", but a care circle holds at most 2 caregivers by design (lib/types.ts:6; lib/records.ts:77 setCareCircle): adding a third gave HTTP 409 \"A care circle has at most 2 caregivers (primary and backup)\". Adding a new backup (L2) later works: the new person got the WhatsApp consent request (consent PENDING), the existing caregiver was not re-asked.","ms":18}
+{"id":"ONB-11","title":"Remove a caregiver","status":"PASS","note":"","ms":5663}
+{"id":"ONB-12","title":"Resend consent","status":"PASS","note":"","ms":5273}
+{"id":"ONB-13","title":"Delete patient","status":"PASS","note":"","ms":59}
+{"id":"ONB-14","title":"Clear selected records","status":"PASS","note":"","ms":5483}
+{"id":"BASE-01","title":"Enter baseline by hand","status":"PASS","note":"","ms":83}
+{"id":"BASE-02","title":"Baseline validation","status":"PASS","note":"","ms":34}
+{"id":"BASE-03","title":"Baseline from a document [AI off]","status":"PASS","note":"","ms":19}
+{"id":"BASE-04","title":"Onboarding from past records: upload [AI off]","status":"PASS","note":"","ms":40}
+{"id":"BASE-05","title":"Move and remove a record","status":"PASS","note":"","ms":46}
+{"id":"BASE-06","title":"Unreadable file","status":"PASS","note":"","ms":35}
+{"id":"BASE-07","title":"Typed record","status":"PASS","note":"","ms":29}
+{"id":"BASE-08","title":"Build history draft [AI off]","status":"PASS","note":"","ms":12}
+{"id":"BASE-09","title":"Edit draft and send to doctor","status":"PASS","note":"","ms":51}
+{"id":"BASE-10","title":"Doctor sends it back","status":"FAIL","note":"PLAN: the note reaches the assistant (Today task note \"Please add the 2023 echo report\"), but the status becomes RETURNED, not COLLECTING, by design (lib/onboarding.ts:719 sendBack sets status 'RETURNED'; adding a record then moves it to COLLECTING).","ms":28}
+{"id":"BASE-11","title":"Doctor confirms history","status":"PASS","note":"","ms":60}
+{"id":"BASE-12","title":"Update a confirmed history","status":"PASS","note":"","ms":77}
+{"id":"VIS-01","title":"Record Visit 1 and start the plan","status":"PASS","note":"","ms":153}
+{"id":"VIS-02","title":"Plan message content","status":"FAIL","note":"BUG: the fluid limit (plan.fluid {limitMl:1500}) and the lab plan (plan.labs) sent by the visit form are dropped: the stored plan has fluid=undefined labs=undefined template=undefined, so the message has no \"Fluid limit\" / \"Blood tests\" lines and no fluid tracking starts. validPlan() in app/api/patients/[id]/visits/route.ts:14-31 rebuilds the plan without copying raw.fluid, raw.labs or raw.template (the visit page sends them: app/patients/[id]/visit/page.tsx:297-308, \"Apply kidney template\"). Also PLAN: no \"In short\" text — that summary only comes from the plan builder's Send step (plan-draft/","ms":0}
+{"id":"VIS-03","title":"Save visit without starting plan","status":"PASS","note":"","ms":5901}
+{"id":"VIS-05","title":"Past visit from records","status":"PASS","note":"","ms":5286}
+{"id":"VIS-04","title":"Start care plan later","status":"PASS","note":"","ms":36}
+{"id":"VIS-06","title":"Visit 2 changes the plan","status":"FAIL","note":"PLAN: reminders follow the new plan (old future tasks replaced, no Atorvastatin tasks, Furosemide tasks at 40 mg), but the patient's WhatsApp only lists the new plan; it doesn't say that Atorvastatin was stopped or that Furosemide went from 20 to 40 mg. The visit form's message (lib/engine.ts:1221 announcePlan) has no change list; changes are spelled out only in the plan builder's \"In short\" (lib/aftervisit.ts ruleSummary). Message: \"👩‍⚕️ Dr. Meera Rao has set your care plan after today's visit:\\n\\n💊 Telmisartan 40 mg — 8:00 am\\n💊 Metoprolol succinate 25 mg — 8:00 am\\n💊 Furosemide 40 mg — ","ms":5497}

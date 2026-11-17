@@ -15,3 +15,28 @@
 {"id":"WS-02","title":"Mark reviewed","status":"FAIL","note":"page.waitForFunction: Timeout 20000ms exceeded.","ms":25529}
 {"id":"WS-03","title":"PA Today tasks","status":"FAIL","note":"label Consent pending","ms":1050}
 {"id":"WS-04","title":"Task clears when done","status":"FAIL","note":"BUG: tasks not cleared after completion: care circle not responding (still: \"In 2 weeks, primary New missed 3 of 4 alerts. Check the number or add someone else.\") (circle task counts TIMEOUT events per level, not per person, so replacing the person cannot clear it — lib/patasks.ts:111-119). Missing from Done today: document filed, medicine change flagged — the DONE map in lib/patasks.ts:133 has no entry for DOCUMENT_VERIFIED/DOCUMENT_AUTOFILED (filing), MED_CHANGE_* (review), and flagging a change for the visit writes no audit row (app/api/patients/[id]/prep/route.ts:27-33). Done today = [\"Upd","ms":1761}
+{"id":"WS-05","title":"Patient chart","status":"FAIL","note":"Expected values to be strictly deep-equal: + actual - expected + [ + 'no visit/med-change marker labels on charts (labels: |||||||)' + ] - [] ","ms":11979}
+{"id":"WS-06","title":"Patient table","status":"PASS","note":"","ms":1198}
+{"id":"WS-07","title":"Notes","status":"PASS","note":"","ms":565}
+{"id":"WS-08","title":"Care team","status":"PASS","note":"","ms":29}
+{"id":"WS-09","title":"AI summary / pre-visit brief [AI off]","status":"PASS","note":"","ms":553}
+{"id":"WS-10","title":"Ask the record [AI off]","status":"PASS","note":"","ms":51}
+{"id":"WS-11","title":"Med change review","status":"PASS","note":"","ms":11476}
+{"id":"WS-12","title":"Kidney view","status":"FAIL","note":"BUG: no \"fluid today vs limit\" badge (expected like \"💧 Today 1325 / 1000 ml\"). The API returns fluidToday (app/api/patients/[id]/route.ts:109) and KidneyBadges renders it (components/kidney.tsx:25-30), but KidneyBadges is only used by components/PatientView.tsx:142, which no page renders; the patient chart (components/PatientChart.tsx) never shows it.","ms":3659}
+{"id":"WS-13","title":"Assistants page","status":"PASS","note":"","ms":495}
+{"id":"WS-14","title":"Dashboard API isolation","status":"PASS","note":"","ms":84}
+{"id":"FAM-01","title":"Family home","status":"PASS","note":"","ms":718}
+{"id":"FAM-02","title":"Nothing scheduled","status":"PASS","note":"","ms":5482}
+{"id":"FAM-03","title":"Read-only for patient","status":"PASS","note":"","ms":699}
+{"id":"FAM-04","title":"Caregiver closes an alert from the web","status":"PASS","note":"","ms":6399}
+{"id":"FAM-05","title":"Outside visit from the web","status":"PASS","note":"","ms":6241}
+{"id":"FAM-06","title":"Mobile layout","status":"FAIL","note":"Expected values to be strictly deep-equal: + actual - expected + [ + 'u_lakshmi@390: horizontal scroll (420 > 390)', + 'u_lakshmi@390: off-screen controls BUTTON:⇄ Switch persona, BUTTON:✕, BUTTON:⇄ Back to the person, A:📱 All phones side b, BUTTON:+15 min', + 'u_lakshmi@768: off-screen controls BUTTON:✕, BUTTON:⇄ Back to the person, A:📱 All phones side b, BUTTON:+15 min, BUTTON:+1 h', + 'u_ramesh@390: horizontal scroll (420 > 390)', + 'u_ramesh@390: off-screen controls BUTTON:⇄ Switch persona, BUTTON:✕, BUTTON:⇄ Back to the person, A:📱 All phones side b, BUTTON:+15 min', + 'u_ramesh@768: o","ms":5962}
+{"id":"SEC-01","title":"Changing ids in URLs","status":"PASS","note":"","ms":534}
+{"id":"SEC-02","title":"Document download access","status":"PASS","note":"","ms":41}
+{"id":"SEC-03","title":"Escalation actions access","status":"PASS","note":"","ms":134}
+{"id":"SEC-04","title":"Script injection","status":"PASS","note":"","ms":23431}
+{"id":"SEC-05","title":"SQL-like input","status":"PASS","note":"","ms":477}
+{"id":"SEC-06","title":"Malformed JSON / missing fields","status":"FAIL","note":"BUG: routes that call `await req.json()` without a catch return 500 with no message on malformed JSON: POST /api/clinic -> 500 (app/api/clinic/route.ts); POST /api/demo -> 500 (app/api/demo/route.ts); POST /api/drafts -> 500 (app/api/drafts/route.ts); POST /api/escalations/6 -> 500 (app/api/escalations/[id]/route.ts); POST /api/patients/p_ramesh/baseline -> 500 (app/api/patients/[id]/baseline/route.ts); POST /api/patients/p_ramesh/caregivers -> 500 (app/api/patients/[id]/caregivers/route.ts); POST /api/patients/p_ramesh/dictate -> 500 (app/api/patients/[id]/dictate/route.ts); POST /api/patient","ms":645}
+{"id":"SEC-07","title":"Health check","status":"PASS","note":"","ms":3}
+{"id":"SEC-08","title":"Large uploads","status":"PASS","note":"","ms":2011}
+{"id":"SEC-10","title":"Audit trail","status":"FAIL","note":"BUG: dashboard-access change not recorded in the audit detail (CARE_CIRCLE_UPDATED detail = {\"before\":[\"1:Neha Sharma\",\"2:Vikram Sharma\"],\"after\":[\"1:Neha Sharma\",\"2:Vikram Sharma\"]}). setCareCircle audits only before/after level:name lists (lib/records.ts:119), so turning dashboard access on/off leaves no trace of what changed","ms":5464}
