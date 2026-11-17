@@ -8,3 +8,5 @@
 {"id":"AUTH-08","title":"Caregiver with dashboard access","status":"PASS","note":"","ms":446}
 {"id":"AUTH-09","title":"Caregiver without dashboard access","status":"FAIL","note":"no Ramesh data","ms":8180}
 {"id":"AUTH-10","title":"Non-clinicians blocked from clinician APIs","status":"PASS","note":"","ms":39}
+{"id":"AUTH-11","title":"Patient and caregiver cannot write clinical data","status":"FAIL","note":"BUG: care-team route lets patient/caregiver add/edit/delete consulting doctors (app/api/patients/[id]/team/route.ts:13 checks only canView, not isClinician; the UI for it, components/kidney.tsx:391, is clinician-only). PLAN: med-changes report (not review) is allowed for family by design — saved as status REPORTED, source 'dashboard', never applied (app/api/patients/[id]/med-changes/route.ts:28); review is 403. Accepted: u_ramesh POST /med-changes {\"medName\":\"Aspirin\",\"change\":\"started\", -> 200; u_ramesh POST /team {\"name\":\"Dr. Family Added\",\"specialty\":\" -> 200; u_lakshmi POST /med-changes {\"","ms":10979}
+{"id":"AUTH-13","title":"Role-specific navigation","status":"PASS","note":"","ms":2653}

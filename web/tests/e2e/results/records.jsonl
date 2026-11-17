@@ -12,3 +12,18 @@
 {"id":"ONB-12","title":"Resend consent","status":"PASS","note":"","ms":5685}
 {"id":"ONB-13","title":"Delete patient","status":"PASS","note":"","ms":58}
 {"id":"ONB-14","title":"Clear selected records","status":"PASS","note":"","ms":5116}
+{"id":"BASE-01","title":"Enter baseline by hand","status":"PASS","note":"","ms":81}
+{"id":"BASE-02","title":"Baseline validation","status":"PASS","note":"","ms":34}
+{"id":"BASE-03","title":"Baseline from a document [AI off]","status":"PASS","note":"","ms":11}
+{"id":"BASE-04","title":"Onboarding from past records: upload [AI off]","status":"PASS","note":"","ms":33}
+{"id":"BASE-05","title":"Move and remove a record","status":"PASS","note":"","ms":43}
+{"id":"BASE-06","title":"Unreadable file","status":"PASS","note":"","ms":38}
+{"id":"BASE-07","title":"Typed record","status":"PASS","note":"","ms":33}
+{"id":"BASE-08","title":"Build history draft [AI off]","status":"PASS","note":"","ms":13}
+{"id":"BASE-09","title":"Edit draft and send to doctor","status":"PASS","note":"","ms":46}
+{"id":"BASE-10","title":"Doctor sends it back","status":"FAIL","note":"PLAN: the note reaches the assistant (Today task note \"Please add the 2023 echo report\"), but the status becomes RETURNED, not COLLECTING, by design (lib/onboarding.ts:719 sendBack sets status 'RETURNED'; adding a record then moves it to COLLECTING).","ms":16}
+{"id":"BASE-11","title":"Doctor confirms history","status":"PASS","note":"","ms":56}
+{"id":"BASE-12","title":"Update a confirmed history","status":"PASS","note":"","ms":72}
+{"id":"VIS-01","title":"Record Visit 1 and start the plan","status":"PASS","note":"","ms":197}
+{"id":"VIS-02","title":"Plan message content","status":"FAIL","note":"BUG: the fluid limit (plan.fluid {limitMl:1500}) and the lab plan (plan.labs) sent by the visit form are dropped: the stored plan has fluid=undefined labs=undefined template=undefined, so the message has no \"Fluid limit\" / \"Blood tests\" lines and no fluid tracking starts. validPlan() in app/api/patients/[id]/visits/route.ts:13-42 rebuilds the plan without copying raw.fluid, raw.labs or raw.template (the visit page sends them: app/patients/[id]/visit/page.tsx:297-308, \"Apply kidney template\"). Also PLAN: no \"In short\" text — that summary only comes from the plan builder's Send step (plan-draft/","ms":0}
+{"id":"VIS-03","title":"Save visit without starting plan","status":"PASS","note":"","ms":5564}
