@@ -860,12 +860,19 @@ body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; backg
 .ov-warn span { margin-right: 3px; }
 
 /* ---------- ask the record ---------- */
-.ask-form { display: flex; gap: 8px; }
-.ask-form input { flex: 1; min-height: 40px; border: 1px solid #CFD8D5; border-radius: 10px; padding: 0 12px; font: inherit; font-size: 14.5px; min-width: 0; }
+.ask-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.ask-form .v2-btn { min-height: 40px; }
+.ask-form .dict.live { flex-basis: 100%; }
+.dict-mic { width: 40px; padding: 0; }
+.ask-form input { flex: 1 1 200px; min-height: 40px; border: 1px solid #CFD8D5; border-radius: 10px; padding: 0 12px; font: inherit; font-size: 14.5px; min-width: 0; }
 .ask-form input:focus { outline: 2px solid var(--c-accent); outline-offset: 1px; border-color: transparent; }
-.ask-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.ask-chips button { border: 1px solid var(--c-line); background: #F7F9F8; border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--c-ink2); cursor: pointer; }
-.ask-chips button:hover { border-color: var(--c-brand); color: var(--c-brand); background: #fff; }
+/* One line each for sample and earlier questions: it scrolls sideways rather than wrapping. */
+.ask-line { display: flex; align-items: center; gap: 6px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; white-space: nowrap; }
+.ask-line::-webkit-scrollbar { display: none; }
+.ask-line-k { flex: none; width: 48px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--c-mute); }
+.ask-line button { flex: none; max-width: 300px; overflow: hidden; text-overflow: ellipsis; border: 1px solid var(--c-line); background: #F7F9F8; border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--c-ink2); cursor: pointer; }
+.ask-line button:hover:not(:disabled) { border-color: var(--c-brand); color: var(--c-brand); background: #fff; }
+.ask-line button:disabled { opacity: .6; cursor: default; }
 .ask-answer { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--c-line2); }
 .ask-q { font-size: 12.5px; font-weight: 600; color: var(--c-mute); }
 .ask-a { font-size: 15.5px; line-height: 1.55; margin: 6px 0 8px; color: var(--c-ink); }
@@ -874,17 +881,6 @@ body { font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif; backg
 .ask-charts { display: grid; gap: 10px; margin: 10px 0; }
 .ask-chart-t { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
 .ask-note { margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--c-amber-soft); color: var(--c-amber); font-size: 12.5px; font-weight: 600; }
-.ask-history { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--c-line2); }
-.ask-hist-toggle { border: 0; background: none; padding: 2px 0; font: inherit; font-size: 13px; font-weight: 700; color: var(--c-ink); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-.ask-hist-toggle:hover { color: var(--c-brand); }
-.ask-chev { display: inline-block; font-size: 11px; transition: transform 0.15s; }
-.ask-chev.open { transform: rotate(90deg); }
-.ask-history ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
-.ask-past { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; border: 1px solid transparent; background: #F7F9F8; border-radius: 8px; padding: 7px 10px; font: inherit; cursor: pointer; }
-.ask-past:hover, .ask-past.on { border-color: var(--c-line); background: #fff; }
-.ask-past-q { font-size: 13.5px; font-weight: 600; color: var(--c-ink); }
-.ask-past + .ask-answer { margin: 6px 0 10px; padding: 10px 12px; border: 1px solid var(--c-line2); border-radius: 10px; }
-.ask-more { border: 0; background: none; color: var(--c-brand); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 0; }
 
 /* ---------- charts that open larger ---------- */
 .chart-card { position: relative; cursor: zoom-in; transition: box-shadow 0.15s, border-color 0.15s; }
@@ -907,3 +903,15 @@ td.lab-red, .lab-legend .lab-red { color: #dc2626; font-weight: 600; }
 td.lab-yellow, .lab-legend .lab-yellow { background: #fef08a; }
 .lab-legend .lab-red, .lab-legend .lab-yellow { padding: 0 4px; border-radius: 3px; }
 .lab-legend { margin-top: 8px; font-size: 12px; color: var(--c-mute, #667); }
+
+/* Baseline on the overview: headline pills, the rest folded away. */
+.bl-compact summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--c-brand); margin-top: 10px; }
+.bl-compact .bl-rest { display: grid; gap: 10px; margin-top: 10px; font-size: 14px; }
+.bl-compact .bl-rest small { display: block; color: var(--c-mute); }
+
+/* Patient summary on the overview: labelled rows. */
+.ps-sec { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 4px 16px; padding: 12px 0; border-top: 1px solid var(--c-line2); font-size: 14px; line-height: 1.5; }
+.ps-sec h3 { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--c-mute); margin: 3px 0 0; }
+.ps-sec p { margin: 0 0 4px; }
+.ps-sec .pc-bullets { margin-bottom: 4px; }
+@media (max-width: 700px) { .ps-sec { grid-template-columns: 1fr; } }

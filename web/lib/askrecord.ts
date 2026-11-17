@@ -163,7 +163,8 @@ export function cleanSpec(raw: unknown): { series: string[]; days: number } | nu
   return names.length ? { series: names.slice(0, 3), days: Number.isFinite(Number(o.days)) ? Math.max(14, Math.min(MAX_DAYS, Number(o.days))) : 120 } : null;
 }
 
-export async function askRecord(pid: string, question: string, t: number): Promise<Answer> {
+/** `fresh` reads the record again even when the same question was answered before on an unchanged record. */
+export async function askRecord(pid: string, question: string, t: number, opts: { fresh?: boolean } = {}): Promise<Answer> {
   const q = question.trim().slice(0, 400);
   const { isAIConfigured, askRecordAI } = await import("./gemini");
   const aiOn = isAIConfigured();
@@ -172,7 +173,7 @@ export async function askRecord(pid: string, question: string, t: number): Promi
     // The same question about an unchanged record has the same answer: reuse it instead of asking the AI again.
     const ctxHash = createHash("sha256").update(q.toLowerCase().replace(/\s+/g, " ").replace(/[?.!\s]+$/, "") + "\u0000" + JSON.stringify(context)).digest("hex");
     const prev = get<{ id: number; at: number }>("SELECT id, at FROM record_questions WHERE patient_id = ? AND ctx_hash = ? AND via = 'ai' ORDER BY at DESC LIMIT 1", pid, ctxHash);
-    const saved = prev ? getQuestion(pid, prev.id) : null;
+    const saved = prev && !opts.fresh ? getQuestion(pid, prev.id) : null;
     if (saved) return { via: "ai", answer: saved.answer, facts: saved.facts, chart: saved.chart, note: saved.note, reusedFrom: saved.at, ctxHash };
     const ai = await Promise.race([askRecordAI(context, q), new Promise<null>((r) => setTimeout(() => r(null), 50_000))]).catch(() => null);
     if (ai && typeof ai.answer === "string" && ai.answer.trim()) {
