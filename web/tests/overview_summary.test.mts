@@ -14,6 +14,7 @@ const { recordSummary } = await import("../lib/onboarding");
 const { emptyHistory } = await import("../lib/historyspec");
 const { getPrep, savePrep } = await import("../lib/prep");
 const { now } = await import("../lib/clock");
+const { keyVitals } = await import("../lib/keyvitals");
 
 describe("patient overview summary", () => {
   before(async () => { await seedDemo(); });
@@ -33,7 +34,7 @@ describe("patient overview summary", () => {
     const treating = getUser(getPatient("p_gopal")!.doctor_id)!.name;
     const h = emptyHistory();
     (h.snapshot as Record<string, { text: string; sources: number[] }>).oneGlance = { text: "68-year-old man with CKD stage 4.", sources: [] };
-    h.conditions = [{ name: "CKD stage 4", status: "worsening", sources: [] }];
+    h.conditions = [{ name: "CKD stage 4", status: "Worsening, creatinine 2.85", diagnosed: "2019", treatment: "furosemide", sources: [] }];
     h.visits = [
       { date: "2026-10-20", doctor: "Dr Other Person", specialty: "Cardiology", hospital: "", takeaway: "Echo reviewed", sources: [] },
       { date: "2026-09-12", doctor: treating, specialty: "Nephrology", hospital: "City Clinic", takeaway: "Leg swelling · Creatinine 2.6 · Increase furosemide", sources: [] },
@@ -45,9 +46,20 @@ describe("patient overview summary", () => {
       JSON.stringify({ summary: h, doctors: [], points: [], merges: [], labs: [], texts: [], homes: [] }), t, t, t);
     const r = recordSummary("p_gopal")!;
     assert.equal(r.oneGlance, "68-year-old man with CKD stage 4.");
-    assert.deepEqual(r.conditions, [{ name: "CKD stage 4", status: "worsening" }]);
+    assert.deepEqual(r.conditions, [{ name: "CKD stage 4", status: "Worsening, creatinine 2.85", detail: "CKD stage 4 is worsening, creatinine 2.85. Diagnosed 2019. Current treatment: furosemide." }]);
     assert.equal(r.lastVisit?.date, "2026-09-12");
     assert.equal(r.lastVisit?.treating, true);
     assert.deepEqual(r.lastVisit?.changes, ["Furosemide increased to 40 mg BD (oedema)"]);
+  });
+
+  it("lists the most recent measurement of each vital, from home readings or the clinic", () => {
+    const t = now();
+    run("DELETE FROM observations WHERE patient_id = 'p_gopal' AND type = 'spo2'");
+    run("INSERT INTO observations(patient_id, type, v1, v2, observed_at, flag) VALUES('p_gopal','bp',171,99,?,?)", t + 1000, "high");
+    const rows = keyVitals("p_gopal");
+    const bp = rows.find((x) => x.type === "bp")!;
+    assert.deepEqual([bp.v1, bp.v2, bp.flag, bp.source], [171, 99, "high", "home"]);
+    assert.equal(new Set(rows.map((x) => x.type)).size, rows.length, "one row per vital");
+    assert.ok(rows.every((x) => x.source === "home" || x.source === "clinic" || x.source === "baseline"));
   });
 });

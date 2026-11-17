@@ -279,7 +279,7 @@ function Overview({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s: In
       <div className="stack gap16">
         <div className="v2-grid12">
           <SummaryPane d={d} s={null} onSec={onSec} showAi={showAi} setShowAi={setShowAi} onChange={onChange} />
-          <div className="span4 stack gap16"><LabsCard d={d} onAll={() => onSec("vitals")} /></div>
+          <div className="span4 stack gap16"><LabsCard d={d} onAll={() => onSec("vitals")} /><KeyVitalsCard d={d} onAll={() => onSec("vitals")} /></div>
         </div>
         <BaselineCard b={d.baseline} pid={d.patient.id} canEdit now={d.now} compact />
         <div className="v2-grid12">
@@ -302,7 +302,7 @@ function Overview({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s: In
       {/* patient summary beside the labs, then the baseline headline, then the detail */}
       <div className="v2-grid12">
         <SummaryPane d={d} s={s} onSec={onSec} showAi={showAi} setShowAi={setShowAi} onChange={onChange} />
-        <div className="span4 stack gap16"><LabsCard d={d} onAll={() => onSec("vitals")} /><RecentVitalsCard d={d} s={s} onAll={() => onSec("vitals")} /></div>
+        <div className="span4 stack gap16"><LabsCard d={d} onAll={() => onSec("vitals")} /><KeyVitalsCard d={d} onAll={() => onSec("vitals")} /></div>
       </div>
 
       <BaselineCard b={d.baseline} pid={d.patient.id} canEdit now={d.now} compact />
@@ -392,7 +392,15 @@ function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s:
         <h3>History{r?.oneGlance || r?.conditions.length ? <small>from the records</small> : null}</h3>
         <div>
           {r?.oneGlance ? <p>{clip(r.oneGlance, 600)}</p> : d.patient.conditions ? <p><b style={{ fontWeight: 600 }}>{d.patient.conditions}</b></p> : null}
-          {r && r.conditions.length > 0 && <p className="ps-conds">{r.conditions.map((c) => <span key={c.name} className={`v2-pill ${/uncontrolled|worsening/i.test(c.status) ? "amber" : "grey"}`}>{c.name}{c.status ? ` · ${clip(c.status, 40)}` : ""}</span>)}</p>}
+          {r && r.conditions.length > 0 && (
+            <p className="ps-conds">
+              {r.conditions.map((c) => {
+                // The pill is a label (name and one status word); the whole sentence shows on hover or keyboard focus.
+                const word = c.status.match(/uncontrolled|controlled|improving|worsening|stable/i)?.[0].toLowerCase();
+                return <span key={c.name} tabIndex={0} className={`v2-pill tip ${/uncontrolled|worsening/i.test(c.status) ? "amber" : "grey"}`} data-tip={c.detail} aria-label={c.detail}>{c.name}{word ? ` · ${word}` : ""}</span>;
+              })}
+            </p>
+          )}
           {!r?.oneGlance && history.map((h, i) => <p key={i}>{clip(h, 320)}</p>)}
           {!r?.oneGlance && !d.patient.conditions && !history.length && <p className="v2-sub">No history recorded yet. Add the patient&rsquo;s past records on the Profile tab to build one.</p>}
           <button className="tq-link" style={{ padding: 0 }} onClick={() => onSec("profile")}>Full history</button>
@@ -483,19 +491,24 @@ function VisitReason({ pid, reason, onChange }: { pid: string; reason: string; o
   );
 }
 
-/** The latest value of each vital the family logs, newest first. */
-function RecentVitalsCard({ d, s, onAll }: { d: Data; s: IntervalSummary; onAll: () => void }) {
-  const rows = s.vitals.filter((v) => v.count > 0 && v.series.length > 0).map((v) => ({ v, last: v.series[v.series.length - 1] })).sort((a, b) => b.last.t - a.last.t);
+/** The most recent measurement of each vital, wherever it came from (home reading, clinic visit or baseline intake). */
+function KeyVitalsCard({ d, onAll }: { d: Data; onAll: () => void }) {
+  const rows = d.keyVitals ?? [];
+  const SRC = { home: "home", clinic: "clinic", baseline: "baseline" } as const;
+  const newest = rows.reduce((m, x) => Math.max(m, x.at), 0);
   return (
     <section className="v2-card pad">
-      <div className="row between" style={{ marginBottom: 4 }}><h2>Recent vitals</h2><span className="v2-sub">latest reading of each</span></div>
-      {rows.map(({ v, last }) => (
-        <div key={v.type} className="v2-kv num">
-          <span>{VITAL_META[v.type].label}<span className="v2-sub"> · {relDays(last.t, d.now) === 0 ? `today ${fmtTime(last.t)}` : fmtDate(last.t, { day: "numeric", month: "short" })}</span></span>
-          <span><b style={{ fontWeight: 600, color: last.flag ? "var(--c-red)" : undefined }}>{last.v1}{last.v2 ? `/${last.v2}` : ""}</b> <span className="v2-sub">{VITAL_META[v.type].unit}{last.flag ? " · outside limits" : ""}</span></span>
+      <div className="row between" style={{ marginBottom: 4 }}>
+        <h2>Key vitals</h2>
+        {newest > 0 && <span className="v2-sub">Latest {relDays(newest, d.now) === 0 ? "today" : fmtDate(newest, { day: "numeric", month: "short", year: "2-digit" })}</span>}
+      </div>
+      {rows.map((x) => (
+        <div key={x.type} className="v2-kv num">
+          <span>{VITAL_META[x.type].label}<span className="v2-sub"> · {relDays(x.at, d.now) === 0 ? `today ${fmtTime(x.at)}` : fmtDate(x.at, { day: "numeric", month: "short", year: "2-digit" })} · {SRC[x.source]}</span></span>
+          <span><b style={{ fontWeight: 600, color: x.flag ? "var(--c-red)" : undefined }}>{x.v1}{x.v2 != null ? `/${x.v2}` : ""}</b> <span className="v2-sub">{VITAL_META[x.type].unit}{x.flag ? " · outside limits" : ""}</span></span>
         </div>
       ))}
-      {!rows.length && <div className="v2-sub">No readings since the last visit.</div>}
+      {!rows.length && <div className="v2-sub">No measurements yet.</div>}
       {rows.length > 0 && <button className="tq-link" style={{ marginTop: 6 }} onClick={onAll}>All vitals and trends →</button>}
     </section>
   );

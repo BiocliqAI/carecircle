@@ -70,8 +70,19 @@ export const confirmedOnboarding = (pid: string) => get<OnboardingRow>("SELECT *
 export interface RecordSummary {
   confirmedAt: number | null;
   oneGlance: string;
-  conditions: { name: string; status: string }[];
+  /** `detail` is the whole entry as a sentence (status with its value, when diagnosed, treatment, advice). */
+  conditions: { name: string; status: string; detail: string }[];
   lastVisit: { date: string; doctor: string; specialty: string; hospital: string; takeaway: string; treating: boolean; changes: string[] } | null;
+}
+function conditionSentence(c: HistRow): string {
+  const end = (x: string) => (/[.!?]$/.test(x) ? x : `${x}.`);
+  const status = cell(c, "status"), diagnosed = cell(c, "diagnosed"), treatment = cell(c, "treatment"), advice = cell(c, "advice");
+  return [
+    end(status ? `${cell(c, "name")} is ${status.charAt(0).toLowerCase()}${status.slice(1)}` : cell(c, "name")),
+    diagnosed ? end(`Diagnosed ${diagnosed}`) : "",
+    treatment ? end(`Current treatment: ${treatment}`) : "",
+    advice ? end(`Advice given: ${advice}`) : "",
+  ].filter(Boolean).join(" ");
 }
 export function recordSummary(pid: string): RecordSummary | null {
   const o = confirmedOnboarding(pid);
@@ -86,7 +97,7 @@ export function recordSummary(pid: string): RecordSummary | null {
   return {
     confirmedAt: o.confirmed_at ?? null,
     oneGlance: fieldsOf(s, "snapshot").oneGlance?.text?.trim() ?? "",
-    conditions: listOf(s, "conditions").filter((c) => cell(c, "name")).slice(0, 8).map((c) => ({ name: cell(c, "name"), status: cell(c, "status") })),
+    conditions: listOf(s, "conditions").filter((c) => cell(c, "name")).slice(0, 8).map((c) => ({ name: cell(c, "name"), status: cell(c, "status"), detail: conditionSentence(c) })),
     lastVisit: v ? {
       date: cell(v, "date"), doctor: cell(v, "doctor"), specialty: cell(v, "specialty"), hospital: cell(v, "hospital"), takeaway: cell(v, "takeaway"), treating: !!mine,
       // Medicine changes the records put on that same day.

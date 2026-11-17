@@ -59,6 +59,7 @@ export interface Data {
   keyLabs?: import("@/lib/keylabs").KeyLabs;
   prep?: { readyAt: number | null; readyByName: string | null; flags: { id: string; text: string }[]; questions: string; reason?: string } | null;
   fromRecords?: import("@/lib/onboarding").RecordSummary | null;
+  keyVitals?: import("@/lib/keyvitals").KeyVital[];
 }
 
 /** Patient 360. `embedded` = shown beside the WhatsApp phone on the patient / caregiver page. */

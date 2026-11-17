@@ -9,6 +9,7 @@ import { canView, err, json, ready, sessionUser } from "@/lib/server";
 import { getBaseline } from "@/lib/clinic";
 import { getPrep } from "@/lib/prep";
 import { recordSummary } from "@/lib/onboarding";
+import { keyVitals } from "@/lib/keyvitals";
 import { deletePatient, listDocuments, listNotes, updatePatient, type PatientEdit } from "@/lib/records";
 import { DAY } from "@/lib/time";
 import { loadLearnedMarkers } from "@/lib/labmarkers";
@@ -101,6 +102,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     consents: getConsents(id),
     notes: user.role === "DOCTOR" || user.role === "PA" ? listNotes(id) : [],
     keyLabs: keyLabs(id),
+    keyVitals: keyVitals(id),
     latestLabs: (() => {
       const rows = all<{ marker: string; value: number; taken_at: number; flag: string | null }>("SELECT marker, value, taken_at, flag FROM labs WHERE patient_id = ? ORDER BY taken_at DESC, id DESC", id);
       const out: { marker: string; value: number; at: number; flag: string | null; prev: number | null }[] = [];
