@@ -12,6 +12,7 @@ import { LAB_META, type Visit } from "@/lib/types";
 interface Prep {
   attendance: boolean;
   attendanceNote: string;
+  reason?: string;
   vitals: { bp?: string; weight?: string; hr?: string; glucose?: string; spo2?: string };
   vitalsAt: number | null;
   vitalsByName: string | null;
@@ -160,7 +161,8 @@ export function VisitPrepare({ id }: { id: string }) {
               </div>
             </Step>
 
-            <Step n={5} done={!!p.questions.trim()} title="Questions from the patient or family" last>
+            <Step n={5} done={!!p.questions.trim() || !!p.reason?.trim()} title="Reason for the visit and questions from the family" last>
+              <input className="prep-input" style={{ marginBottom: 8 }} placeholder="Reason for this visit, e.g. leg swelling" aria-label="Reason for this visit" maxLength={200} defaultValue={p.reason ?? ""} onChange={(e) => { const v = e.target.value; saveSoon("reason", () => ({ reason: v })); }} />
               <textarea className="prep-input" style={{ minHeight: 70 }} placeholder="e.g. Is it safe to travel to Chennai on 20 Oct for a week?" defaultValue={p.questions} onChange={(e) => { const v = e.target.value; saveSoon("questions", () => ({ questions: v })); }} />
             </Step>
 

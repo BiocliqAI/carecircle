@@ -8,6 +8,7 @@ import { intervalSummary, longRange, medChanges, type EscalationView } from "@/l
 import { canView, err, json, ready, sessionUser } from "@/lib/server";
 import { getBaseline } from "@/lib/clinic";
 import { getPrep } from "@/lib/prep";
+import { recordSummary } from "@/lib/onboarding";
 import { deletePatient, listDocuments, listNotes, updatePatient, type PatientEdit } from "@/lib/records";
 import { DAY } from "@/lib/time";
 import { loadLearnedMarkers } from "@/lib/labmarkers";
@@ -111,6 +112,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       return out;
     })(),
     prep: user.role === "DOCTOR" || user.role === "PA" ? getPrep(id) : null,
+    // The confirmed history from the patient's own records, at a glance (care team only).
+    fromRecords: user.role === "DOCTOR" || user.role === "PA" ? recordSummary(id) : null,
     documents: listDocuments(id),
     labMarkers: loadLearnedMarkers(),
     // Results that aren't plain numbers (urine routine, deposits…), newest first.

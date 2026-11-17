@@ -57,7 +57,8 @@ export interface Data {
   documents: DocItem[];
   latestLabs?: { marker: string; value: number; at: number; flag: string | null; prev: number | null }[];
   keyLabs?: import("@/lib/keylabs").KeyLabs;
-  prep?: { readyAt: number | null; readyByName: string | null; flags: { id: string; text: string }[]; questions: string } | null;
+  prep?: { readyAt: number | null; readyByName: string | null; flags: { id: string; text: string }[]; questions: string; reason?: string } | null;
+  fromRecords?: import("@/lib/onboarding").RecordSummary | null;
 }
 
 /** Patient 360. `embedded` = shown beside the WhatsApp phone on the patient / caregiver page. */
