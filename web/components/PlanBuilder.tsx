@@ -23,7 +23,10 @@ function Tags({ list }: { list: Tag[] }) {
   return <>{list.map((t) => <span key={t} className={`pb-tag ${TAG[t][1]}`}>{TAG[t][0]}</span>)}</>;
 }
 
-export function PlanBuilder({ id }: { id: string }) {
+/** `embedded` shows the builder inside the visit pop-up on the patient page, opened on one action (listen, dictate or
+ *  upload): that action at the top, then Draft, Review and Submit below it. Without it, this is the full plan page. */
+export function PlanBuilder({ id, embedded, onClose, onSent }: { id: string; embedded?: SourceKind; onClose?: () => void; onSent?: () => void }) {
+  const [recording, setRecording] = useState(false);
   const router = useRouter();
   const { user, notifyChange } = useSession();
   const [d, setD] = useState<Resp | null>(null);
@@ -75,6 +78,11 @@ export function PlanBuilder({ id }: { id: string }) {
       if (!ok) break;
     }
   }
+  // The upload pop-up goes straight to choosing files (the click that opened it still counts as the user's gesture).
+  const opened = useRef(false);
+  useEffect(() => {
+    if (embedded === "rx" && d && !opened.current) { opened.current = true; fileRef.current?.click(); }
+  }, [embedded, d]);
   async function draftFamily() {
     setFamBusy(true);
     try {
@@ -88,13 +96,15 @@ export function PlanBuilder({ id }: { id: string }) {
     try {
       await api(`/api/patients/${id}/plan-draft`, { body: { action: "send", nextVisit: nextVisit || null, familySummary: fam.trim() || undefined, visitDate: visitDate || null, startPlan: !past && starting } });
       notifyChange();
-      router.push(`/patients/${id}`);
+      if (embedded) onSent?.();
+      else router.push(`/patients/${id}`);
     } catch (e) {
       setErr((e as Error).message);
       setBusy(null);
     }
   }
 
+  if (!d && embedded) return <div className="vc-load">{err ? <div className="alert bad">{err}</div> : <span className="spin" />}{err && <button className="v2-btn" onClick={onClose}>Close</button>}</div>;
   if (!d) return <main className="page">{err ? <div className="alert bad">{err}</div> : <div className="empty"><span className="spin" /></div>}</main>;
   const b = d.draft.built;
   const stale = !!b && d.draft.sources.some((s) => s.at > b.at);
@@ -106,10 +116,38 @@ export function PlanBuilder({ id }: { id: string }) {
   const today = dayKey(d.now ?? Date.now());
   const past = !!visitDate && visitDate < today;
   const starting = startPlan ?? !!d.planRunning;
+  const Shell = embedded ? "div" : "main";
+  const visitNo = (p?.visits ?? 0) + 1;
+  const ACTION = { conversation: "Listen to consultation", dictation: "Dictate", rx: "Upload document" } as const;
+  const close = () => { if (!recording || window.confirm("Recording is still running. Close and discard it?")) onClose?.(); };
+  const fileInput = <input ref={fileRef} type="file" multiple accept={DOCUMENT_ACCEPT} hidden onChange={addFile} />;
 
   return (
-    <main className="pc">
-      <div className="pc-banner" style={{ paddingBottom: 14 }}>
+    <Shell className={embedded ? "vc" : "pc"}>
+      {embedded && (
+        <header className="vc-head">
+          <div>
+            <h2>{ACTION[embedded]}</h2>
+            <div className="v2-sub">{p ? `${p.name} · Visit ${visitNo}` : "…"}{p?.allergy ? <span className="pc-chip red" style={{ marginLeft: 8 }}>Allergy: {p.allergy}</span> : null}</div>
+          </div>
+          <button className="v2-btn" onClick={close}>Close</button>
+        </header>
+      )}
+      {embedded && (
+        <section className="vc-action">
+          {embedded === "rx" ? (
+            <>
+              {fileInput}
+              <button className="v2-btn primary" disabled={!!busy} onClick={() => fileRef.current?.click()}>{busy === "rx" ? <><span className="spin" /> Reading…</> : <><Icon name="file" size={16} />Choose files</>}</button>
+              <span className="v2-sub">A prescription, discharge summary or report: photo, PDF, Word or Excel. Several at once is fine.</span>
+            </>
+          ) : (
+            <Recorder key={embedded} kind={embedded} label={embedded === "conversation" ? "Listen again" : "Dictate again"} autoStart onActive={setRecording} disabled={!!busy && busy !== embedded} onDone={(base64, mime, seconds) => act(embedded, { action: "source", kind: embedded, base64, mime, seconds })} busy={busy === embedded} />
+          )}
+          {err && <div className="alert bad" style={{ flex: "1 1 100%" }}><div>{err}</div></div>}
+        </section>
+      )}
+      {!embedded && <div className="pc-banner" style={{ paddingBottom: 14 }}>
         <div className="pc-inner row between" style={{ gap: 14 }}>
           <div className="row" style={{ gap: 14, flexWrap: "nowrap" }}>
             {p && <span className="avatar" style={{ width: 44, height: 44, background: avatarColor(p.name) }}>{initials(p.name)}</span>}
@@ -128,15 +166,16 @@ export function PlanBuilder({ id }: { id: string }) {
             <li className={step === 3 ? "on" : ""}>3 · Send</li>
           </ol>
         </div>
-      </div>
+      </div>}
 
-      <div className="pc-body">
-        <div className="pc-inner v2-grid12">
+      <div className={embedded ? "vc-body" : "pc-body"}>
+        <div className={embedded ? "stack gap16" : "pc-inner v2-grid12"}>
           {/* ---------- sources */}
-          <div className="span4 stack gap16">
+          <div className={embedded ? "stack gap16" : "span4 stack gap16"}>
+            {embedded && <h3 className={`vc-step ${b ? "done" : "on"}`}><span>1</span>Draft</h3>}
             <section className="v2-card pad">
-              <div className="row between" style={{ marginBottom: 6 }}><h2>Sources</h2><span className="v2-sub">merged into one draft</span></div>
-              {d.draft.sources.length === 0 && <p className="v2-sub" style={{ fontSize: 13.5, margin: "4px 0 10px" }}>Add the printed prescription, listen to the consultation, or dictate. Use any combination.</p>}
+              <div className="row between" style={{ marginBottom: 6 }}><h2>{embedded ? "Captured so far" : "Sources"}</h2><span className="v2-sub">merged into one draft</span></div>
+              {d.draft.sources.length === 0 && <p className="v2-sub" style={{ fontSize: 13.5, margin: "4px 0 10px" }}>{embedded ? "Nothing captured yet. What you record or upload above appears here; then build the draft." : "Add the printed prescription, listen to the consultation, or dictate. Use any combination."}</p>}
               {d.draft.sources.map((s) => (
                 <div key={s.id} className="pb-src">
                   <span className={`pb-src-ic ${SRC[s.kind].cls}`}><Icon name={SRC[s.kind].icon} /></span>
@@ -155,25 +194,26 @@ export function PlanBuilder({ id }: { id: string }) {
                 </div>
               )}
 
-              <div className="pb-add">
-                <input ref={fileRef} type="file" multiple accept={DOCUMENT_ACCEPT} hidden onChange={addFile} />
+              {!embedded && <div className="pb-add">
+                {fileInput}
                 <button className="v2-btn" disabled={!!busy} onClick={() => fileRef.current?.click()}>{busy === "rx" ? <><span className="spin" /> Reading…</> : <><Icon name="file" size={16} />Prescription or document</>}</button>
                 <Recorder kind="conversation" label="Listen to consultation" disabled={!!busy && busy !== "conversation"} onDone={(base64, mime, seconds) => act("conversation", { action: "source", kind: "conversation", base64, mime, seconds })} busy={busy === "conversation"} />
                 <Recorder kind="dictation" label="Dictate" disabled={!!busy && busy !== "dictation"} onDone={(base64, mime, seconds) => act("dictation", { action: "source", kind: "dictation", base64, mime, seconds })} busy={busy === "dictation"} />
-              </div>
+              </div>}
               <button className="v2-btn primary pb-build" disabled={!d.draft.sources.length || !!busy} onClick={() => act("build", { action: "build" })}>
                 {busy === "build" ? <><span className="spin" /> Building the draft…</> : b ? (stale ? "Rebuild draft with new sources" : "Rebuild draft") : "Build draft"}
               </button>
             </section>
-            <section className="v2-card pad" style={{ background: "#F8FAF9" }}>
+            {!embedded && <section className="v2-card pad" style={{ background: "#F8FAF9" }}>
               <h2 style={{ marginBottom: 6 }}>How the draft is built</h2>
               <p className="v2-sub" style={{ margin: 0, fontSize: 13, lineHeight: 1.5 }}>Each line shows where it came from. Unclear items are highlighted and conflicts must be resolved before sending. Nothing reaches the patient until you send.</p>
-            </section>
+            </section>}
           </div>
 
           {/* ---------- draft */}
-          <div className="span8 stack gap16">
-            {err && <div className="alert bad"><div>{err}</div></div>}
+          <div className={embedded ? "stack gap16" : "span8 stack gap16"}>
+            {embedded && <h3 className={`vc-step ${!b ? "" : canSend ? "done" : "on"}`}><span>2</span>Review</h3>}
+            {err && !embedded && <div className="alert bad"><div>{err}</div></div>}
             {!b && (
               <div className="v2-card pad pb-empty">
                 <h2>No draft yet</h2>
@@ -297,8 +337,10 @@ export function PlanBuilder({ id }: { id: string }) {
           </div>
         </div>
 
+        {embedded && <h3 className={`vc-step ${canSend ? "on" : ""}`} style={{ margin: "20px 0 12px" }}><span>3</span>Submit</h3>}
+        {embedded && !b && <div className="v2-card pad v2-sub" style={{ fontSize: 14 }}>Build and review the draft first. Nothing reaches the patient until you submit.</div>}
         {b && (
-          <div className="consult-bar num" style={{ margin: "18px -32px -88px" }}>
+          <div className={embedded ? "consult-bar vc-bar num" : "consult-bar num"} style={embedded ? undefined : { margin: "18px -32px -88px" }}>
             <span style={{ fontSize: 14, flex: 1 }}>
               <b>{changes} change{changes === 1 ? "" : "s"}</b>
               {bl?.conflicts ? <> · <b style={{ color: "var(--c-red)" }}>{bl.conflicts} conflict{bl.conflicts > 1 ? "s" : ""} to resolve</b></> : null}
@@ -308,14 +350,14 @@ export function PlanBuilder({ id }: { id: string }) {
             </span>
             {!past && <label className="row" style={{ gap: 6, fontSize: 13.5, fontWeight: 600, flexWrap: "nowrap", whiteSpace: "nowrap" }} title="Starts reminders and check-ins from this visit's plan and sends it on WhatsApp. Leave it off while you are entering the patient's history; start it later from the chart."><input type="checkbox" style={{ width: 16, height: 16, minHeight: 0, margin: 0, padding: 0, flex: "none" }} checked={starting} onChange={(e) => setStartPlan(e.target.checked)} />Start the care plan now</label>}
             <label className="row" style={{ gap: 6, fontSize: 13.5, fontWeight: 600 }}>Visit date<input type="date" value={visitDate || today} max={today} onChange={(e) => setVisitDate(e.target.value === today ? "" : e.target.value)} className="pb-date" /></label>
-            <Link href={`/patients/${id}/visit?fromDraft=1`} className="v2-btn">Edit in full form</Link>
+            {!embedded && <Link href={`/patients/${id}/visit?fromDraft=1`} className="v2-btn">Edit in full form</Link>}
             <button className="v2-btn primary" style={{ minHeight: 40, padding: "0 18px", fontSize: 14 }} disabled={!canSend || busy === "send"} onClick={send}>
-              {busy === "send" ? <span className="spin" /> : null}{canSend ? (past ? "Save past visit" : starting ? "Send plan" : "Save visit") : stale ? "Rebuild first" : bl?.conflicts || bl?.toConfirm ? "Resolve items first" : "Send plan"}
+              {busy === "send" ? <span className="spin" /> : null}{canSend ? (past ? "Save past visit" : starting ? (embedded ? "Submit and send plan" : "Send plan") : (embedded ? "Submit visit" : "Save visit")) : stale ? "Rebuild first" : bl?.conflicts || bl?.toConfirm ? "Resolve items first" : embedded ? "Submit" : "Send plan"}
             </button>
           </div>
         )}
       </div>
-    </main>
+    </Shell>
   );
 }
 
@@ -338,7 +380,7 @@ function preview(b: NonNullable<PlanDraft["built"]>, nextVisit: string): string 
 }
 
 /** Records audio (consultation or dictation) with a live preview where the browser supports it. */
-function Recorder({ kind, label, onDone, disabled, busy }: { kind: "conversation" | "dictation"; label: string; onDone: (base64: string, mime: string, seconds: number) => void; disabled?: boolean; busy?: boolean }) {
+function Recorder({ kind, label, onDone, disabled, busy, autoStart, onActive }: { kind: "conversation" | "dictation"; label: string; onDone: (base64: string, mime: string, seconds: number) => void; disabled?: boolean; busy?: boolean; autoStart?: boolean; onActive?: (on: boolean) => void }) {
   const [on, setOn] = useState(false);
   const [secs, setSecs] = useState(0);
   const [preview, setPreview] = useState("");
@@ -353,6 +395,21 @@ function Recorder({ kind, label, onDone, disabled, busy }: { kind: "conversation
     const i = setInterval(() => setSecs(Math.round((Date.now() - t0.current) / 1000)), 500);
     return () => clearInterval(i);
   }, [on]);
+  useEffect(() => { onActive?.(on); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [on]);
+  // Opened from the patient page: recording starts straight away (once).
+  const auto = useRef(false);
+  useEffect(() => {
+    if (autoStart && !auto.current) { auto.current = true; start(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Closed while recording: the microphone is released and the recording is dropped, not sent.
+  useEffect(() => () => {
+    const r = sr.current;
+    sr.current = null;
+    try { r?.stop(); } catch { /* noop */ }
+    const rec = mr.current;
+    if (rec) { rec.onstop = null; if (rec.state === "recording") rec.stop(); rec.stream.getTracks().forEach((t) => t.stop()); }
+  }, []);
 
   async function start() {
     setErr(null);

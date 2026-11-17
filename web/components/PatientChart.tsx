@@ -10,6 +10,7 @@ import { AdherenceHeatmap, EscalationCard, VitalCharts, visitDayKeys } from "./i
 import { KidneyTab, RANGES } from "./kidney";
 import { ClinicalSummaryCard } from "./ClinicalSummaryCard";
 import { DocumentOcrModal } from "./DocumentOcrModal";
+import { PlanBuilder } from "./PlanBuilder";
 import { ClinicOutsideVisits } from "./OutsideVisits";
 import { BaselineCard } from "./baseline";
 import { ClinicalHistoryCard } from "./ClinicalHistoryCard";
@@ -32,6 +33,8 @@ export function PatientChart({ id }: { id: string }) {
   const [sec, setSec] = useState<Section>("overview");
   const [showOcr, setShowOcr] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  // Recording a visit: one of the three actions, opened as a pop-up over the chart.
+  const [capture, setCapture] = useState<"conversation" | "dictation" | "rx" | null>(null);
   // One time range for every chart on Vitals & labs; 90 days unless the doctor picks another.
   const [range, setRange] = useState("90");
   const [vs, setVs] = useState<IntervalSummary | null>(null);
@@ -63,10 +66,8 @@ export function PatientChart({ id }: { id: string }) {
   const s = d.summary;
   const vranged = range === "visit" ? null : vs; // until the chosen range arrives, the charts show since the last visit
   const allergy = d.baseline?.allergies && !/^(none|nil|nkda|no)/i.test(d.baseline.allergies) ? d.baseline.allergies : null;
-  const conditions = (d.patient.conditions || "").split(/,\s*|\s+·\s+/).map((c) => c.replace(/\s*\([^)]*\)/g, "").trim()).filter(Boolean);
   const primary = d.caregivers.find((c) => c.level === 1);
   const waHref = `/whatsapp?u=${d.patient.user_id ?? ""}&u2=${primary?.user_id ?? ""}`;
-  const visitLabel = isDoctor ? (d.visits.length ? `Start visit ${d.visits.length + 1}` : "Record Visit 1") : "Prepare visit";
 
   return (
     <main className="pc">
@@ -82,15 +83,19 @@ export function PatientChart({ id }: { id: string }) {
                   <h1 style={{ fontSize: 24, fontWeight: 700 }}>{d.patient.name}</h1>
                   <span className="num v2-sub" style={{ fontSize: 14 }}>{[d.patient.age, d.patient.sex === "M" ? "Male" : d.patient.sex === "F" ? "Female" : d.patient.sex, d.patient.phone].filter(Boolean).join(" · ")}</span>
                 </div>
-                <div className="row" style={{ gap: 6 }}>
-                  {allergy && <span className="pc-chip red"><Icon name="alert" size={13} stroke={2.4} />Allergy: {allergy}</span>}
-                  {conditions.map((c) => <span key={c} className="pc-chip">{c}</span>)}
-                </div>
+                {/* Conditions are in the patient summary below; only the allergy stays up here. */}
+                {allergy && <div className="row" style={{ gap: 6 }}><span className="pc-chip red"><Icon name="alert" size={13} stroke={2.4} />Allergy: {allergy}</span></div>}
               </div>
             </div>
             <div className="row" style={{ gap: 8 }}>
               <Link href={waHref} className="v2-btn"><Icon name="chat" size={16} />WhatsApp thread</Link>
-              <Link href={isDoctor ? `/patients/${id}/plan` : `/patients/${id}/visit`} className="v2-btn primary">{visitLabel}</Link>
+              {isDoctor ? (
+                <>
+                  <button className="v2-btn primary" onClick={() => setCapture("conversation")}><Icon name="mic" size={16} />Listen to consultation</button>
+                  <button className="v2-btn" onClick={() => setCapture("dictation")}><Icon name="mic" size={16} />Dictate</button>
+                  <button className="v2-btn" onClick={() => setCapture("rx")}><Icon name="file" size={16} />Upload document</button>
+                </>
+              ) : <Link href={`/patients/${id}/visit`} className="v2-btn primary">Prepare visit</Link>}
             </div>
           </div>
           <div className="pc-facts num">
@@ -248,6 +253,11 @@ export function PatientChart({ id }: { id: string }) {
           )}
         </div>
       </div>
+      {capture && (
+        <div className="vc-backdrop" role="dialog" aria-modal="true" aria-label="Record this visit">
+          <div className="vc-box"><PlanBuilder key={capture} id={id} embedded={capture} onClose={() => { setCapture(null); changed(); }} onSent={() => { setCapture(null); changed(); }} /></div>
+        </div>
+      )}
       <DocumentOcrModal open={showOcr} onClose={() => setShowOcr(false)} patientId={id} patientName={d.patient.name} onCommitted={changed} />
     </main>
   );
