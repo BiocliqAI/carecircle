@@ -60,3 +60,23 @@
 {"id":"LOOP-08","title":"Recheck still out of range → alert without the borderline hold","status":"PASS","note":"","ms":4941}
 {"id":"LOOP-09","title":"No recheck → caregiver told","status":"PASS","note":"","ms":4952}
 {"id":"LOOP-10","title":"No recheck after hospital (3)","status":"PASS","note":"","ms":5052}
+{"id":"LOOP-11","title":"Recheck already in the plan → no extra request","status":"PASS","note":"","ms":5080}
+{"id":"WATCH-01","title":"Weight creep","status":"FAIL","note":"PLAN: heads-up sent to patient and L1 once and the watch is on the chart, but not \"next morning after 09:30\": evaluateWatches also runs right after each reading (lib/engine.ts:1056), so it opened at 21:56 IST right after the 3rd reading.","ms":5311}
+{"id":"WATCH-06","title":"Turn a pattern off","status":"PASS","note":"","ms":76}
+{"id":"WATCH-07","title":"Not repeated next morning","status":"PASS","note":"","ms":73}
+{"id":"WATCH-05","title":"Dismiss","status":"PASS","note":"","ms":191}
+{"id":"WATCH-02","title":"BP drift","status":"PASS","note":"","ms":5955}
+{"id":"WATCH-04","title":"Adherence slip","status":"PASS","note":"","ms":0}
+{"id":"WATCH-03","title":"Fluid build-up","status":"PASS","note":"","ms":5246}
+{"id":"DOC-01","title":"Device photo [AI±]","status":"PASS","note":"","ms":4971}
+{"id":"DOC-02","title":"Device photo rejected","status":"PASS","note":"","ms":5063}
+{"id":"DOC-03","title":"Prescription / lab photo [AI±]","status":"PASS","note":"","ms":4944}
+{"id":"DOC-04","title":"Nothing filed before confirmation","status":"PASS","note":"","ms":519}
+{"id":"DOC-05","title":"Confirm & file","status":"PASS","note":"","ms":31}
+{"id":"DOC-06","title":"Same report twice","status":"PASS","note":"","ms":18}
+{"id":"DOC-07","title":"PDF","status":"PASS","note":"","ms":4785}
+{"id":"DOC-08","title":"Clinic upload: edit, verify, download","status":"PASS","note":"","ms":4892}
+{"id":"DOC-09","title":"Delete document with its data","status":"PASS","note":"","ms":4903}
+{"id":"DOC-10","title":"Unsupported file (.exe / huge)","status":"FAIL","note":"PLAN: a 51 MB file is rejected (\"Files are limited to 50 MB\"), but an .exe (application/x-msdownload) is accepted and stored as document 1 with reply \"📄 Received “setup.exe”. It's been added to the record for your care team to review. If it\". addDocument has no type allowlist (lib/records.ts:206); the download route deliberately serves unknown types as opaque attachments (app/api/documents/[id]/route.ts:15), so this looks intentional — the plan's \"rejected\" isn't how it is designed.","ms":5783}
+{"id":"DOC-11","title":"Voice note [AI±] (typed transcript)","status":"PASS","note":"","ms":5188}
+{"id":"DOC-12","title":"Reader output never shown as real (AI off)","status":"PASS","note":"","ms":6018}

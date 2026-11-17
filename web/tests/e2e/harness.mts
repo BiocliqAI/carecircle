@@ -76,7 +76,7 @@ export async function startApp(opts: { mode?: "demo" | "live"; port: number; sui
   const base = `http://127.0.0.1:${opts.port}`;
   const env = cleanEnv({ CARECIRCLE_DB: dbFile, CARECIRCLE_MODE: mode === "live" ? "live" : undefined, PORT: String(opts.port), ...opts.env });
   const log = fs.createWriteStream(path.join(os.tmpdir(), `cc-e2e-${opts.suite}.server.log`));
-  const child: ChildProcess = spawn(process.execPath, [path.join(WEB, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(opts.port), "-H", "127.0.0.1"], { cwd: WEB, env, stdio: ["ignore", "pipe", "pipe"] });
+  const child: ChildProcess = spawn(process.execPath, [path.join(WEB, "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(opts.port), "-H", "127.0.0.1"], { cwd: WEB, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
   child.stdout!.pipe(log); child.stderr!.pipe(log);
 
   const deadline = Date.now() + 90_000;
@@ -147,7 +147,8 @@ export async function startApp(opts: { mode?: "demo" | "live"; port: number; sui
     },
     stop: async () => {
       db?.close();
-      child.kill("SIGTERM");
+      // `next start` forks a next-server child: stop the whole process group so nothing keeps the port.
+      try { process.kill(-child.pid!, "SIGTERM"); } catch { child.kill("SIGTERM"); }
       await new Promise((r) => setTimeout(r, 500));
       const c = results.reduce<Record<string, number>>((m, r) => ((m[r.status] = (m[r.status] ?? 0) + 1), m), {});
       console.log(`\n${opts.suite}: ${JSON.stringify(c)}  (results: ${outFile})`);

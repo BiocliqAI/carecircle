@@ -295,7 +295,7 @@ Use 3 Screens in the simulator. Start each test by triggering a DEVIATION (e.g. 
 | SOS-03 | P0 | SOS escalates | No ack; advance 15 min | Moves to L2 |
 | SOS-04 | P1 | Second SOS while open | Press again | REPEAT event, no duplicate alert |
 | SOS-05 | P1 | Unlinked number | SOS from an unlinked user via API | 400 "isn't linked to a patient" |
-| SOS-06 | P0 | Typed "help" / "emergency" | Patient types "help" or "emergency" with no other words | Should be treated as urgent. Today only the SOS button and red-flag symptoms ("chest pain", "fainted", "can't breathe") raise an alert; the words only stop an outside-visit conversation from starting. See §24 |
+| SOS-06 | P0 | Typed "help" / "emergency" | Patient types "help" or "emergency" with no other words | URGENT "Help requested" alert to L1 |
 
 ## 13. Follow-up loops after a reading
 
@@ -466,9 +466,6 @@ Run against a Twilio test account with synthetic numbers only.
 - **HTTP tests:** the existing `api.test.mts` HTTP cases need a running server; start one in the test setup instead of assuming `localhost:3000`.
 - **Order to build:** P0 WhatsApp and escalation suites (§7–§12) first, then access control (§2, §22), then onboarding and visits (§4–§6), then the rest.
 
-## 24. Gaps found while writing this plan
+## 24. Results
 
-These tests are expected to fail against the current code (checked 17 Nov 2026):
-
-- **WA-CON-11 / ESC-16: a caregiver who declined consent still receives alerts.** When a caregiver replies NO, they are told "You won't receive care-circle alerts", but the escalation chain (`notifyLevel` in `web/lib/engine.ts`) does not check consent. Confirmed by script: with Lakshmi's consent set to DECLINED, "BP 190/115" from Ramesh sent her the urgent alert. The digest and weekly summary do check consent.
-- **SOS-06: typing "help" or "emergency" does not raise an alert.** Only the SOS button and red-flag symptom words do.
+The first full run of this plan (17 Nov 2026) is in [E2E_TEST_REPORT.md](E2E_TEST_REPORT.md): 233 passed, 34 failed (22 app bugs, 12 plan expectations that don't match the app), 7 not run. Section 4 of the report lists the expectations above that need a product decision.
