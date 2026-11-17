@@ -1,0 +1,32 @@
+{"id":"RULE-01","title":"BP crisis","status":"PASS","note":"","ms":5411}
+{"id":"RULE-02","title":"BP above limit (well above)","status":"PASS","note":"","ms":5240}
+{"id":"RULE-03","title":"Borderline BP → recheck","status":"PASS","note":"","ms":5060}
+{"id":"RULE-04","title":"Recheck still high","status":"PASS","note":"","ms":5127}
+{"id":"RULE-05","title":"Recheck normal","status":"PASS","note":"","ms":5347}
+{"id":"RULE-06","title":"No recheck → alert anyway","status":"PASS","note":"","ms":5061}
+{"id":"RULE-07","title":"Low BP","status":"PASS","note":"","ms":5196}
+{"id":"RULE-08","title":"Rapid weight gain","status":"PASS","note":"","ms":5489}
+{"id":"RULE-09","title":"Weight above dry-weight band (Gopal 59.2 ± 1)","status":"PASS","note":"","ms":5028}
+{"id":"RULE-10","title":"Weight below band","status":"PASS","note":"","ms":5090}
+{"id":"RULE-11","title":"Very low sugar","status":"PASS","note":"","ms":5041}
+{"id":"RULE-12","title":"Low / high sugar","status":"PASS","note":"","ms":5075}
+{"id":"RULE-13","title":"Pulse outside limits (+ borderline recheck)","status":"PASS","note":"","ms":5381}
+{"id":"RULE-14","title":"Very low oxygen (Abdul)","status":"PASS","note":"","ms":5009}
+{"id":"RULE-15","title":"Oxygen below limit (Abdul, limit 92)","status":"PASS","note":"","ms":5058}
+{"id":"RULE-16","title":"Fever","status":"PASS","note":"","ms":5783}
+{"id":"RULE-17","title":"High pain score (Sunita, limit 7)","status":"PASS","note":"","ms":5318}
+{"id":"RULE-18","title":"Red-flag symptoms: chest pain, fainted, can't breathe","status":"FAIL","note":"BUG: \"I can't breathe\" → no URGENT (got DEVIATION sx:breathlessness); reply: ✅ Logged: • Symptom noted: Breathlessness (moderate) A quick question so the doctor has the full picture: When do you feel breathless? ⚠️ Br. \"can't breathe\" is parsed as breathlessness of moderate severity (lib/parser.ts:17, severityNear lib/parser.ts:158) and evaluateSymptom only makes severe breathlessness URGENT (lib/engine.ts:586); for Ramesh it becomes the watched-symptom DEVIATION and follow-up questions are asked.","ms":15532}
+{"id":"RULE-19","title":"Severe breathlessness","status":"PASS","note":"","ms":5634}
+{"id":"RULE-20","title":"Watched symptom (swelling)","status":"PASS","note":"","ms":4890}
+{"id":"RULE-21","title":"Very high potassium (Gopal)","status":"PASS","note":"","ms":5078}
+{"id":"RULE-22","title":"Potassium high / low, sodium out of range (Gopal)","status":"PASS","note":"","ms":5185}
+{"id":"RULE-23","title":"Creatinine rising (Gopal)","status":"PASS","note":"","ms":4723}
+{"id":"RULE-24","title":"Low haemoglobin (Gopal, limit 8)","status":"PASS","note":"","ms":4940}
+{"id":"RULE-25","title":"Kidney fluid check (2 days over limit / low ratio → next morning after 06:00, once)","status":"PASS","note":"","ms":5749}
+{"id":"RULE-26","title":"Same rule while open → REPEAT","status":"PASS","note":"","ms":5269}
+{"id":"RULE-27","title":"Emergency rules before Visit 1","status":"PASS","note":"","ms":5191}
+{"id":"RULE-28","title":"Abnormal ≠ emergency","status":"PASS","note":"","ms":5311}
+{"id":"RULE-29","title":"AI cannot raise an emergency","status":"NOT_RUN","note":"Needs AI on (no GEMINI/ANTHROPIC key in this environment). AI-off sanity check: ambiguous worrying text raised 0 URGENT alerts.","ms":4774}
+{"id":"ESC-01","title":"L1 notified","status":"PASS","note":"","ms":4792}
+{"id":"ESC-02","title":"L1 acknowledges (ACK / ok / on it / I'll handle it / 👍)","status":"PASS","note":"","ms":4911}
+{"id":"ESC-03","title":"Outcome recorded (2)","status":"FAIL","note":"PLAN: \"2\" does not resolve the alert by itself — it asks for a note first (\"Got it. Briefly, what did the doctor / clinic advise?\"; lib/engine.ts:810-815) and resolves with outcome 2 once the note arrives; L1 thanked and patient told as expected. Only \"1\" resolves at once.","ms":5071}

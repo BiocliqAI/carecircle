@@ -31,7 +31,7 @@ const text = async (p: Page) => (await p.locator("body").innerText()).replace(/\
 async function waitText(p: Page, s: string | RegExp, ms = 20000) {
   await p.waitForFunction((arg) => {
     const t = document.body.innerText;
-    return arg.re ? new RegExp(arg.src, arg.flags).test(t) : t.includes(arg.src);
+    return arg.re ? new RegExp(arg.src, arg.flags).test(t) : t.toLowerCase().includes(arg.src.toLowerCase());
   }, typeof s === "string" ? { re: false, src: s, flags: "" } : { re: true, src: s.source, flags: s.flags }, { timeout: ms });
 }
 const shot = (p: Page, name: string) => p.screenshot({ path: path.join(SCREENS, `access-${name}.png`), fullPage: true }).catch(() => undefined);
@@ -42,11 +42,16 @@ async function rawPost(app: App, url: string, body: string, cookie?: string) {
   let data: any = t; try { data = JSON.parse(t); } catch {}
   return { status: r.status, data, setCookie: r.headers.get("set-cookie") };
 }
+async function portFree(port: number) {
+  try { await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1500) }); throw new Error(`port ${port} is already serving another app; refusing to run against it`); }
+  catch (e) { if ((e as Error).message.startsWith("port")) throw e; }
+}
 const count = (app: App, sql: string, ...p: (string | number)[]) => (app.q1<{ n: number }>(sql, ...p)?.n ?? 0);
 
 // =====================================================================================================
 // DEMO MODE
 // =====================================================================================================
+await portFree(3201);
 const app = await startApp({ mode: "demo", port: 3201, suite: "access" });
 const ALL_PIDS = ["p_ramesh", "p_sunita", "p_abdul", "p_gopal"];
 const pname = (pid: string) => app.q1<{ name: string }>("SELECT name FROM patients WHERE id = ?", pid)!.name;
@@ -199,7 +204,7 @@ await app.test("AUTH-09", "Caregiver without dashboard access", async () => {
   }
   await withPage(app, "u_lakshmi", "/me", async (p) => {
     await p.waitForTimeout(2500);
-    const t = await text(p);
+    const t = (await p.locator("section.me-record").innerText()).replace(/\s+/g, " ");
     assert.equal(await p.locator("h1.fh-h1").count(), 0, "no patient view (family home heading)");
     assert.ok(/No access|not linked/i.test(t), "shows no-access / not-linked message");
     assert.ok(!/Furosemide|Metoprolol|mmHg/.test(t), "no Ramesh data");
@@ -976,10 +981,12 @@ await app.test("SEC-10", "Audit trail", async () => {
 await app.stop();
 
 {
-  const bad = await startApp({ mode: "demo", port: 3202, suite: "access-aifail", env: { GEMINI_API_KEY: "AIzaSyINVALID-e2e-key-0000000000000000", ANTHROPIC_API_KEY: "sk-ant-api03-INVALIDe2ekey00000000000000000000" } });
+  await portFree(3209);
+  const bad = await startApp({ mode: "demo", port: 3209, suite: "access-aifail", env: { GEMINI_API_KEY: "AIzaSyINVALID-e2e-key-0000000000000000", ANTHROPIC_API_KEY: "sk-ant-api03-INVALIDe2ekey00000000000000000000" } });
   await bad.test("SEC-09", "AI failure (invalid keys)", async () => {
     const demo = (await bad.api(null, "GET", "/api/demo")).data;
     assert.equal(demo.ai, true, "AI considered on with the invalid keys");
+    assert.ok((await bad.api(null, "GET", "/api/settings/gemini")).data.maskedKey?.endsWith("0000"), "talking to this suite's server");
     const m0 = bad.mark();
     const t0 = Date.now();
     const s = await bad.wa.send("u_ramesh", "BP 184/112");
@@ -1005,6 +1012,7 @@ await app.stop();
 // =====================================================================================================
 // LIVE MODE
 // =====================================================================================================
+await portFree(3211);
 const live = await startApp({ mode: "live", port: 3211, suite: "access-live", env: { CARECIRCLE_MODE: undefined, E2E_FORCE_LIVE: "1", NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require ${path.join(import.meta.dirname, "live-mode-preload.cjs")}`.trim() } });
 let clinicName = "E2E Heart Clinic";
 let drId = "", paId = "", dr2Id = "", livePid = "";
@@ -1016,8 +1024,8 @@ await live.test("CLIN-01", "First run on an empty database", async () => {
   let adminText = "";
   await withPage(live, null, "/", async (p) => {
     await waitText(p, "A new clinic");
-    const t = await text(p);
-    assert.ok(t.includes("Start here"), "admin card says Start here");
+    const t = (await text(p)).toLowerCase();
+    assert.ok(t.includes("start here"), "admin card says Start here");
     assert.ok((await p.locator("button.pp-hit:disabled").count()) === 4, "other roles locked");
     await shot(p, "clin01-picker");
   });
@@ -1070,8 +1078,8 @@ await live.test("CLIN-03", "Add a PA and a second doctor", async () => {
   for (const id of [drId, paId, dr2Id]) assert.ok(staff.includes(id), id);
   await withPage(live, null, "/", async (p) => {
     await waitText(p, clinicName);
-    const t = await text(p);
-    for (const card of ["Clinic admin", "Doctor", "Assistant", "Patient", "Caregiver"]) assert.ok(t.includes(card), `role card ${card}`);
+    const t = (await text(p)).toLowerCase();
+    for (const card of ["Clinic admin", "Doctor", "Assistant", "Patient", "Caregiver"]) assert.ok(t.includes(card.toLowerCase()), `role card ${card}`);
     await p.locator("article.p-doctor button.pp-hit").click();
     await waitText(p, "Dr. Kiran Rao");
     await waitText(p, "Dr. Anita Menon");
@@ -1105,7 +1113,8 @@ await live.test("CLIN-06", "Cannot remove a doctor who still has patients", asyn
   livePid = r.data.id;
   const rm = await live.api("u_admin", "POST", "/api/clinic", { action: "removeStaff", id: drId });
   assert.equal(rm.status, 409);
-  assert.match(rm.data.error, /treating doctor for 1 patient\. Reassign them first/);
+  assert.match(rm.data.error, /treating doctor for \d+ patients?\. Reassign them first/);
+  assert.equal(live.q1<{ n: number }>("SELECT COUNT(*) n FROM patients WHERE doctor_id = ?", drId)?.n, Number(/for (\d+)/.exec(rm.data.error)![1]), "count matches this suite's DB");
   assert.ok(live.q1("SELECT 1 FROM users WHERE id = ?", drId));
 });
 

@@ -8,3 +8,5 @@
 {"id":"CLIN-08","title":"Edit clinic details","status":"PASS","note":"","ms":379}
 {"id":"AUTH-12","title":"Admin navigation","status":"PASS","note":"","ms":3202}
 {"id":"CLIN-11","title":"AI settings [AI off at start]","status":"FAIL","note":"BUG: /api/settings/gemini has no authorization — a signed-out request replaced the clinic's Gemini key (POST -> 200) and GET returns the masked key to anyone (200); compare anthropic/route.ts:8-11 which allows only admin/doctor (app/api/settings/gemini/route.ts:6-27). PLAN: keys cannot be cleared — empty key is rejected (gemini 400 \"apiKey required\", anthropic 400); there is no clear/delete action in app/api/settings/gemini/route.ts:18 or anthropic/route.ts:25 and none in components/GeminiSettingsModal.tsx","ms":91}
+{"id":"CLIN-09","title":"Reset clinic","status":"FAIL","note":"page.waitForFunction: Timeout 20000ms exceeded.","ms":20307}
+{"id":"CLIN-10","title":"Reset blocked in demo API for live","status":"PASS","note":"","ms":8}
