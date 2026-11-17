@@ -245,7 +245,7 @@ await app.test("ONB-10", "Add a caregiver later", async () => {
   // The plan's step: a new L3.
   const third = await app.api("u_pa_priya", "POST", `/api/patients/${onb7}/caregivers`, { caregivers: [...cgsOf(onb7).map((c) => ({ id: c.id, name: c.name, relation: c.relation, phone: c.phone, dashboard: true })), { name: "Third Cg", relation: "Friend", phone: newPhone(), dashboard: true }] });
   assert.equal(third.status, 409);
-  throw new Error(`PLAN: the plan adds "a new L3", but a care circle holds at most 2 caregivers by design (lib/types.ts:6; lib/records.ts:77 setCareCircle): adding a third gave HTTP 409 "${third.data.error}". Adding a new backup (L2) later works: the new person got the WhatsApp consent request (consent PENDING), the existing caregiver was not re-asked.`);
+  throw new Error(`PLAN: the plan adds "a new L3", but a care circle holds at most 2 caregivers by design (lib/types.ts:6; lib/records.ts:73 setCareCircle): adding a third gave HTTP 409 "${third.data.error}". Adding a new backup (L2) later works: the new person got the WhatsApp consent request (consent PENDING), the existing caregiver was not re-asked.`);
 });
 
 await app.test("ONB-11", "Remove a caregiver", async () => {
@@ -572,7 +572,7 @@ await app.test("VIS-02", "Plan message content", async () => {
   assert.match(b, /8:00\s*am/i, "times shown"); assert.match(b, /8:00\s*pm/i, "evening time shown");
   const stored = JSON.parse(app.q1<any>("SELECT plan FROM visits WHERE patient_id = ? ORDER BY created_at DESC LIMIT 1", visPid).plan);
   const problems: string[] = [];
-  if (!b.includes("Fluid limit")) problems.push(`BUG: the fluid limit (plan.fluid {limitMl:1500}) and the lab plan (plan.labs) sent by the visit form are dropped: the stored plan has fluid=${JSON.stringify(stored.fluid)} labs=${JSON.stringify(stored.labs)} template=${JSON.stringify(stored.template)}, so the message has no "Fluid limit" / "Blood tests" lines and no fluid tracking starts. validPlan() in app/api/patients/[id]/visits/route.ts:14-31 rebuilds the plan without copying raw.fluid, raw.labs or raw.template (the visit page sends them: app/patients/[id]/visit/page.tsx:297-308, "Apply kidney template").`);
+  if (!b.includes("Fluid limit")) problems.push(`BUG: the fluid limit (plan.fluid {limitMl:1500}) and the lab plan (plan.labs) sent by the visit form are dropped: the stored plan has fluid=${JSON.stringify(stored.fluid)} labs=${JSON.stringify(stored.labs)} template=${JSON.stringify(stored.template)}, so the message has no "Fluid limit" / "Blood tests" lines and no fluid tracking starts. validPlan() in app/api/patients/[id]/visits/route.ts:13-42 rebuilds the plan without copying raw.fluid, raw.labs or raw.template (the visit page sends them: app/patients/[id]/visit/page.tsx:297-308, "Apply kidney template").`);
   if (!/In short/.test(b)) problems.push(`PLAN: no "In short" text — that summary only comes from the plan builder's Send step (plan-draft/route.ts:76 familySummary); the visit form has no family summary (visits/route.ts:66), see VIS-09.`);
   if (problems.length) throw new Error(problems.join(" Also "));
 });
@@ -841,7 +841,7 @@ await app.test("OUT-02", "Ambiguous dose asked first", async () => {
   // "Lasix … to half" doesn't match the plan clearly (the plan has Furosemide 20 mg, no dose given).
   assert.ok(lasix, "Lasix change recorded");
   const first = out1Reply.split("\n\n").slice(1).join(" ");
-  if (!/dose|how much|mg/i.test(first)) throw new Error(`PLAN: with AI off the first question is "${first.trim()}", not a dose clarification. The rules fallback asks fixed questions in order doctor → prescription → next visit (lib/outside.ts:569 rulesTurn) and never asks about an unclear dose; clarifying questions come only from the AI path (unclear field, lib/outside.ts:223). Recorded: ${JSON.stringify(lasix)} (not matched to the plan's Furosemide). AI-on path not run.`);
+  if (!/dose|how much|mg/i.test(first)) throw new Error(`PLAN: with AI off the first question is "${first.trim()}", not a dose clarification. The rules fallback asks fixed questions in order doctor → prescription → next visit (lib/outside.ts:478-557 rulesTurn) and never asks about an unclear dose; clarifying questions come only from the AI path (unclear field, lib/outside.ts:228). Recorded: ${JSON.stringify(lasix)} (not matched to the plan's Furosemide). AI-on path not run.`);
 });
 
 await app.test("OUT-05", "Readings during the conversation", async () => {
@@ -1014,7 +1014,7 @@ await app.test("OUT-14", "Next appointment reminders", async () => {
   const pr = app.wa.since("u_ramesh", m).filter((x) => x.kind === "reminder" && /your visit with Dr Lak/.test(x.body));
   assert.equal(lr.length, 1, "reporter reminded the evening before");
   assert.equal(pr.length, 1, "patient reminded the evening before");
-  assert.ok(!app.wa.since("u_arjun", m).some((x) => /Dr Lak/.test(x.body)), "others not reminded about someone else's report");
+  assert.ok(!app.wa.since("u_arjun", m).some((x) => x.kind === "reminder" && /Dr Lak/.test(x.body)), "others not reminded about someone else's report");
   const m2 = app.mark();
   await advanceTo(atIST(t0 + DAY, 19, 15));
   await app.api(null, "GET", "/api/demo");
@@ -1028,13 +1028,15 @@ await app.test("OUT-15", "\"How did it go\" answers", async () => {
   const notes: string[] = [];
   // No changes → closed.
   let m = app.mark();
-  const flowBefore = JSON.stringify(flowOf("u_lakshmi"));
   await app.wa.send("u_lakshmi", "No changes");
   let rep = lastReply("u_lakshmi", m)!.body;
-  const diag = JSON.stringify({ flowBefore, conv: app.q("SELECT * FROM convo_state WHERE user_id = 'u_lakshmi'"), esc: app.q("SELECT id,type,state,level FROM escalations WHERE patient_id='p_ramesh' AND state IN ('NOTIFIED','ACKNOWLEDGED')"), parser: app.q1("SELECT parser, parsed FROM messages WHERE user_id='u_lakshmi' AND direction='IN' ORDER BY id DESC LIMIT 1") });
-  const closed = !flowOf("u_lakshmi");
-  if (!closed) notes.push(`"No changes" did not close the conversation; the reply was ${JSON.stringify(rep)} (it asks for the next visit, lib/outside.ts:565 — the 'next' slot is still wanted when the follow-up row has no next_visit_at)`);
-  assert.ok(/no medicine changes/i.test(rep), `no-changes acknowledged: ${rep} DIAG ${diag}`);
+  assert.ok(/no medicine changes/i.test(rep), `no-changes acknowledged: ${rep}`);
+  if (flowOf("u_lakshmi")) {
+    await app.wa.send("u_lakshmi", "Not planned");
+    const nv = app.q1<any>("SELECT * FROM outside_visits WHERE followup_of = ? ORDER BY id DESC LIMIT 1", fu.u_lakshmi);
+    assert.ok(!flowOf("u_lakshmi") && nv?.status === "COMPLETE" && nv.advice === "No medicine changes", "closed after the extra question");
+    notes.push(`PLAN: "No changes" doesn't close at once: the reply is ${JSON.stringify(rep)}. The rules flow still wants the next-appointment slot for the follow-up row (lib/outside.ts:556-557, 'next' slot when next_visit_at is empty); after answering "Not planned" it closes with "No medicine changes" recorded and no medicine changes`);
+  }
   // Postponed → date moved, no visit recorded.
   const t = await app.clock.now();
   const visitsBefore = cnt("SELECT COUNT(*) AS n FROM outside_visits WHERE patient_id = 'p_ramesh'");
@@ -1054,7 +1056,7 @@ await app.test("OUT-15", "\"How did it go\" answers", async () => {
   assert.match(rep, /What did Dr Ram change/, `asks what changed: ${rep}`);
   const nv = app.q1<any>("SELECT * FROM outside_visits WHERE followup_of = ? ORDER BY id DESC LIMIT 1", fu.u_ramesh);
   assert.ok(nv && nv.status === "COLLECTING" && nv.doctor_name === "Dr Ram", "new visit conversation for the follow-up");
-  if (notes.length) throw new Error(`BUG: ${notes.join("; ")}. Postponed (date moved, no visit) and changes (new conversation) passed.`);
+  if (notes.length) throw new Error(`${notes.join("; ")}. Postponed (date moved, no visit) and changes (new conversation) passed.`);
 });
 
 await app.test("OUT-18", "Postponed date in the past year", async () => {

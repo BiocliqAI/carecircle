@@ -3,7 +3,7 @@
 // This makes next.config.ts see demo mode (so `next start` uses the existing .next build) while the app code,
 // which reads process.env.CARECIRCLE_MODE at runtime (lib/mode.ts), sees "live".
 if (process.env.E2E_FORCE_LIVE === "1") {
-  const real = process.env;
+  const real = { ...process.env };
   process.env = new Proxy(real, {
     get(t, k) {
       if (k === "CARECIRCLE_MODE") return /next\.config/.test(new Error().stack || "") ? undefined : "live";

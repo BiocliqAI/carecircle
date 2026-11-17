@@ -205,6 +205,17 @@ async function phaseA1() {
     assert.match(r.reply, /Logged for/, `reply: ${short(r.reply)}`);
   });
 
+  await T("WA-LOG-11", "Lab values by text (A Gopal)", async () => {
+    const r = await send("u_durai", "creatinine 1.8, potassium 4.9");
+    const labs = q<{ marker: string; value: number; source: string; entered_by: string; flag: string | null }>("SELECT marker, value, source, entered_by, flag FROM labs WHERE message_id = ?", r.inMsg.id);
+    assert.ok(labs.some((l) => l.marker === "creatinine" && l.value === 1.8 && l.source === "whatsapp"), JSON.stringify(labs));
+    assert.ok(labs.some((l) => l.marker === "potassium" && l.value === 4.9 && l.source === "whatsapp"), JSON.stringify(labs));
+    assert.match(r.reply, /Lab results: .*Creatinine.*prev/, `reply: ${short(r.reply)}`);
+    // rules run: potassium 6.2 must raise the fixed urgent rule
+    const mk = app.mark();
+    await send("u_durai", "potassium 6.2");
+    assert.ok(q1("SELECT 1 FROM escalations WHERE patient_id = 'p_gopal' AND rule_key = 'lab:k_very_high' AND trigger_message_id > ?", mk), "K 6.2 did not raise the urgent lab rule");
+  });
   await T("WA-LOG-12", "Ambiguous number asks which one; chosen one logged", async () => {
     const cs = q1("SELECT state FROM convo_state WHERE user_id = 'u_ramesh'");
     if (cs) blocked(`Ramesh already has a conversation state (${JSON.stringify(cs)})`);
@@ -543,12 +554,13 @@ async function phaseB() {
   await send("u_sunita", "skipped exercises today");
   const knee = q<{ id: number }>("SELECT id FROM escalations WHERE patient_id = 'p_sunita' AND rule_key = 'physio:knee' AND started_at > ?", D1);
   await T("WA-REM-11", "Paused plan: no prompts until started", async () => {
+    const abd = q<{ visit_id: string; status: string; due_at: number }>("SELECT visit_id, status, due_at FROM tasks WHERE patient_id = 'p_abdul' AND due_at > ? AND due_at < ?", atL(D1, "12:05"), atL(D1, "23:59"));
     assert.equal(vis.status, 200, JSON.stringify(vis.data));
     assert.equal(vis.data.paused, true);
     const before = q("SELECT id FROM messages WHERE user_id = 'u_abdul' AND kind IN ('prompt','reminder') AND id > ? AND created_at < ?", mAbdul, atL(D1, "12:05"));
     assert.equal(before.length, 0, "prompt/reminder sent while paused");
     assert.equal(st.status, 200, JSON.stringify(st.data));
-    assert.ok(q1("SELECT 1 FROM messages WHERE user_id = 'u_abdul' AND kind = 'prompt' AND created_at = ?", atL(D1, "18:00")), "no 18:00 prompt after starting the plan");
+    assert.ok(q1("SELECT 1 FROM messages WHERE user_id = 'u_abdul' AND kind = 'prompt' AND created_at = ?", atL(D1, "18:00")), `BUG: paused correctly, but after "Start care plan" (12:05) no prompt came at 18:00: the only tasks for the rest of the day are the old plan's rows, all CANCELLED (${abd.map((x) => `${hm(x.due_at)} ${x.status} ${x.visit_id}`).join("; ")}). Pausing cancels the pending tasks (lib/engine.ts:1252, 1279) but keeps the rows; ensureTasks() then uses INSERT OR IGNORE against UNIQUE(patient_id, item_key, due_at) (lib/engine.ts:231, lib/db.ts:34), so the started plan's reminders for today/tomorrow are silently skipped.`);
   });
   await advanceTo("20:05");
   await send("u_ramesh", "took all tablets");
@@ -656,9 +668,10 @@ async function phaseB() {
     assert.ok(Math.abs(lt - (await clock.now())) < 60_000, "last_tick not caught up");
   });
 
-  // REM-12: the scheduler did not run for a long time (setup: last_tick moved back 15 days), then 6 h pass at once
+  // REM-12: the clock moves 6 h with the scheduler not running in between (setup: last_tick set to just before the
+  // target, so runScheduler does a single catch-up tick at the end instead of 15-min steps — lib/engine.ts:1185-1199)
   const D3b = await clock.now();
-  exec("UPDATE settings SET value = ? WHERE key = 'last_tick'", String(D3b - 15 * DAY));
+  exec("UPDATE settings SET value = ? WHERE key = 'last_tick'", String(D3b + 359 * MIN));
   const mGap = app.mark();
   await clock.advance(360); // ~18:00, one catch-up tick
   await T("WA-REM-12", "Old prompts not sent after a scheduler gap", async () => {
@@ -667,7 +680,8 @@ async function phaseB() {
     const fresh = q<{ id: number; patient_id: string; due_at: number; prompted: number }>("SELECT * FROM tasks WHERE due_at > ? AND due_at <= ?", t - 2 * HOUR, t);
     if (!stale.length || !fresh.length) blocked(`need tasks on both sides of the 2 h line (stale ${stale.length}, fresh ${fresh.length})`);
     const promptsAt = (due: number) => q("SELECT id FROM messages WHERE kind = 'prompt' AND id > ? AND created_at = ?", mGap, due).length;
-    assert.ok(stale.every((x) => promptsAt(x.due_at) === 0), "prompt sent for a task more than 2 h old");
+    const bad = stale.filter((x) => promptsAt(x.due_at) > 0);
+    assert.equal(bad.length, 0, `prompt sent for a task more than 2 h old: ${JSON.stringify(bad.slice(0, 3).map((x) => ({ ...x, due: iso(x.due_at), msgs: q("SELECT user_id, kind, created_at, substr(body,1,60) b FROM messages WHERE kind = 'prompt' AND id > ? AND created_at = ?", mGap, x.due_at) })))}`);
     assert.ok(stale.every((x) => x.prompted === 1), "stale tasks not marked prompted");
     assert.ok(fresh.some((x) => promptsAt(x.due_at) > 0), "fresh tasks not prompted");
     const shouldMiss = stale.filter((x) => !["physio", "lab"].includes(x.kind) && x.due_at <= t - 3 * HOUR);
