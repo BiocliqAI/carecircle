@@ -905,7 +905,7 @@ td.lab-yellow, .lab-legend .lab-yellow { background: #fef08a; }
 .lab-legend { margin-top: 8px; font-size: 12px; color: var(--c-mute, #667); }
 
 /* Baseline on the overview: headline pills, the rest folded away. */
-.bl-compact summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--c-brand); margin-top: 10px; }
+.bl-compact summary { cursor: pointer; }
 .bl-compact .bl-rest { display: grid; gap: 10px; margin-top: 10px; font-size: 14px; }
 .bl-compact .bl-rest small { display: block; color: var(--c-mute); }
 
@@ -915,3 +915,15 @@ td.lab-yellow, .lab-legend .lab-yellow { background: #fef08a; }
 .ps-sec p { margin: 0 0 4px; }
 .ps-sec .pc-bullets { margin-bottom: 4px; }
 @media (max-width: 700px) { .ps-sec { grid-template-columns: 1fr; } }
+.ps-sec h3 small { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--c-mute); }
+.ps-conds { display: flex; flex-wrap: wrap; gap: 6px; }
+.ps-conds .v2-pill { white-space: normal; }
+.ps-reason { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ps-reason input { flex: 1 1 220px; min-height: 36px; border: 1px solid #CFD8D5; border-radius: 8px; padding: 0 10px; font: inherit; }
+.ps-reason input:focus { outline: 2px solid var(--c-accent); outline-offset: 1px; border-color: transparent; }
+/* Baseline on the overview is folded away entirely until opened. */
+details.bl-compact > summary { margin-top: 0; display: flex; align-items: baseline; gap: 8px; color: var(--c-ink); font-size: 15px; list-style: none; }
+details.bl-compact > summary::-webkit-details-marker { display: none; }
+details.bl-compact > summary::before { content: "▸"; font-size: 11px; color: var(--c-mute); }
+details.bl-compact[open] > summary::before { content: "▾"; }
+details.bl-compact[open] > summary { margin-bottom: 10px; }

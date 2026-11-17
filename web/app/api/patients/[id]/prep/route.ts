@@ -23,7 +23,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const body = (await req.json()) as Partial<Prep> & { flagMedChange?: number; ready?: boolean };
   const t = now();
   const patch: Partial<Prep> = {};
-  for (const k of ["attendance", "attendanceNote", "vitals", "docsChecked", "flags", "questions"] as const) if (body[k] !== undefined) (patch as Record<string, unknown>)[k] = body[k];
+  for (const k of ["attendance", "attendanceNote", "vitals", "docsChecked", "flags", "questions", "reason"] as const) if (body[k] !== undefined) (patch as Record<string, unknown>)[k] = body[k];
   if (body.flagMedChange) {
     const m = get<{ id: number; med_name: string; change: string; detail: string | null; prescriber: string | null }>("SELECT id, med_name, change, detail, prescriber FROM med_changes WHERE id = ? AND patient_id = ?", body.flagMedChange, id);
     if (!m) return err("Medicine change not found", 404);

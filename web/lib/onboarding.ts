@@ -65,6 +65,36 @@ export function startOnboarding(pid: string, by: string, t: number): number {
 /** The patient's latest confirmed history, if any. */
 export const confirmedOnboarding = (pid: string) => get<OnboardingRow>("SELECT * FROM onboardings WHERE patient_id = ? AND status = 'CONFIRMED' ORDER BY id DESC LIMIT 1", pid);
 
+/** What the confirmed history (built from the patient's own records) says at a glance: the one-glance summary, the
+ *  active conditions, and the most recent visit to the treating doctor (any doctor when the records show none to them). */
+export interface RecordSummary {
+  confirmedAt: number | null;
+  oneGlance: string;
+  conditions: { name: string; status: string }[];
+  lastVisit: { date: string; doctor: string; specialty: string; hospital: string; takeaway: string; treating: boolean; changes: string[] } | null;
+}
+export function recordSummary(pid: string): RecordSummary | null {
+  const o = confirmedOnboarding(pid);
+  const d = draftOf(o);
+  if (!o || !d) return null;
+  const s = d.summary;
+  const treating = getUser(getPatient(pid)?.doctor_id ?? "")?.name ?? "";
+  const names = new Set([normDoc(treating), ...d.doctors.filter((x) => x.role === "treating").flatMap((x) => [normDoc(x.name), ...x.aliases.map(normDoc)])].filter(Boolean));
+  const visits = listOf(s, "visits").filter((v) => cell(v, "date") || cell(v, "takeaway")).sort((a, b) => cell(b, "date").localeCompare(cell(a, "date")));
+  const mine = visits.find((v) => names.has(normDoc(cell(v, "doctor"))));
+  const v = mine ?? visits[0];
+  return {
+    confirmedAt: o.confirmed_at ?? null,
+    oneGlance: fieldsOf(s, "snapshot").oneGlance?.text?.trim() ?? "",
+    conditions: listOf(s, "conditions").filter((c) => cell(c, "name")).slice(0, 8).map((c) => ({ name: cell(c, "name"), status: cell(c, "status") })),
+    lastVisit: v ? {
+      date: cell(v, "date"), doctor: cell(v, "doctor"), specialty: cell(v, "specialty"), hospital: cell(v, "hospital"), takeaway: cell(v, "takeaway"), treating: !!mine,
+      // Medicine changes the records put on that same day.
+      changes: cell(v, "date") ? listOf(s, "medChanges").filter((m) => cell(m, "date") === cell(v, "date")).slice(0, 6).map((m) => [cell(m, "drug"), cell(m, "change"), cell(m, "reason") ? `(${cell(m, "reason")})` : ""].filter(Boolean).join(" ")) : [],
+    } : null,
+  };
+}
+
 /** Opens an update to a confirmed history (the only way to change it once confirmed): it starts as a copy of that
  *  history; corrections and the records added to it are marked new or changed, for the doctor to confirm again.
  *  The confirmed version itself is never edited: each confirmation is kept as its own version. */

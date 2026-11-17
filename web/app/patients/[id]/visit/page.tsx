@@ -64,7 +64,7 @@ interface VisitData {
   summary: IntervalSummary | null;
   careTeam: { id: number; name: string; role: string }[];
   medChanges: MedChangeRow[];
-  prep?: { vitals: Record<string, string | undefined>; vitalsAt: number | null; vitalsByName: string | null; flags: { id: string; text: string }[]; questions: string; readyAt: number | null; readyByName: string | null } | null;
+  prep?: { vitals: Record<string, string | undefined>; vitalsAt: number | null; vitalsByName: string | null; flags: { id: string; text: string }[]; questions: string; reason?: string; readyAt: number | null; readyByName: string | null } | null;
   doctor?: { name: string } | null;
 }
 
@@ -428,9 +428,10 @@ function DoctorConsult({ id }: { id: string }) {
 
         <div className="consult-summary">
           <div className="stack gap16">
-            {d.prep && (d.prep.flags.length > 0 || d.prep.questions) && (
+            {d.prep && (d.prep.flags.length > 0 || d.prep.questions || d.prep.reason) && (
               <div className="card prep-flags">
                 <div className="card-head"><h3>Flagged by {d.prep.readyByName ?? "the assistant"}</h3></div>
+                {d.prep.reason && <div className="prep-flag"><b>Reason for this visit:</b> {d.prep.reason}</div>}
                 {d.prep.flags.map((f) => <div key={f.id} className="prep-flag">{f.text}</div>)}
                 {d.prep.questions && <div className="prep-flag"><b>Question:</b> {d.prep.questions}</div>}
               </div>

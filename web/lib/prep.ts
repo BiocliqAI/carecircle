@@ -13,11 +13,13 @@ export interface Prep {
   docsChecked: boolean;
   flags: PrepFlag[];
   questions: string;
+  /** Why the patient is coming this time, in a few words ("leg swelling"). */
+  reason: string;
   readyAt: number | null;
   readyBy: string | null;
 }
 
-export const EMPTY_PREP: Prep = { attendance: false, attendanceNote: "", vitals: {}, vitalsAt: null, vitalsBy: null, docsChecked: false, flags: [], questions: "", readyAt: null, readyBy: null };
+export const EMPTY_PREP: Prep = { attendance: false, attendanceNote: "", vitals: {}, vitalsAt: null, vitalsBy: null, docsChecked: false, flags: [], questions: "", reason: "", readyAt: null, readyBy: null };
 
 export function getPrep(pid: string): Prep & { updatedAt: number | null; readyByName: string | null; vitalsByName: string | null } {
   const r = get<{ data: string; updated_at: number }>("SELECT data, updated_at FROM visit_prep WHERE patient_id = ?", pid);
@@ -36,6 +38,7 @@ export function savePrep(pid: string, patch: Partial<Prep>, t: number, actor: st
     docsChecked: patch.docsChecked ?? cur.docsChecked,
     flags: (patch.flags ?? cur.flags).slice(0, 20).map((f) => ({ id: String(f.id).slice(0, 40), text: String(f.text).slice(0, 500), medChangeId: f.medChangeId })),
     questions: (patch.questions ?? cur.questions).slice(0, 2000),
+    reason: (patch.reason ?? cur.reason).replace(/\s+/g, " ").trim().slice(0, 200),
     readyAt: patch.readyAt !== undefined ? patch.readyAt : cur.readyAt,
     readyBy: patch.readyAt !== undefined ? (patch.readyAt ? actor : null) : cur.readyBy,
   };
