@@ -5,9 +5,11 @@ import { ensureSeeded } from "./seed";
 import { getPatient, getUser, runScheduler, type UserRow } from "./engine";
 import { get } from "./db";
 import { loadLearnedMarkers } from "./labmarkers";
+import { ensureRealDate } from "./realtime";
 
 export async function ready() {
   await ensureSeeded();
+  ensureRealDate();
   loadLearnedMarkers();
   runScheduler();
 }
