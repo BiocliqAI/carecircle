@@ -274,16 +274,23 @@ function targetFor(type: VitalType, plan: CarePlan): { text: string; lo: number 
 function Overview({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s: IntervalSummary | null; onSec: (x: Section) => void; showAi: boolean; setShowAi: (b: boolean) => void; onChange: () => void }) {
   const cur = d.current;
   if (!cur || !s) {
+    // No visit recorded here yet: the same layout, from what the records and the baseline already say.
     return (
-      <div className="v2-grid12">
-        <div className="span8 stack gap16">
-          <section className="v2-card pad">
-            <h2 style={{ marginBottom: 6 }}>No visit yet</h2>
-            <p className="v2-sub" style={{ fontSize: 14, margin: 0 }}>Reminders and readings start once Visit 1 sets the care plan. {d.prep?.readyAt ? "The visit has been prepared." : "An assistant can prepare it first."}</p>
-          </section>
-          <BaselineCard b={d.baseline} pid={d.patient.id} canEdit now={d.now} />
+      <div className="stack gap16">
+        <div className="v2-grid12">
+          <SummaryPane d={d} s={null} onSec={onSec} showAi={showAi} setShowAi={setShowAi} onChange={onChange} />
+          <div className="span4 stack gap16"><LabsCard d={d} onAll={() => onSec("vitals")} /></div>
         </div>
-        <div className="span4 stack gap16"><SideCards d={d} onSec={onSec} /></div>
+        <BaselineCard b={d.baseline} pid={d.patient.id} canEdit now={d.now} compact />
+        <div className="v2-grid12">
+          <div className="span8 stack gap16">
+            <section className="v2-card pad">
+              <h2 style={{ marginBottom: 6 }}>No visit yet</h2>
+              <p className="v2-sub" style={{ fontSize: 14, margin: 0 }}>Reminders and readings start once Visit 1 sets the care plan. {d.prep?.readyAt ? "The visit has been prepared." : "An assistant can prepare it first."}</p>
+            </section>
+          </div>
+          <div className="span4 stack gap16"><SideCards d={d} onSec={onSec} labs={false} /></div>
+        </div>
       </div>
     );
   }
@@ -356,20 +363,20 @@ function Overview({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s: In
 }
 
 /** The overview's summary: who this is (from their records), the last visit, what changed since, why they are coming, and what the family reported. */
-function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s: IntervalSummary; onSec: (x: Section) => void; showAi: boolean; setShowAi: (b: boolean) => void; onChange: () => void }) {
-  const cur = d.current!;
+function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s: IntervalSummary | null; onSec: (x: Section) => void; showAi: boolean; setShowAi: (b: boolean) => void; onChange: () => void }) {
+  const cur = d.current; // null until a visit is recorded here
   const b = d.baseline;
   const r = d.fromRecords ?? null;
   const day = (t: number) => (relDays(t, d.now) === 0 ? "today" : fmtDate(t, { day: "numeric", month: "short" }));
   const isoDay = (x: string) => (/^\d{4}-\d{2}-\d{2}$/.test(x) ? fmtDate(Date.parse(`${x}T09:00:00+05:30`), { day: "numeric", month: "short", year: "numeric" }) : x);
   const clip = (x: string, n: number) => (x.length > n ? `${x.slice(0, n)}…` : x);
   const history = [b?.history?.trim(), b?.familyHistory?.trim() ? `Family: ${b.familyHistory.trim()}` : null].filter(Boolean) as string[];
-  const next = cur.next_visit_at;
+  const next = cur?.next_visit_at ?? null;
   const flags = d.prep?.flags ?? [];
   const questions = d.prep?.questions?.trim();
   const lv = r?.lastVisit ?? null;
   // Readings the patient or family logged that fell outside the plan's limits, per vital.
-  const abnormal = s.vitals.map((v) => {
+  const abnormal = (s?.vitals ?? []).map((v) => {
     const off = v.series.filter((x) => x.flag);
     const last = off[off.length - 1];
     return last ? { label: VITAL_META[v.type].label, unit: VITAL_META[v.type].unit, n: off.length, of: v.count, last } : null;
@@ -378,7 +385,7 @@ function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s:
     <section className="v2-card pad span8 ps">
       <div className="row between" style={{ marginBottom: 4 }}>
         <h2>Patient summary</h2>
-        <button className="tq-link" onClick={() => setShowAi(!showAi)}>{showAi ? "Hide AI summary" : "AI summary"}</button>
+        {cur && <button className="tq-link" onClick={() => setShowAi(!showAi)}>{showAi ? "Hide AI summary" : "AI summary"}</button>}
       </div>
 
       <div className="ps-sec">
@@ -403,18 +410,20 @@ function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s:
               {!lv.treating && d.doctor?.name && <p className="v2-sub">The records show no earlier visit to {d.doctor.name}; this is the most recent visit to any doctor.</p>}
             </>
           ) : (
-            <p>{cur.diagnosis ? <><span className="v2-sub">{fmtDate(cur.visit_at, { day: "numeric", month: "short", year: "numeric" })}:</span> {cur.diagnosis}{cur.notes ? <> · {clip(cur.notes, 320)}</> : null}</> : <span className="v2-sub">No visit notes on record.</span>}</p>
+            <p>{cur?.diagnosis ? <><span className="v2-sub">{fmtDate(cur.visit_at, { day: "numeric", month: "short", year: "numeric" })}:</span> {cur.diagnosis}{cur.notes ? <> · {clip(cur.notes, 320)}</> : null}</> : <span className="v2-sub">{cur ? "No visit notes on record." : "No visit on record yet."}</span>}</p>
           )}
         </div>
       </div>
 
-      <div className="ps-sec">
-        <h3>Since last visit</h3>
-        <div>
-          <p className="v2-sub num">{fmtDate(cur.visit_at, { day: "numeric", month: "short" })} → today · {s.days.length} days</p>
-          {s.highlights.length > 0 ? <ul className="pc-bullets num">{s.highlights.slice(0, 5).map((h, i) => <li key={i} className={h.tone === "bad" ? "bad" : h.tone === "warn" ? "warn" : ""}>{h.text}</li>)}</ul> : <p className="v2-sub">Nothing notable recorded.</p>}
+      {cur && s && (
+        <div className="ps-sec">
+          <h3>Since last visit</h3>
+          <div>
+            <p className="v2-sub num">{fmtDate(cur.visit_at, { day: "numeric", month: "short" })} → today · {s.days.length} days</p>
+            {s.highlights.length > 0 ? <ul className="pc-bullets num">{s.highlights.slice(0, 5).map((h, i) => <li key={i} className={h.tone === "bad" ? "bad" : h.tone === "warn" ? "warn" : ""}>{h.text}</li>)}</ul> : <p className="v2-sub">Nothing notable recorded.</p>}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="ps-sec">
         <h3>Reason for this visit</h3>
@@ -426,17 +435,19 @@ function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s:
         </div>
       </div>
 
-      <div className="ps-sec">
-        <h3>Reported by the patient and family</h3>
-        <div className="num">
-          {s.symptoms.length > 0 && <ul className="pc-bullets">{s.symptoms.map((x) => <li key={x.key} className={/severe|high/i.test(x.maxSeverity) ? "bad" : "warn"}><b style={{ fontWeight: 600 }}>{x.label}</b> on {x.days} day{x.days > 1 ? "s" : ""}, last {day(x.last)}{x.maxSeverity ? ` · worst: ${x.maxSeverity.toLowerCase()}` : ""}</li>)}</ul>}
-          {d.symptomDetails.slice(0, 3).map((x, i) => <p key={i} className="v2-sub">{fmtDate(x.at, { day: "numeric", month: "short" })} · {x.key.replace(/_/g, " ")}: {x.answers.join(" · ")}</p>)}
-          {abnormal.length > 0 && <ul className="pc-bullets">{abnormal.map((x) => <li key={x.label} className="bad"><b style={{ fontWeight: 600 }}>{x.label}</b> outside limits in {x.n} of {x.of} readings, last {x.last.v1}{x.last.v2 ? `/${x.last.v2}` : ""} {x.unit} {day(x.last.t)}</li>)}</ul>}
-          {!s.symptoms.length && !abnormal.length && <p className="v2-sub">No symptoms and no out-of-range readings logged{s.symptomFreeDays ? ` · ${s.symptomFreeDays} symptom-free days` : ""}.</p>}
+      {s && (
+        <div className="ps-sec">
+          <h3>Reported by the patient and family</h3>
+          <div className="num">
+            {s.symptoms.length > 0 && <ul className="pc-bullets">{s.symptoms.map((x) => <li key={x.key} className={/severe|high/i.test(x.maxSeverity) ? "bad" : "warn"}><b style={{ fontWeight: 600 }}>{x.label}</b> on {x.days} day{x.days > 1 ? "s" : ""}, last {day(x.last)}{x.maxSeverity ? ` · worst: ${x.maxSeverity.toLowerCase()}` : ""}</li>)}</ul>}
+            {d.symptomDetails.slice(0, 3).map((x, i) => <p key={i} className="v2-sub">{fmtDate(x.at, { day: "numeric", month: "short" })} · {x.key.replace(/_/g, " ")}: {x.answers.join(" · ")}</p>)}
+            {abnormal.length > 0 && <ul className="pc-bullets">{abnormal.map((x) => <li key={x.label} className="bad"><b style={{ fontWeight: 600 }}>{x.label}</b> outside limits in {x.n} of {x.of} readings, last {x.last.v1}{x.last.v2 ? `/${x.last.v2}` : ""} {x.unit} {day(x.last.t)}</li>)}</ul>}
+            {!s.symptoms.length && !abnormal.length && <p className="v2-sub">No symptoms and no out-of-range readings logged{s.symptomFreeDays ? ` · ${s.symptomFreeDays} symptom-free days` : ""}.</p>}
+          </div>
         </div>
-      </div>
+      )}
 
-      {showAi && <div style={{ marginTop: 12 }}><ClinicalSummaryCard patientId={d.patient.id} patientName={d.patient.name} /></div>}
+      {cur && showAi && <div style={{ marginTop: 12 }}><ClinicalSummaryCard patientId={d.patient.id} patientName={d.patient.name} /></div>}
     </section>
   );
 }
