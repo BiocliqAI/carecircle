@@ -39,3 +39,20 @@
 {"id":"ESC-10","title":"Others told when one acknowledges","status":"PASS","note":"","ms":5170}
 {"id":"ESC-11","title":"Only circle members can ACK","status":"PASS","note":"","ms":5780}
 {"id":"ESC-12","title":"Ack after close","status":"PASS","note":"","ms":5644}
+{"id":"ESC-13","title":"Acknowledge from the dashboard, then close","status":"PASS","note":"","ms":5602}
+{"id":"ESC-14","title":"Acknowledged alert does not time out","status":"PASS","note":"","ms":5531}
+{"id":"ESC-15","title":"Plan overrides timers","status":"PASS","note":"","ms":5603}
+{"id":"ESC-16","title":"Declined caregiver is skipped","status":"FAIL","note":"BUG: after Arjun declined consent (told \"You won't receive care-circle alerts\"), the timeout moved the alert to level 2 and sent Arjun 1 alert message(s) (\"⚠️ Care Circle alert — Ramesh Kumar Lakshmi Kumar hasn't responded in 60 min, so\"); Kavya (L3) got 0. notifyLevel/timeoutCaregiver pick the next level without checking consents (lib/engine.ts:392-394, 422).","ms":5430}
+{"id":"ESC-17","title":"Alert timeline","status":"PASS","note":"","ms":5936}
+{"id":"SOS-01","title":"Patient presses SOS","status":"PASS","note":"","ms":5292}
+{"id":"SOS-02","title":"Caregiver presses SOS","status":"PASS","note":"","ms":4890}
+{"id":"SOS-03","title":"SOS escalates after 15 min","status":"PASS","note":"","ms":4675}
+{"id":"SOS-04","title":"Second SOS while open","status":"PASS","note":"","ms":5412}
+{"id":"SOS-05","title":"Unlinked number","status":"PASS","note":"","ms":5143}
+{"id":"SOS-06","title":"Typed \"help\" / \"emergency\"","status":"PASS","note":"","ms":10012}
+{"id":"LOOP-01","title":"Symptom follow-up questions","status":"PASS","note":"","ms":5218}
+{"id":"LOOP-02","title":"Answer matches a rule (At rest → severe breathlessness)","status":"PASS","note":"","ms":5056}
+{"id":"LOOP-03","title":"Lying flat → orthopnoea; near-faint → fainting red flag","status":"PASS","note":"","ms":5051}
+{"id":"LOOP-04","title":"Reading interrupts the questions","status":"PASS","note":"","ms":5192}
+{"id":"LOOP-05","title":"Not asked again within 12 h","status":"PASS","note":"","ms":4893}
+{"id":"LOOP-06","title":"Recheck after an alert closes (2 h; weight next morning)","status":"PASS","note":"","ms":4973}

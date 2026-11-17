@@ -34,3 +34,9 @@
 {"id":"SEC-01","title":"Changing ids in URLs","status":"PASS","note":"","ms":612}
 {"id":"SEC-02","title":"Document download access","status":"PASS","note":"","ms":96}
 {"id":"SEC-03","title":"Escalation actions access","status":"PASS","note":"","ms":162}
+{"id":"SEC-04","title":"Script injection","status":"PASS","note":"","ms":23565}
+{"id":"SEC-05","title":"SQL-like input","status":"PASS","note":"","ms":520}
+{"id":"SEC-06","title":"Malformed JSON / missing fields","status":"FAIL","note":"BUG: routes that call `await req.json()` without a catch return 500 with no message on malformed JSON: POST /api/clinic -> 500 (app/api/clinic/route.ts); POST /api/demo -> 500 (app/api/demo/route.ts); POST /api/drafts -> 500 (app/api/drafts/route.ts); POST /api/escalations/6 -> 500 (app/api/escalations/[id]/route.ts); POST /api/patients/p_ramesh/baseline -> 500 (app/api/patients/[id]/baseline/route.ts); POST /api/patients/p_ramesh/caregivers -> 500 (app/api/patients/[id]/caregivers/route.ts); POST /api/patients/p_ramesh/dictate -> 500 (app/api/patients/[id]/dictate/route.ts); POST /api/patient","ms":535}
+{"id":"SEC-07","title":"Health check","status":"PASS","note":"","ms":3}
+{"id":"SEC-08","title":"Large uploads","status":"PASS","note":"","ms":3774}
+{"id":"SEC-10","title":"Audit trail","status":"PASS","note":"","ms":5442}
