@@ -1,0 +1,17 @@
+{"id":"AUTH-01","title":"Persona picker lists all users","status":"PASS","note":"","ms":1651}
+{"id":"AUTH-02","title":"Sign out","status":"PASS","note":"","ms":968}
+{"id":"AUTH-03","title":"Unknown user id","status":"PASS","note":"","ms":18}
+{"id":"AUTH-04","title":"Doctor sees only own patients","status":"PASS","note":"","ms":969}
+{"id":"AUTH-05","title":"Doctor cannot open another doctor's patient","status":"PASS","note":"","ms":429}
+{"id":"AUTH-06","title":"PA sees every clinic patient","status":"PASS","note":"","ms":1133}
+{"id":"AUTH-07","title":"Patient sees only their own record","status":"PASS","note":"","ms":508}
+{"id":"AUTH-08","title":"Caregiver with dashboard access","status":"PASS","note":"","ms":527}
+{"id":"AUTH-09","title":"Caregiver without dashboard access","status":"FAIL","note":"no patient view","ms":8075}
+{"id":"AUTH-10","title":"Non-clinicians blocked from clinician APIs","status":"PASS","note":"","ms":38}
+{"id":"AUTH-11","title":"Patient and caregiver cannot write clinical data","status":"FAIL","note":"BUG: care-team route lets patient/caregiver add/edit/delete consulting doctors (app/api/patients/[id]/team/route.ts:13 checks only canView, not isClinician; the UI for it, components/kidney.tsx:391, is clinician-only). PLAN: med-changes report (not review) is allowed for family by design — saved as status REPORTED, source 'dashboard', never applied (app/api/patients/[id]/med-changes/route.ts:28); review is 403. Accepted: u_ramesh POST /med-changes {\"medName\":\"Aspirin\",\"change\":\"started\", -> 200; u_ramesh POST /team {\"name\":\"Dr. Family Added\",\"specialty\":\" -> 200; u_lakshmi POST /med-changes {\"","ms":11071}
+{"id":"AUTH-13","title":"Role-specific navigation","status":"PASS","note":"","ms":2935}
+{"id":"AUTH-14","title":"Direct URL to a page not allowed for the role","status":"PASS","note":"","ms":22991}
+{"id":"WS-01","title":"Doctor Today","status":"FAIL","note":"Needs review list shows the triage queue + actual - expected [ + 'Abdul Rahman', 'Ramesh Kumar', - 'Abdul Rahman' ] ","ms":680}
+{"id":"WS-02","title":"Mark reviewed","status":"FAIL","note":"page.waitForFunction: Timeout 20000ms exceeded.","ms":25529}
+{"id":"WS-03","title":"PA Today tasks","status":"FAIL","note":"label Consent pending","ms":1050}
+{"id":"WS-04","title":"Task clears when done","status":"FAIL","note":"BUG: tasks not cleared after completion: care circle not responding (still: \"In 2 weeks, primary New missed 3 of 4 alerts. Check the number or add someone else.\") (circle task counts TIMEOUT events per level, not per person, so replacing the person cannot clear it — lib/patasks.ts:111-119). Missing from Done today: document filed, medicine change flagged — the DONE map in lib/patasks.ts:133 has no entry for DOCUMENT_VERIFIED/DOCUMENT_AUTOFILED (filing), MED_CHANGE_* (review), and flagging a change for the visit writes no audit row (app/api/patients/[id]/prep/route.ts:27-33). Done today = [\"Upd","ms":1761}

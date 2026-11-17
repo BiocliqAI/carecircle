@@ -1,0 +1,5 @@
+{"id":"RULE-10","title":"Weight below band","status":"PASS","note":"","ms":4904}
+{"id":"RULE-11","title":"Very low sugar","status":"PASS","note":"","ms":5859}
+{"id":"RULE-12","title":"Low / high sugar","status":"PASS","note":"","ms":5204}
+{"id":"RULE-13","title":"Pulse outside limits (+ borderline recheck)","status":"PASS","note":"","ms":5242}
+{"id":"RULE-14","title":"Very low oxygen (Abdul)","status":"PASS","note":"","ms":5403}
