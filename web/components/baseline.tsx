@@ -212,9 +212,32 @@ export interface ConsentView {
 }
 type StoredBaseline = Baseline & { capturedAt: number; capturedBy: string | null; updatedAt: number };
 
+/** A person's latest real-WhatsApp delivery (mirrors DeliveryView in lib/whatsapp.ts; care team only). */
+export interface DeliveryView {
+  status: string;
+  label: string;
+  tone: "good" | "warn" | "bad" | "";
+  reason: string | null;
+  at: number;
+}
+export type DeliveryMap = Record<string, DeliveryView>;
+
 const CONSENT_BADGE: Record<string, [string, string]> = { GIVEN: ["good", "✓ Consented"], PENDING: ["warn", "Awaiting YES"], DECLINED: ["bad", "Declined"] };
 
-export function ConsentList({ consents, people }: { consents: ConsentView[]; people: { user_id: string | null; label: string }[] }) {
+/** "WhatsApp: Delivered", with the reason underneath when something is wrong. */
+export function DeliveryLine({ d, compact }: { d: DeliveryView | undefined; compact?: boolean }) {
+  if (!d) return null;
+  const color = d.tone === "bad" ? "var(--c-red, #b42318)" : d.tone === "warn" ? "var(--c-amber, #9a4a06)" : d.tone === "good" ? "var(--c-green, #067647)" : "var(--c-mute, #667085)";
+  if (compact && d.tone !== "bad" && d.tone !== "warn") return null;
+  return (
+    <div style={{ fontSize: 12.5, color, marginTop: 2 }} title={`Last WhatsApp message ${fmtDate(d.at)}`}>
+      <b style={{ fontWeight: 600 }}>WhatsApp: {d.label}</b>
+      {d.reason && <span> · {d.reason}</span>}
+    </div>
+  );
+}
+
+export function ConsentList({ consents, people, delivery }: { consents: ConsentView[]; people: { user_id: string | null; label: string }[]; delivery?: DeliveryMap }) {
   if (!consents.length) return null;
   return (
     <div className="stack" style={{ gap: 6 }}>
@@ -223,9 +246,12 @@ export function ConsentList({ consents, people }: { consents: ConsentView[]; peo
         if (!c) return null;
         const [cls, txt] = CONSENT_BADGE[c.status];
         return (
-          <div key={p.user_id} className="row between">
-            <span>{p.label}</span>
-            <span className={`badge ${cls}`} title={c.responded_at ? `Replied ${fmtDate(c.responded_at)}` : `Asked ${fmtDate(c.requested_at)}`}>{txt}</span>
+          <div key={p.user_id}>
+            <div className="row between">
+              <span>{p.label}</span>
+              <span className={`badge ${cls}`} title={c.responded_at ? `Replied ${fmtDate(c.responded_at)}` : `Asked ${fmtDate(c.requested_at)}`}>{txt}</span>
+            </div>
+            {p.user_id && <DeliveryLine d={delivery?.[p.user_id]} />}
           </div>
         );
       })}

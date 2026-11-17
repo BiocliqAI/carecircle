@@ -47,8 +47,36 @@ export function e164(raw: string | null | undefined): string | null {
   else if (d.startsWith("00")) d = d.slice(2);
   else if (d.length === 11 && d.startsWith("0")) d = "91" + d.slice(1);
   else if (d.length === 10) d = "91" + d;
+  if (/^910[6-9]\d{9}$/.test(d)) d = "91" + d.slice(3); // "+91 0 98860 20001": the trunk 0 doesn't belong after +91
   return /^\d{8,15}$/.test(d) ? `+${d}` : null;
 }
+
+/**
+ * A WhatsApp number as typed by the clinic → how it is stored ("+91 98860 20001", or "+<digits>" for other countries).
+ * Throws a message for the form when the number can't be meant for WhatsApp, rather than guessing:
+ * without a country code only an Indian mobile number is accepted, so a foreign number can't silently become +91.
+ */
+export function normalizePhone(raw: string | null | undefined, who = "the WhatsApp number"): string {
+  const typed = (raw ?? "").trim();
+  if (!typed) throw new Error(`Enter ${who}`);
+  if (/[^\d\s+().-]/.test(typed.replace(/^whatsapp:/i, ""))) throw new Error(`${cap(who)} can only contain digits, spaces and a leading +`);
+  const international = /^(\+|00)/.test(typed.replace(/^whatsapp:/i, "").trim());
+  const d = typed.replace(/\D/g, "");
+  let full: string;
+  if (international) full = d.replace(/^00/, "");
+  else if (/^[6-9]\d{9}$/.test(d)) full = "91" + d;
+  else if (/^0[6-9]\d{9}$/.test(d)) full = "91" + d.slice(1);
+  else if (/^91[6-9]\d{9}$/.test(d)) full = d;
+  else throw new Error(`Add the country code to ${who}, e.g. +91 98860 20001 or +1 415 555 0100`);
+  if (/^910[6-9]\d{9}$/.test(full)) full = "91" + full.slice(3);
+  if (full.startsWith("91")) {
+    if (!/^91[6-9]\d{9}$/.test(full)) throw new Error(`${cap(who)} doesn't look like an Indian mobile number: after +91 it needs 10 digits starting with 6, 7, 8 or 9`);
+    return `+91 ${full.slice(2, 7)} ${full.slice(7)}`;
+  }
+  if (!/^[1-9]\d{7,14}$/.test(full)) throw new Error(`${cap(who)} is not a valid international number`);
+  return `+${full}`;
+}
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // ---------------------------------------------------------------- webhook signatures
 /** X-Twilio-Signature: base64 HMAC-SHA1 of the full URL followed by each POST param (sorted by name) as name+value. */

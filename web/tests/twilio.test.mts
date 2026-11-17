@@ -62,6 +62,19 @@ describe("twilio: numbers and signatures", () => {
     assert.equal(tw.e164("9886020003"), "+919886020003");
     assert.equal(tw.e164("whatsapp:+14155238886"), "+14155238886");
     assert.equal(tw.e164("12"), null);
+    assert.equal(tw.e164("+91 0 98860 20001"), "+919886020001", "a trunk 0 typed after +91 still matches");
+  });
+  it("normalises a typed WhatsApp number for storage, or says what is wrong with it", () => {
+    for (const typed of ["9886020001", "098860 20001", "+91 98860 20001", "0091 98860-20001", "919886020001", "+91 0 98860 20001", "whatsapp:+919886020001"])
+      assert.equal(tw.normalizePhone(typed), "+91 98860 20001", typed);
+    assert.equal(tw.normalizePhone("+1 (415) 555-0100"), "+14155550100");
+    assert.equal(tw.normalizePhone("+44 7700 900123"), "+447700900123");
+    assert.throws(() => tw.normalizePhone("4155550100"), /country code/, "a 10-digit number that isn't an Indian mobile isn't guessed as +91");
+    assert.throws(() => tw.normalizePhone("+91 40 2345 6789"), /Indian mobile/);
+    assert.throws(() => tw.normalizePhone("+91 98860 2000"), /Indian mobile/);
+    assert.throws(() => tw.normalizePhone("98860 20001 ext 2"), /digits/);
+    assert.throws(() => tw.normalizePhone("  "), /Enter/);
+    assert.throws(() => tw.normalizePhone("123", "caregiver 1's WhatsApp number"), /caregiver 1's WhatsApp number/);
   });
   it("finds patients and caregivers by WhatsApp number, never clinic staff", () => {
     assert.equal(wa.userByPhone("whatsapp:+919886020001")?.id, "u_pat");
@@ -266,6 +279,30 @@ describe("twilio: delivery", () => {
     wa.deliveryStatus(sid, "read", null);
     wa.deliveryStatus(sid, "failed", "30008");
     assert.equal(status(id).wa_status, "read");
+  });
+
+  it("explains each person's latest delivery to the clinic", async () => {
+    run("DELETE FROM messages");
+    openWindow("u_pat");
+    const ok = send("u_pat", "Hello");
+    await wa.deliveriesSettled();
+    wa.deliveryStatus(get<{ wa_sid: string }>("SELECT wa_sid FROM messages WHERE id = ?", ok)!.wa_sid, "delivered", null);
+    assert.deepEqual(wa.deliveryOf(["u_pat"]).u_pat && { label: wa.deliveryOf(["u_pat"]).u_pat.label, tone: wa.deliveryOf(["u_pat"]).u_pat.tone }, { label: "Delivered", tone: "good" });
+
+    openWindow("u_cg");
+    failNext = { code: 63003, message: "Channel could not find To address" };
+    send("u_cg", "Hello Lakshmi");
+    await wa.deliveriesSettled();
+    const cg = wa.deliveryOf(["u_cg"]).u_cg;
+    assert.equal(cg.tone, "bad");
+    assert.match(cg.reason!, /isn't on WhatsApp|doesn't seem to be on WhatsApp/);
+
+    // The allowlist and a missing template are named, since those are server settings to fix.
+    run("UPDATE messages SET wa_status = 'skipped', wa_error = 'Number not on WHATSAPP_ALLOWLIST' WHERE user_id = 'u_cg'");
+    assert.match(wa.deliveryOf(["u_cg"]).u_cg.reason!, /WHATSAPP_ALLOWLIST/);
+    run("UPDATE messages SET wa_status = 'waiting', wa_error = 'Outside the 24-hour window and no TWILIO_TEMPLATE_UPDATE is set' WHERE user_id = 'u_cg'");
+    assert.match(wa.deliveryOf(["u_cg"]).u_cg.reason!, /TWILIO_TEMPLATE_UPDATE isn't set/);
+    assert.deepEqual(wa.deliveryOf(["u_dr", null]), {}, "nothing for someone never messaged");
   });
 
   it("splits long messages on line breaks within Twilio's limit", () => {

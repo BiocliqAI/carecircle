@@ -119,10 +119,12 @@ async function deliver(cfg: TwilioConfig, id: number) {
   } catch (e) {
     // 63016: outside the 24-hour window after all (e.g. the window was opened from another device's chat).
     if (e instanceof TwilioError && e.code === 63016) return void (await hold(cfg, row, to));
-    mark(id, "failed", null, (e as Error).message.slice(0, 300));
+    mark(id, "failed", null, errorText(e));
     console.error("[whatsapp] send failed", id, (e as Error).message);
   }
 }
+
+const errorText = (e: unknown) => ((e instanceof TwilioError && e.code ? `Twilio error ${e.code}: ` : "") + (e as Error).message).slice(0, 300);
 
 /** A free-form message (inside the window), split if long, with its buttons as WhatsApp buttons when they fit. */
 async function sendSession(cfg: TwilioConfig, row: Row, to: string): Promise<string> {
@@ -206,7 +208,7 @@ async function hold(cfg: TwilioConfig, row: Row, to: string) {
     await twilioSend(cfg, to, { contentSid: tpl, variables });
     setSetting(key, String(Date.now()));
   } catch (e) {
-    mark(row.id, "waiting", null, `Template not sent: ${(e as Error).message}`.slice(0, 300));
+    mark(row.id, "waiting", null, `Template not sent: ${errorText(e)}`.slice(0, 300));
     console.error("[whatsapp] template failed", row.id, (e as Error).message);
   }
 }
@@ -240,8 +242,67 @@ async function deliverWaiting(cfg: TwilioConfig, id: number) {
   try {
     mark(id, "sent", await sendSession(cfg, row, to));
   } catch (e) {
-    mark(id, "failed", null, (e as Error).message.slice(0, 300));
+    mark(id, "failed", null, errorText(e));
   }
+}
+
+// ---------------------------------------------------------------- delivery status for the clinic
+export interface DeliveryView {
+  status: string; // the latest message's wa_status
+  label: string;
+  tone: "good" | "warn" | "bad" | "";
+  reason: string | null; // what went wrong (or what it is waiting for), in plain words
+  at: number;
+}
+
+/** Twilio / Meta error codes a clinic is likely to hit, explained. */
+const TWILIO_CODES: Record<string, string> = {
+  "63003": "This number doesn't seem to be on WhatsApp. Check it with the person.",
+  "63024": "WhatsApp says this isn't a valid recipient. Check the number and its country code.",
+  "21211": "Twilio says this isn't a valid phone number. Check the number and its country code.",
+  "21610": "This person has blocked or unsubscribed from the clinic's WhatsApp number.",
+  "63049": "Meta chose not to deliver this message (limits on business messages). It will be retried with the next message.",
+  "63018": "Too many messages too quickly. It should go through on the next try.",
+  "63112": "The clinic's WhatsApp Business account is restricted. Check WhatsApp Manager.",
+  "63016": "Outside WhatsApp's 24-hour window and the template couldn't be sent.",
+  "20003": "Twilio rejected the credentials. Check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.",
+  "20429": "Twilio is rate-limiting the account. It should go through on the next try.",
+  "21606": "The clinic's sending number isn't set up for WhatsApp in Twilio. Check TWILIO_WHATSAPP_FROM.",
+};
+
+function explain(status: string, error: string | null): Omit<DeliveryView, "at" | "status"> {
+  const code = error?.match(/\b(2\d{4}|6\d{4})\b/)?.[1];
+  const known = code ? TWILIO_CODES[code] : undefined;
+  switch (status) {
+    case "read": return { label: "Read", tone: "good", reason: null };
+    case "delivered": return { label: "Delivered", tone: "good", reason: null };
+    case "sent": return { label: "Sent", tone: "", reason: "Handed to WhatsApp; not yet confirmed as delivered." };
+    case "pending": return { label: "Sending", tone: "", reason: null };
+    case "skipped": return { label: "Not sent", tone: "bad", reason: /ALLOWLIST/.test(error ?? "") ? "This number isn't on WHATSAPP_ALLOWLIST. Remove that setting (or add the number) to message everyone." : error };
+    case "expired": return { label: "Not delivered", tone: "warn", reason: /window/.test(error ?? "") ? "They didn't open WhatsApp within a day, so it expired. Resend it." : "It was too old to send by the time it was ready. Resend it." };
+    case "waiting": {
+      if (!error) return { label: "Waiting for them", tone: "warn", reason: "They were sent a WhatsApp notification. The message arrives when they tap Show message or reply." };
+      if (/^Held until/.test(error)) return { label: "Held", tone: "", reason: "A routine update: it arrives the next time they message the clinic." };
+      if (/no TWILIO_TEMPLATE/.test(error)) return { label: "Can't send", tone: "bad", reason: `They haven't messaged the clinic in the last 24 hours, and ${error.match(/TWILIO_TEMPLATE_\w+/)?.[0]} isn't set, so WhatsApp won't allow the message. Set the approved template on the server.` };
+      return { label: "Can't send", tone: "bad", reason: known ?? `The WhatsApp notification failed: ${error.replace(/^Template not sent: /, "")}. Check the template is approved and its HX… SID is right.` };
+    }
+    case "failed":
+      if (/No valid WhatsApp number/.test(error ?? "")) return { label: "Failed", tone: "bad", reason: "No valid WhatsApp number on file. Edit the number and include the country code." };
+      return { label: "Failed", tone: "bad", reason: known ?? error };
+    default: return { label: status, tone: "", reason: error };
+  }
+}
+
+/** Each person's latest real-WhatsApp delivery (nothing when real WhatsApp isn't switched on). */
+export function deliveryOf(userIds: (string | null | undefined)[]): Record<string, DeliveryView> {
+  const out: Record<string, DeliveryView> = {};
+  for (const uid of new Set(userIds.filter((u): u is string => !!u))) {
+    const r = get<{ wa_status: string; wa_error: string | null; created_at: number }>(
+      "SELECT wa_status, wa_error, created_at FROM messages WHERE user_id = ? AND direction = 'OUT' AND wa_status IS NOT NULL ORDER BY created_at DESC, id DESC LIMIT 1", uid,
+    );
+    if (r) out[uid] = { status: r.wa_status, at: r.created_at, ...explain(r.wa_status, r.wa_error) };
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- delivery receipts

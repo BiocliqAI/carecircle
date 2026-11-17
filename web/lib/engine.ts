@@ -5,6 +5,7 @@ import { all, audit, get, getSetting, run, setSetting, tx } from "./db";
 import { now, setSimNow } from "./clock";
 import { parseMessage } from "./parser";
 import { sendWhatsApp, templateLine } from "./whatsapp";
+import { e164 } from "./twilio";
 import { DAY, HOUR, MIN, atLocal, dayKey, dayStart, fmtDate, fmtTime, localDow, localHHMM } from "./time";
 import { clarify, pickOption, type ClarifyOption } from "./clarify";
 import { buildDigest } from "./digest";
@@ -1299,7 +1300,9 @@ export interface OnboardInput {
 export function onboardPatient(input: OnboardInput, t: number, actor: string): string {
   const slug = input.name.toLowerCase().replace(/[^a-z]+/g, "_").replace(/^_|_$/g, "").slice(0, 20) + "_" + (t % 100000);
   const pid = `p_${slug}`;
-  if (get("SELECT 1 FROM patients WHERE phone = ?", input.phone)) throw new Error("A patient with this WhatsApp number already exists");
+  const want = e164(input.phone) ?? input.phone;
+  const samePhone = (x: string | null) => (e164(x) ?? x) === want;
+  if (all<{ phone: string | null }>("SELECT phone FROM patients").some((r) => samePhone(r.phone))) throw new Error("A patient with this WhatsApp number already exists");
   const clinic = clinicName();
   tx(() => {
     const uid = `u_${slug}`;
@@ -1308,7 +1311,8 @@ export function onboardPatient(input: OnboardInput, t: number, actor: string): s
     const docU = getUser(input.doctorId);
     if (docU) run("INSERT INTO care_team(patient_id, name, specialty, role, user_id) VALUES(?,?,?,?,?)", pid, docU.name, docU.title, "PRIMARY", docU.id);
     for (const c of input.caregivers.filter((c) => c.name && c.phone).slice(0, MAX_CAREGIVERS)) {
-      let cu = get<{ id: string }>("SELECT id FROM users WHERE phone = ? AND role = 'CAREGIVER'", c.phone)?.id;
+      const cgPhone = e164(c.phone) ?? c.phone;
+      let cu = all<{ id: string; phone: string | null }>("SELECT id, phone FROM users WHERE role = 'CAREGIVER'").find((u) => (e164(u.phone) ?? u.phone) === cgPhone)?.id;
       if (!cu) {
         cu = `u_cg_${slug}_${c.level}`;
         run("INSERT INTO users(id, name, role, phone, title) VALUES(?,?,?,?,?)", cu, c.name, "CAREGIVER", c.phone, `${c.relation} of ${first(input.name)}`);

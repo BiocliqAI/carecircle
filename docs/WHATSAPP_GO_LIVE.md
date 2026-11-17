@@ -93,5 +93,6 @@ These two webhook paths skip the `APP_PASSWORD` gate. Instead they check Twilio'
 
 - The simulator's red **Call for help** button has no WhatsApp equivalent. On real WhatsApp, people raise an emergency by typing it (e.g. "chest pain"), which the engine already handles.
 - Voice-note length isn't known for real WhatsApp audio, so the file title doesn't include it.
-- Failed deliveries are recorded (`wa_status`), but not yet shown in the clinic UI.
+- Each person's latest delivery is shown to the care team on the patient's care circle and consent list ("WhatsApp: Delivered", or what went wrong: not on the allowlist, template not set, number not on WhatsApp…). Only the latest message is shown; older failures are in `messages.wa_status`.
+- WhatsApp numbers are stored in full international form (`+91 98860 20001`). Without a country code only an Indian mobile number is accepted, so a foreign number is never silently saved as +91.
 - Only one server instance: the per-person send queue is held in memory (fine with `numReplicas: 1`).

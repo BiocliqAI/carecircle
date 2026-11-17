@@ -2,7 +2,7 @@
 // Record maintenance tabs on Patient 360 (doctor / PA): profile & care circle, notes, documents.
 import { useEffect, useState } from "react";
 import { api } from "./client";
-import { ConsentList, type ConsentView } from "./baseline";
+import { ConsentList, type ConsentView, type DeliveryMap } from "./baseline";
 import { Dictate } from "./Dictate";
 import { ClinicalHistoryCard } from "./ClinicalHistoryCard";
 import { fmtDate, fmtDateTime } from "@/lib/time";
@@ -21,13 +21,13 @@ const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const kb = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 // ---------------------------------------------------------------- profile + care circle
-export function ProfileTab({ patient, caregivers, consents, onChange, children }: { patient: ProfilePatient; caregivers: ProfileCaregiver[]; consents: ConsentView[]; onChange: () => void; children?: React.ReactNode }) {
+export function ProfileTab({ patient, caregivers, consents, delivery, onChange, children }: { patient: ProfilePatient; caregivers: ProfileCaregiver[]; consents: ConsentView[]; delivery?: DeliveryMap; onChange: () => void; children?: React.ReactNode }) {
   return (
     <div className="grid side">
       <div className="stack gap16">
         <DetailsCard p={patient} onChange={onChange} />
         <ClinicalHistoryCard pid={patient.id} />
-        <CareCircleCard pid={patient.id} patient={patient} caregivers={caregivers} consents={consents} onChange={onChange} />
+        <CareCircleCard pid={patient.id} patient={patient} caregivers={caregivers} consents={consents} delivery={delivery} onChange={onChange} />
       </div>
       <div className="stack gap16">{children}</div>
     </div>
@@ -205,7 +205,7 @@ export function DeletePatientCard({ p }: { p: ProfilePatient }) {
 
 interface CgDraft { id?: string; name: string; relation: string; phone: string; dashboard: boolean }
 
-export function CareCircleCard({ pid, patient, caregivers, consents, onChange }: { pid: string; patient: ProfilePatient; caregivers: ProfileCaregiver[]; consents: ConsentView[]; onChange: () => void }) {
+export function CareCircleCard({ pid, patient, caregivers, consents, delivery, onChange }: { pid: string; patient: ProfilePatient; caregivers: ProfileCaregiver[]; consents: ConsentView[]; delivery?: DeliveryMap; onChange: () => void }) {
   const [edit, setEdit] = useState(false);
   const [rows, setRows] = useState<CgDraft[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -253,7 +253,7 @@ export function CareCircleCard({ pid, patient, caregivers, consents, onChange }:
           {consents.length > 0 && (
             <>
               <h4 style={{ marginTop: 6 }}>WhatsApp consent</h4>
-              <ConsentList consents={consents} people={people} />
+              <ConsentList consents={consents} people={people} delivery={delivery} />
             </>
           )}
         </div>
