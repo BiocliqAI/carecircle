@@ -405,23 +405,16 @@ function SummaryPane({ d, s, onSec, showAi, setShowAi, onChange }: { d: Data; s:
         <div>
           {r?.oneGlance ? <p>{clip(r.oneGlance, 600)}</p> : d.patient.conditions ? <p><b style={{ fontWeight: 600 }}>{d.patient.conditions}</b></p> : null}
           {r && r.conditions.length > 0 && (
-            <ul className="ps-condlist">
+            <p className="ps-conds">
               {r.conditions.map((c) => {
-                // Newest diagnosis first. Each row carries the whole entry: status with its value, when diagnosed, treatment.
-                const word = c.status.match(/uncontrolled|controlled|improving|worsening|stable/i)?.[0].toLowerCase();
-                const rest = c.status.replace(/^(uncontrolled|controlled|improving|worsening|stable)\b[\s,;:.-]*/i, "").trim();
-                const meta = [c.diagnosed ? `Diagnosed ${c.diagnosed}` : "", rest, c.treatment ? `On ${c.treatment}` : ""].filter(Boolean);
-                return (
-                  <li key={c.name}>
-                    <div className="row between" style={{ gap: 8, flexWrap: "nowrap", alignItems: "baseline" }}>
-                      <b style={{ fontWeight: 600 }}>{c.name}</b>
-                      {word && <span className={`v2-pill ${/uncontrolled|worsening/.test(word) ? "amber" : /controlled|improving/.test(word) ? "green" : "grey"}`}>{word}</span>}
-                    </div>
-                    {meta.length > 0 && <div className="v2-sub">{meta.join(" · ")}</div>}
-                  </li>
-                );
+                // A pill per condition, newest diagnosis first: the name, then when it was diagnosed and its status with the
+                // latest value. The whole entry (treatment and advice too) shows on hover.
+                const year = c.diagnosed.match(/\b(19|20)\d{2}\b/g)?.pop();
+                const data = [year ?? clip(c.diagnosed, 24), c.status ? clip(c.status.charAt(0).toLowerCase() + c.status.slice(1), 48) : ""].filter(Boolean).join(" · ");
+                const tone = /uncontrolled|worsening/i.test(c.status) ? "amber" : /controlled|improving/i.test(c.status) ? "green" : "grey";
+                return <span key={c.name} className={`v2-pill ${tone}`} title={c.detail}><b>{c.name}</b>{data ? <span> · {data}</span> : null}</span>;
               })}
-            </ul>
+            </p>
           )}
           {!r?.oneGlance && history.map((h, i) => <p key={i}>{clip(h, 320)}</p>)}
           {!r?.oneGlance && !d.patient.conditions && !history.length && <p className="v2-sub">No history recorded yet. Add the patient&rsquo;s past records on the Profile tab to build one.</p>}
