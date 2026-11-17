@@ -56,3 +56,7 @@
 {"id":"LOOP-04","title":"Reading interrupts the questions","status":"PASS","note":"","ms":5192}
 {"id":"LOOP-05","title":"Not asked again within 12 h","status":"PASS","note":"","ms":4893}
 {"id":"LOOP-06","title":"Recheck after an alert closes (2 h; weight next morning)","status":"PASS","note":"","ms":4973}
+{"id":"LOOP-07","title":"Recheck normal → closer told","status":"PASS","note":"","ms":4881}
+{"id":"LOOP-08","title":"Recheck still out of range → alert without the borderline hold","status":"PASS","note":"","ms":4941}
+{"id":"LOOP-09","title":"No recheck → caregiver told","status":"PASS","note":"","ms":4952}
+{"id":"LOOP-10","title":"No recheck after hospital (3)","status":"PASS","note":"","ms":5052}
