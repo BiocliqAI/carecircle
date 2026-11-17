@@ -10,3 +10,33 @@
 {"id":"AUTH-10","title":"Non-clinicians blocked from clinician APIs","status":"PASS","note":"","ms":39}
 {"id":"AUTH-11","title":"Patient and caregiver cannot write clinical data","status":"FAIL","note":"BUG: care-team route lets patient/caregiver add/edit/delete consulting doctors (app/api/patients/[id]/team/route.ts:13 checks only canView, not isClinician; the UI for it, components/kidney.tsx:391, is clinician-only). PLAN: med-changes report (not review) is allowed for family by design — saved as status REPORTED, source 'dashboard', never applied (app/api/patients/[id]/med-changes/route.ts:28); review is 403. Accepted: u_ramesh POST /med-changes {\"medName\":\"Aspirin\",\"change\":\"started\", -> 200; u_ramesh POST /team {\"name\":\"Dr. Family Added\",\"specialty\":\" -> 200; u_lakshmi POST /med-changes {\"","ms":10979}
 {"id":"AUTH-13","title":"Role-specific navigation","status":"PASS","note":"","ms":2653}
+{"id":"AUTH-14","title":"Direct URL to a page not allowed for the role","status":"PASS","note":"","ms":23159}
+{"id":"WS-01","title":"Doctor Today","status":"PASS","note":"","ms":1274}
+{"id":"WS-02","title":"Mark reviewed","status":"PASS","note":"","ms":5659}
+{"id":"WS-03","title":"PA Today tasks","status":"PASS","note":"","ms":723}
+{"id":"WS-04","title":"Task clears when done","status":"FAIL","note":"BUG: tasks not cleared after completion: care circle not responding (still: \"In 2 weeks, primary New missed 3 of 4 alerts. Check the number or add someone else.\") (circle task counts TIMEOUT events per level, not per person, so replacing the person cannot clear it — lib/patasks.ts:111-119). Missing from Done today: document filed, medicine change flagged — the DONE map in lib/patasks.ts:133 has no entry for DOCUMENT_VERIFIED/DOCUMENT_AUTOFILED (filing), MED_CHANGE_* (review), and flagging a change for the visit writes no audit row (app/api/patients/[id]/prep/route.ts:27-33). Done today = [\"Upd","ms":1285}
+{"id":"WS-05","title":"Patient chart","status":"PASS","note":"","ms":11898}
+{"id":"WS-06","title":"Patient table","status":"PASS","note":"","ms":1299}
+{"id":"WS-07","title":"Notes","status":"PASS","note":"","ms":548}
+{"id":"WS-08","title":"Care team","status":"PASS","note":"","ms":25}
+{"id":"WS-09","title":"AI summary / pre-visit brief [AI off]","status":"PASS","note":"","ms":563}
+{"id":"WS-10","title":"Ask the record [AI off]","status":"PASS","note":"","ms":31}
+{"id":"WS-11","title":"Med change review","status":"PASS","note":"","ms":10686}
+{"id":"WS-12","title":"Kidney view","status":"FAIL","note":"BUG: no \"fluid today vs limit\" badge (expected like \"💧 Today 1325 / 1000 ml\"). The API returns fluidToday (app/api/patients/[id]/route.ts:109) and KidneyBadges renders it (components/kidney.tsx:25-30), but KidneyBadges is only used by components/PatientView.tsx:142, which no page renders; the patient chart (components/PatientChart.tsx) never shows it.","ms":3683}
+{"id":"WS-13","title":"Assistants page","status":"PASS","note":"","ms":377}
+{"id":"WS-14","title":"Dashboard API isolation","status":"PASS","note":"","ms":79}
+{"id":"FAM-01","title":"Family home","status":"PASS","note":"","ms":751}
+{"id":"FAM-02","title":"Nothing scheduled","status":"PASS","note":"","ms":6504}
+{"id":"FAM-03","title":"Read-only for patient","status":"PASS","note":"","ms":893}
+{"id":"FAM-04","title":"Caregiver closes an alert from the web","status":"PASS","note":"","ms":7103}
+{"id":"FAM-05","title":"Outside visit from the web","status":"PASS","note":"","ms":6955}
+{"id":"FAM-06","title":"Mobile layout","status":"FAIL","note":"BUG: u_lakshmi@390: horizontal scroll (420 > 390); u_lakshmi@390: off-screen controls BUTTON:⇄ Switch persona; u_ramesh@390: horizontal scroll (420 > 390); u_ramesh@390: off-screen controls BUTTON:⇄ Switch persona. The family top bar (Brand + Help + name chip + \"⇄ Switch persona\") does not wrap or shrink: .topbar is a single nowrap flex row with 24px padding and no mobile rule (app/globals.css:45-49; markup components/AppShell.tsx SimpleBar), so at 390 px the page is 420 px wide and the Switch persona button sits partly off-screen.","ms":5834}
+{"id":"SEC-01","title":"Changing ids in URLs","status":"PASS","note":"","ms":662}
+{"id":"SEC-02","title":"Document download access","status":"PASS","note":"","ms":64}
+{"id":"SEC-03","title":"Escalation actions access","status":"PASS","note":"","ms":184}
+{"id":"SEC-04","title":"Script injection","status":"PASS","note":"","ms":23544}
+{"id":"SEC-05","title":"SQL-like input","status":"PASS","note":"","ms":685}
+{"id":"SEC-06","title":"Malformed JSON / missing fields","status":"FAIL","note":"BUG: routes that call `await req.json()` without a catch return 500 with no message on malformed JSON: POST /api/clinic -> 500 (app/api/clinic/route.ts); POST /api/demo -> 500 (app/api/demo/route.ts); POST /api/drafts -> 500 (app/api/drafts/route.ts); POST /api/escalations/6 -> 500 (app/api/escalations/[id]/route.ts); POST /api/patients/p_ramesh/baseline -> 500 (app/api/patients/[id]/baseline/route.ts); POST /api/patients/p_ramesh/caregivers -> 500 (app/api/patients/[id]/caregivers/route.ts); POST /api/patients/p_ramesh/dictate -> 500 (app/api/patients/[id]/dictate/route.ts); POST /api/patient","ms":508}
+{"id":"SEC-07","title":"Health check","status":"PASS","note":"","ms":6}
+{"id":"SEC-08","title":"Large uploads","status":"PASS","note":"","ms":2070}
+{"id":"SEC-10","title":"Audit trail","status":"PASS","note":"","ms":5556}

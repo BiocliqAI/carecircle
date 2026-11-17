@@ -1,30 +1,4 @@
-{"id":"LOOP-01","title":"Symptom follow-up questions","status":"PASS","note":"","ms":5334}
-{"id":"LOOP-02","title":"Answer matches a rule (At rest → severe breathlessness)","status":"PASS","note":"","ms":5362}
-{"id":"LOOP-03","title":"Lying flat → orthopnoea; near-faint → fainting red flag","status":"PASS","note":"","ms":4946}
-{"id":"LOOP-04","title":"Reading interrupts the questions","status":"PASS","note":"","ms":4987}
-{"id":"LOOP-05","title":"Not asked again within 12 h","status":"PASS","note":"","ms":4985}
-{"id":"LOOP-06","title":"Recheck after an alert closes (2 h; weight next morning)","status":"PASS","note":"","ms":5167}
-{"id":"LOOP-07","title":"Recheck normal → closer told","status":"PASS","note":"","ms":5396}
-{"id":"LOOP-08","title":"Recheck still out of range → alert without the borderline hold","status":"PASS","note":"","ms":4942}
-{"id":"LOOP-09","title":"No recheck → caregiver told","status":"PASS","note":"","ms":5303}
-{"id":"LOOP-10","title":"No recheck after hospital (3)","status":"PASS","note":"","ms":4906}
-{"id":"LOOP-11","title":"Recheck already in the plan → no extra request","status":"PASS","note":"","ms":5060}
-{"id":"WATCH-01","title":"Weight creep","status":"FAIL","note":"weight-creep watch open 0 !== 1 ","ms":5131}
-{"id":"WATCH-07","title":"Not repeated next morning","status":"BLOCKED","note":"WATCH-01 did not open a watch","ms":0}
-{"id":"WATCH-05","title":"Dismiss","status":"BLOCKED","note":"WATCH-01 did not open a watch","ms":1}
-{"id":"WATCH-06","title":"Turn a pattern off","status":"BLOCKED","note":"WATCH-01 sequence did not run","ms":0}
-{"id":"WATCH-02","title":"BP drift","status":"FAIL","note":"bp_drift raised (watches: [{\"key\":\"weight_creep\",\"state\":\"CLEARED\"},{\"key\":\"fluid_buildup\",\"state\":\"CLEARED\"},{\"key\":\"adherence_slip\",\"state\":\"OPEN\"}])","ms":5418}
-{"id":"WATCH-04","title":"Adherence slip","status":"PASS","note":"","ms":1}
-{"id":"WATCH-03","title":"Fluid build-up","status":"PASS","note":"","ms":5671}
-{"id":"DOC-01","title":"Device photo [AI±]","status":"PASS","note":"","ms":5538}
-{"id":"DOC-02","title":"Device photo rejected","status":"PASS","note":"","ms":5739}
-{"id":"DOC-03","title":"Prescription / lab photo [AI±]","status":"FAIL","note":"Expected values to be strictly equal: 'other' !== 'lab' ","ms":5360}
-{"id":"DOC-04","title":"Nothing filed before confirmation","status":"PASS","note":"","ms":523}
-{"id":"DOC-05","title":"Confirm & file","status":"PASS","note":"","ms":37}
-{"id":"DOC-06","title":"Same report twice","status":"PASS","note":"","ms":25}
-{"id":"DOC-07","title":"PDF","status":"FAIL","note":"Expected values to be strictly equal: + actual - expected + 'other' - 'discharge' ","ms":5197}
-{"id":"DOC-08","title":"Clinic upload: edit, verify, download","status":"PASS","note":"","ms":5210}
-{"id":"DOC-09","title":"Delete document with its data","status":"PASS","note":"","ms":4954}
-{"id":"DOC-10","title":"Unsupported file (.exe / huge)","status":"FAIL","note":"PLAN: a 51 MB file is rejected (\"Files are limited to 50 MB\"), but an .exe (application/x-msdownload) is accepted and stored as document 1 with reply \"📄 Received “Document”. It's been added to the record for your care team to review. If it'\". addDocument has no type allowlist (lib/records.ts:206); the download route deliberately serves unknown types as opaque attachments (app/api/documents/[id]/route.ts:15), so this looks intentional — the plan's \"rejected\" isn't how it is designed.","ms":6303}
-{"id":"DOC-11","title":"Voice note [AI±] (typed transcript)","status":"PASS","note":"","ms":4863}
-{"id":"DOC-12","title":"Reader output never shown as real (AI off)","status":"PASS","note":"","ms":5668}
+{"id":"WATCH-01","title":"Weight creep","status":"FAIL","note":"PLAN: heads-up sent to patient and L1 once and the watch is on the chart, but not \"next morning after 09:30\": evaluateWatches also runs right after each reading (lib/engine.ts:1056), so it opened at 21:49 IST right after the 3rd reading.","ms":6340}
+{"id":"WATCH-07","title":"Not repeated next morning","status":"PASS","note":"","ms":77}
+{"id":"WATCH-05","title":"Dismiss","status":"PASS","note":"","ms":232}
+{"id":"WATCH-06","title":"Turn a pattern off","status":"FAIL","note":"control: with the pattern on, Gopal's rising weights open a watch","ms":105}

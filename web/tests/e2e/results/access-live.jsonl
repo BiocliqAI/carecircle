@@ -1,0 +1,3 @@
+{"id":"CLIN-01","title":"First run on an empty database","status":"FAIL","note":"page.waitForFunction: Timeout 20000ms exceeded.","ms":20396}
+{"id":"CLIN-02","title":"Set up the clinic","status":"PASS","note":"","ms":1082}
+{"id":"CLIN-03","title":"Add a PA and a second doctor","status":"FAIL","note":"page.waitForFunction: Timeout 20000ms exceeded.","ms":20392}

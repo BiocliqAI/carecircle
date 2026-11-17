@@ -959,6 +959,17 @@ await app.test("OUT-13", "Reject / mark reviewed", async () => {
   assert.equal((await app.api("u_lakshmi", "POST", "/api/patients/p_ramesh/outside-visits", { action: "review", id: out1Visit })).status, 403, "family can't review");
 });
 
+await app.test("OUT-03", "Doctor choice", async () => {
+  assert.ok(app.q1("SELECT 1 FROM care_team WHERE patient_id = 'p_ramesh' AND name = 'Dr Ezhilan' AND specialty = 'Cardiology'"), "precondition: a cardiologist on the care team (from OUT-01)");
+  const m = app.mark();
+  await app.wa.send("u_lakshmi", "Took Appa to the cardiologist again, he added aspirin 75 mg once daily");
+  const rep = lastReply("u_lakshmi", m);
+  assert.match(rep!.body, /Which doctor/, `asks which doctor: ${rep?.body}`);
+  const quick = JSON.parse(rep!.quick ?? "[]");
+  assert.ok(quick.includes("Dr Ezhilan"), `care-team cardiologist offered as a button; quick=${JSON.stringify(quick)}`);
+  await app.wa.send("u_lakshmi", "stop");
+});
+
 await app.test("OUT-06", "Urgent message skips it", async () => {
   const m = app.mark();
   await app.wa.send("u_neha", "We took Mum to the orthopaedic doctor, he added calcium 500 mg once daily");

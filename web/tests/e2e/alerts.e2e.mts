@@ -797,7 +797,7 @@ await T("LOOP-11", "Recheck already in the plan → no extra request", async () 
 const watchMsgs = (uid: string, m: number, re: RegExp) => out(uid, m).filter((x) => /heads-up, not an alarm/.test(x.body) && re.test(x.body));
 const watch = (pid: string, key: string) => app.q<any>("SELECT * FROM watches WHERE patient_id = ? AND key = ? ORDER BY id", pid, key);
 
-let w01: { m: number; ok: boolean } = { m: 0, ok: false };
+let w01: { m: number; ok: boolean; t: number } = { m: 0, ok: false, t: 0 };
 await T("WATCH-01", "Weight creep", async () => {
   await fresh();
   // Gopal: turn weight creep off before the same rising sequence (used by WATCH-06)
@@ -806,8 +806,8 @@ await T("WATCH-01", "Weight creep", async () => {
   const last = app.q1<any>("SELECT v1 FROM observations WHERE patient_id = 'p_ramesh' AND type = 'weight' ORDER BY observed_at DESC LIMIT 1").v1;
   const w0 = Math.round((last - 0.3) * 10) / 10;
   const m = app.mark();
-  const seq = [w0, Math.round((w0 + 0.4) * 10) / 10, Math.round((w0 + 0.9) * 10) / 10];
-  const gseq = [58.4, 58.8, 59.3];
+  const seq = [w0, Math.round((w0 + 0.5) * 10) / 10, Math.round((w0 + 1.0) * 10) / 10];
+  const gseq = [58.4, 58.9, 59.4];
   for (let i = 0; i < 3; i++) {
     if (i) await app.clock.advance(24 * 60);
     await send("u_ramesh", `weight ${seq[i]}`);
@@ -818,13 +818,13 @@ await T("WATCH-01", "Weight creep", async () => {
   const wr = watch("p_ramesh", "weight_creep").filter((x) => x.state === "OPEN");
   assert.equal(wr.length, 1, "weight-creep watch open");
   const opened = wr[0].started_at;
-  assert.equal(watchMsgs("u_ramesh", m, /weight/i).length, 1, "patient heads-up once");
-  assert.equal(watchMsgs("u_lakshmi", m, /Weight/).length, 1, "L1 heads-up once");
+  assert.equal(watchMsgs("u_ramesh", m, /over 3 days/).length, 1, "patient heads-up once");
+  assert.equal(watchMsgs("u_lakshmi", m, /over 3 days/).length, 1, "L1 heads-up once");
   const chart = await app.api("u_dr_rao", "GET", "/api/patients/p_ramesh");
   assert.ok((chart.data.watches as any[]).some((x) => x.key === "weight_creep"), "Pattern on the chart");
   const dashb = await app.api("u_dr_rao", "GET", "/api/dashboard");
   const tri = JSON.stringify(dashb.data).match(/"title":"Pattern: [^"]*"/);
-  w01 = { m, ok: true };
+  w01 = { m, ok: true, t };
   const lastIn = app.q1<any>("SELECT MAX(created_at) AS t FROM messages WHERE user_id = 'u_ramesh' AND direction = 'IN'").t;
   if (opened - lastIn < 10 * MIN) assert.fail(`PLAN: heads-up sent to patient and L1 once and the watch is on the chart, but not "next morning after 09:30": evaluateWatches also runs right after each reading (lib/engine.ts:1056), so it opened at ${localHHMM(opened)} IST right after the 3rd reading${tri ? "" : "; Today's triage shows the more recent alert instead of a Pattern line (precedence in lib/triage.ts:93-96)"}.`);
   assert.ok(localHHMM(opened) >= "09:30");
@@ -833,8 +833,8 @@ await T("WATCH-01", "Weight creep", async () => {
 await T("WATCH-07", "Not repeated next morning", async () => {
   if (!w01.ok) blocked("WATCH-01 did not open a watch");
   await advanceTo("10:00");
-  assert.equal(watchMsgs("u_ramesh", w01.m, /weight/i).length, 1, "patient: still one heads-up");
-  assert.equal(watchMsgs("u_lakshmi", w01.m, /Weight/).length, 1, "L1: still one heads-up");
+  assert.equal(watchMsgs("u_ramesh", w01.m, /over 3 days/).length, 1, "patient: still one heads-up");
+  assert.equal(watchMsgs("u_lakshmi", w01.m, /over 3 days/).length, 1, "L1: still one heads-up");
 });
 
 await T("WATCH-05", "Dismiss", async () => {
@@ -856,20 +856,23 @@ await T("WATCH-05", "Dismiss", async () => {
 
 await T("WATCH-06", "Turn a pattern off", async () => {
   if (!w01.ok) blocked("WATCH-01 sequence did not run");
-  assert.equal(watch("p_gopal", "weight_creep").length, 0, "no weight-creep watch for Gopal (pattern off) despite the same rising weights");
+  assert.equal(watch("p_gopal", "weight_creep").filter((x) => x.started_at > w01.t).length, 0, "no weight-creep watch for Gopal (pattern off) despite the same rising weights");
   const chart = await app.api("u_dr_dileep", "GET", "/api/patients/p_gopal");
   assert.ok((chart.data.watchOff as string[]).includes("weight_creep"));
-  // turning a pattern off closes an open one
-  const openW = app.q1<any>("SELECT * FROM watches WHERE state = 'OPEN' ORDER BY id DESC LIMIT 1");
-  if (!openW) blocked("no open watch left to check that turning off closes it");
-  const owner = openW.patient_id === "p_gopal" ? "u_dr_dileep" : "u_dr_rao";
-  assert.equal((await app.api(owner, "POST", `/api/patients/${openW.patient_id}/watches`, { action: "off", key: openW.key })).status, 200);
-  assert.notEqual(app.q1<any>("SELECT state FROM watches WHERE id = ?", openW.id).state, "OPEN", `open ${openW.key} closed`);
+  // control: turned back on, the same weights do open a watch; turning it off again closes that open one
+  assert.equal((await app.api("u_dr_dileep", "POST", "/api/patients/p_gopal/watches", { action: "on", key: "weight_creep" })).status, 200);
+  await send("u_gopal", "weight 59.4");
+  const openW = watch("p_gopal", "weight_creep").find((x) => x.state === "OPEN");
+  assert.ok(openW, "control: with the pattern on, Gopal's rising weights open a watch");
+  assert.equal((await app.api("u_dr_dileep", "POST", "/api/patients/p_gopal/watches", { action: "off", key: "weight_creep" })).status, 200);
+  assert.notEqual(app.q1<any>("SELECT state FROM watches WHERE id = ?", openW.id).state, "OPEN", "open watch closed when the pattern is turned off");
+  await send("u_gopal", "weight 59.4");
+  assert.equal(watch("p_gopal", "weight_creep").filter((x) => x.state === "OPEN").length, 0, "stays off");
 });
 
 await T("WATCH-02", "BP drift", async () => {
   await fresh();
-  await app.clock.advance(2 * 24 * 60);
+  await app.clock.advance(5 * 24 * 60); // so the prior week is the seed's steady readings (a 168 spike 4 days back would mask the drift)
   const m = app.mark();
   await send("u_ramesh", "BP 147/88");
   await app.clock.advance(24 * 60);
@@ -913,7 +916,7 @@ const today = async () => localDay(await app.clock.now());
 await T("DOC-01", "Device photo [AI±]", async () => {
   await fresh();
   const m = app.mark();
-  const r = await app.wa.media("u_ramesh", { base64: b64("fake-jpeg-bp-monitor-" + Math.random()), mime: "image/jpeg", name: "IMG_2041.jpg" } as any);
+  const r = await app.wa.media("u_ramesh", { base64: b64("fake-jpeg-bp-monitor-" + Math.random()), mime: "image/jpeg", name: "IMG_2041.jpg", filename: "IMG_2041.jpg" } as any);
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.match(outText("u_ramesh", m), /please also type it/);
   assert.equal(app.q("SELECT 1 FROM observations WHERE patient_id = 'p_ramesh' AND observed_at >= ?", await app.clock.now() - MIN).length, 0, "nothing logged");
@@ -940,7 +943,7 @@ const REPORT = b64("fake-lab-report-image-gopal-renal-panel");
 await T("DOC-03", "Prescription / lab photo [AI±]", async () => {
   await fresh();
   const m = app.mark();
-  const r = await app.wa.media("u_gopal", { base64: REPORT, mime: "image/jpeg", name: "lab report.jpg" } as any);
+  const r = await app.wa.media("u_gopal", { base64: REPORT, mime: "image/jpeg", name: "lab report.jpg", filename: "lab report.jpg" } as any);
   assert.equal(r.status, 200, JSON.stringify(r.data));
   gDoc1 = r.data.document;
   const d = docs("p_gopal").find((x) => x.id === gDoc1);
@@ -979,7 +982,7 @@ await T("DOC-05", "Confirm & file", async () => {
 await T("DOC-06", "Same report twice", async () => {
   if (!gDoc1) blocked("DOC-03 did not store a document");
   const before = app.q1<any>("SELECT COUNT(*) AS n FROM labs WHERE patient_id = 'p_gopal' AND marker IN ('potassium','urea')").n;
-  const r = await app.wa.media("u_gopal", { base64: REPORT, mime: "image/jpeg", name: "lab report.jpg" } as any);
+  const r = await app.wa.media("u_gopal", { base64: REPORT, mime: "image/jpeg", name: "lab report.jpg", filename: "lab report.jpg" } as any);
   const id2 = r.data.document;
   app.exec("UPDATE patient_documents SET extract = ? WHERE id = ?", extract(await today()), id2); // setup: stand-in for the AI read
   const f = await app.api("u_pa_priya", "POST", "/api/patients/p_gopal/documents", { action: "autofile", id: id2 });
@@ -990,7 +993,7 @@ await T("DOC-06", "Same report twice", async () => {
 await T("DOC-07", "PDF", async () => {
   await fresh();
   const m = app.mark();
-  const r = await app.wa.media("u_ramesh", { base64: b64("%PDF-1.4 fake discharge summary"), mime: "application/pdf", name: "discharge.pdf" } as any);
+  const r = await app.wa.media("u_ramesh", { base64: b64("%PDF-1.4 fake discharge summary"), mime: "application/pdf", name: "discharge.pdf", filename: "discharge.pdf" } as any);
   assert.equal(r.status, 200, JSON.stringify(r.data));
   const d = docs("p_ramesh").find((x) => x.id === r.data.document);
   assert.ok(d); assert.equal(d.mime, "application/pdf"); assert.equal(d.category, "discharge");
@@ -1018,7 +1021,7 @@ await T("DOC-08", "Clinic upload: edit, verify, download", async () => {
 
 await T("DOC-09", "Delete document with its data", async () => {
   await fresh();
-  const r = await app.wa.media("u_gopal", { base64: REPORT, mime: "image/jpeg", name: "lab report.jpg" } as any);
+  const r = await app.wa.media("u_gopal", { base64: REPORT, mime: "image/jpeg", name: "lab report.jpg", filename: "lab report.jpg" } as any);
   const id = r.data.document;
   app.exec("UPDATE patient_documents SET extract = ? WHERE id = ?", extract(await today()), id); // setup: stand-in for the AI read
   assert.equal((await app.api("u_pa_priya", "POST", "/api/patients/p_gopal/documents", { action: "autofile", id })).status, 200);
@@ -1035,10 +1038,10 @@ await T("DOC-09", "Delete document with its data", async () => {
 await T("DOC-10", "Unsupported file (.exe / huge)", async () => {
   await fresh();
   const big = Buffer.alloc(51 * 1024 * 1024, 1).toString("base64");
-  const h = await app.wa.media("u_ramesh", { base64: big, mime: "image/jpeg", name: "huge.jpg" } as any);
+  const h = await app.wa.media("u_ramesh", { base64: big, mime: "image/jpeg", name: "huge.jpg", filename: "huge.jpg" } as any);
   const hugeOk = h.status === 400 && /limited to 50 MB/.test(JSON.stringify(h.data));
   const m = app.mark();
-  const x = await app.wa.media("u_ramesh", { base64: b64("MZ\x90\x00fake-windows-executable"), mime: "application/x-msdownload", name: "setup.exe" } as any);
+  const x = await app.wa.media("u_ramesh", { base64: b64("MZ\x90\x00fake-windows-executable"), mime: "application/x-msdownload", name: "setup.exe", filename: "setup.exe" } as any);
   const stored = x.status === 200 ? docs("p_ramesh").find((d) => d.id === x.data.document) : null;
   assert.ok(hugeOk, `51 MB file: ${h.status} ${short(JSON.stringify(h.data), 100)}`);
   if (stored) assert.fail(`PLAN: a 51 MB file is rejected ("Files are limited to 50 MB"), but an .exe (application/x-msdownload) is accepted and stored as document ${stored.id} with reply "${short(outText("u_ramesh", m), 90)}". addDocument has no type allowlist (lib/records.ts:206); the download route deliberately serves unknown types as opaque attachments (app/api/documents/[id]/route.ts:15), so this looks intentional — the plan's "rejected" isn't how it is designed.`);
@@ -1056,7 +1059,7 @@ await T("DOC-11", "Voice note [AI±] (typed transcript)", async () => {
 
 await T("DOC-12", "Reader output never shown as real (AI off)", async () => {
   await fresh();
-  const r = await app.wa.media("u_gopal", { base64: b64("another-fake-report-" + Math.random()), mime: "image/jpeg", name: "lab report 2.jpg" } as any);
+  const r = await app.wa.media("u_gopal", { base64: b64("another-fake-report-" + Math.random()), mime: "image/jpeg", name: "lab report 2.jpg", filename: "lab report 2.jpg" } as any);
   const id = r.data.document;
   await new Promise((res) => setTimeout(res, 800));
   const d = docs("p_gopal").find((x) => x.id === id);
@@ -1080,7 +1083,7 @@ if (!ONLY || ONLY.test("TW-")) {
   const BASE = "http://127.0.0.1:3214";
   const tw = await startApp({
     mode: "live", port: 3214, suite: "alerts-twilio",
-    env: { TWILIO_ACCOUNT_SID: "ACtest00000000000000000000000000", TWILIO_AUTH_TOKEN: TOKEN, TWILIO_WHATSAPP_FROM: "+10000000000", WHATSAPP_GATEWAY: "on", WHATSAPP_ALLOWLIST: "+10000000001", PUBLIC_BASE_URL: BASE },
+    env: { TWILIO_ACCOUNT_SID: "ACtest00000000000000000000000000", TWILIO_AUTH_TOKEN: TOKEN, TWILIO_WHATSAPP_FROM: "+10000000000", WHATSAPP_GATEWAY: "on", WHATSAPP_ALLOWLIST: "+10000000001", PUBLIC_BASE_URL: BASE, NODE_OPTIONS: `--require ${path.join(import.meta.dirname, "live-preload.cjs")}` },
   });
   const sign = (url: string, p: Record<string, string>) => crypto.createHmac("sha1", TOKEN).update(Buffer.from(url + Object.keys(p).sort().map((k) => k + p[k]).join(""), "utf-8")).digest("base64");
   const post = async (pathName: string, p: Record<string, string>, sig?: string) => {
@@ -1095,6 +1098,8 @@ if (!ONLY || ONLY.test("TW-")) {
   tw.exec("INSERT INTO patients(id, user_id, name, age, sex, phone, conditions, address, doctor_id, created_at) VALUES('p_tw','u_tw_pat','Tw Patient',60,'M','+91 90000 99001','','', 'u_tw_doc', ?)", now0);
   tw.exec("INSERT INTO caregivers(id, patient_id, user_id, name, relation, phone, level, dashboard) VALUES('cg_tw_1','p_tw','u_tw_cg','Tw Carer','Son','+91 90000 99002',1,1)");
   const PAT = "whatsapp:+919000099001";
+  const liveCheck = await tw.api(null, "POST", "/api/demo", { action: "reset" });
+  if (liveCheck.status !== 400) throw new Error(`Twilio app is not in live mode (reset → ${liveCheck.status})`);
   const inCount = () => tw.q1<any>("SELECT COUNT(*) AS n FROM messages WHERE direction = 'IN'").n;
   const TT = async (id: string, title: string, fn: () => Promise<void> | void) => { if (!ONLY || ONLY.test(id)) await tw.test(id, title, fn); };
 

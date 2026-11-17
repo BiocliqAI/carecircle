@@ -1,29 +1,58 @@
-{"id":"ONB-01","title":"Add a new patient","status":"FAIL","note":"PLAN: the plan asks for caregivers L1–L3, but a care circle holds at most 2 by design (lib/types.ts:6 MAX_CAREGIVERS = 2; app/api/patients/route.ts:21). Sending 3 gave HTTP 400 \"A care circle has at most 2 caregivers (primary and backup)\". With 2 caregivers everything else passed: patient created with all fields, caregivers saved as levels 1–2, listed in Patients, PATIENT_ONBOARDED audited.","ms":110}
-{"id":"ONB-02","title":"Consent requests sent on WhatsApp","status":"PASS","note":"","ms":13}
-{"id":"ONB-03","title":"Duplicate WhatsApp number","status":"FAIL","note":"BUG: the same number written without spaces (\"+919886020001\") was accepted (HTTP 200, new patient p_dup_format_32528); patients with digits 919886020001 now: p_ramesh \"+91 98860 20001\", p_dup_format_32528 \"+919886020001\". onboardPatient checks duplicates with an exact string match: lib/engine.ts:1302 \"SELECT 1 FROM patients WHERE phone = ?\" (updatePatient in lib/records.ts:29 compares digits only, onboarding does not).","ms":65}
-{"id":"ONB-04","title":"Required fields and validation","status":"PASS","note":"","ms":1526}
-{"id":"ONB-05","title":"Draft saved and resumed","status":"PASS","note":"","ms":647}
-{"id":"ONB-06","title":"Draft deleted","status":"PASS","note":"","ms":39}
-{"id":"ONB-07","title":"PA onboards for a doctor","status":"PASS","note":"","ms":59}
-{"id":"ONB-08","title":"Edit patient profile","status":"PASS","note":"","ms":17}
-{"id":"ONB-09","title":"Change care circle order","status":"PASS","note":"","ms":28}
-{"id":"ONB-10","title":"Add a caregiver later","status":"FAIL","note":"PLAN: the plan adds \"a new L3\", but a care circle holds at most 2 caregivers by design (lib/types.ts:6; lib/records.ts:73 setCareCircle): adding a third gave HTTP 409 \"A care circle has at most 2 caregivers (primary and backup)\". Adding a new backup (L2) later works: the new person got the WhatsApp consent request (consent PENDING), the existing caregiver was not re-asked.","ms":34}
-{"id":"ONB-11","title":"Remove a caregiver","status":"PASS","note":"","ms":5417}
-{"id":"ONB-12","title":"Resend consent","status":"PASS","note":"","ms":5685}
-{"id":"ONB-13","title":"Delete patient","status":"PASS","note":"","ms":58}
-{"id":"ONB-14","title":"Clear selected records","status":"PASS","note":"","ms":5116}
-{"id":"BASE-01","title":"Enter baseline by hand","status":"PASS","note":"","ms":81}
-{"id":"BASE-02","title":"Baseline validation","status":"PASS","note":"","ms":34}
-{"id":"BASE-03","title":"Baseline from a document [AI off]","status":"PASS","note":"","ms":11}
-{"id":"BASE-04","title":"Onboarding from past records: upload [AI off]","status":"PASS","note":"","ms":33}
-{"id":"BASE-05","title":"Move and remove a record","status":"PASS","note":"","ms":43}
-{"id":"BASE-06","title":"Unreadable file","status":"PASS","note":"","ms":38}
-{"id":"BASE-07","title":"Typed record","status":"PASS","note":"","ms":33}
-{"id":"BASE-08","title":"Build history draft [AI off]","status":"PASS","note":"","ms":13}
-{"id":"BASE-09","title":"Edit draft and send to doctor","status":"PASS","note":"","ms":46}
-{"id":"BASE-10","title":"Doctor sends it back","status":"FAIL","note":"PLAN: the note reaches the assistant (Today task note \"Please add the 2023 echo report\"), but the status becomes RETURNED, not COLLECTING, by design (lib/onboarding.ts:719 sendBack sets status 'RETURNED'; adding a record then moves it to COLLECTING).","ms":16}
-{"id":"BASE-11","title":"Doctor confirms history","status":"PASS","note":"","ms":56}
-{"id":"BASE-12","title":"Update a confirmed history","status":"PASS","note":"","ms":72}
-{"id":"VIS-01","title":"Record Visit 1 and start the plan","status":"PASS","note":"","ms":197}
-{"id":"VIS-02","title":"Plan message content","status":"FAIL","note":"BUG: the fluid limit (plan.fluid {limitMl:1500}) and the lab plan (plan.labs) sent by the visit form are dropped: the stored plan has fluid=undefined labs=undefined template=undefined, so the message has no \"Fluid limit\" / \"Blood tests\" lines and no fluid tracking starts. validPlan() in app/api/patients/[id]/visits/route.ts:13-42 rebuilds the plan without copying raw.fluid, raw.labs or raw.template (the visit page sends them: app/patients/[id]/visit/page.tsx:297-308, \"Apply kidney template\"). Also PLAN: no \"In short\" text — that summary only comes from the plan builder's Send step (plan-draft/","ms":0}
-{"id":"VIS-03","title":"Save visit without starting plan","status":"PASS","note":"","ms":5564}
+{"id":"ONB-01","title":"Add a new patient","status":"FAIL","note":"PLAN: the plan asks for caregivers L1–L3, but a care circle holds at most 2 by design (lib/types.ts:6 MAX_CAREGIVERS = 2; app/api/patients/route.ts:21). Sending 3 gave HTTP 400 \"A care circle has at most 2 caregivers (primary and backup)\". With 2 caregivers everything else passed: patient created with all fields, caregivers saved as levels 1–2, listed in Patients, PATIENT_ONBOARDED audited.","ms":149}
+{"id":"ONB-02","title":"Consent requests sent on WhatsApp","status":"PASS","note":"","ms":14}
+{"id":"ONB-03","title":"Duplicate WhatsApp number","status":"FAIL","note":"BUG: the same number written without spaces (\"+919886020001\") was accepted (HTTP 200, new patient p_dup_format_58724); patients with digits 919886020001 now: p_ramesh \"+91 98860 20001\", p_dup_format_58724 \"+919886020001\". onboardPatient checks duplicates with an exact string match: lib/engine.ts:1302 \"SELECT 1 FROM patients WHERE phone = ?\" (updatePatient in lib/records.ts:29 compares digits only, onboarding does not).","ms":65}
+{"id":"ONB-04","title":"Required fields and validation","status":"PASS","note":"","ms":1627}
+{"id":"ONB-05","title":"Draft saved and resumed","status":"PASS","note":"","ms":768}
+{"id":"ONB-06","title":"Draft deleted","status":"PASS","note":"","ms":53}
+{"id":"ONB-07","title":"PA onboards for a doctor","status":"PASS","note":"","ms":90}
+{"id":"ONB-08","title":"Edit patient profile","status":"PASS","note":"","ms":26}
+{"id":"ONB-09","title":"Change care circle order","status":"PASS","note":"","ms":107}
+{"id":"ONB-10","title":"Add a caregiver later","status":"FAIL","note":"PLAN: the plan adds \"a new L3\", but a care circle holds at most 2 caregivers by design (lib/types.ts:6; lib/records.ts:73 setCareCircle): adding a third gave HTTP 409 \"A care circle has at most 2 caregivers (primary and backup)\". Adding a new backup (L2) later works: the new person got the WhatsApp consent request (consent PENDING), the existing caregiver was not re-asked.","ms":25}
+{"id":"ONB-11","title":"Remove a caregiver","status":"PASS","note":"","ms":6148}
+{"id":"ONB-12","title":"Resend consent","status":"PASS","note":"","ms":5711}
+{"id":"ONB-13","title":"Delete patient","status":"PASS","note":"","ms":86}
+{"id":"ONB-14","title":"Clear selected records","status":"PASS","note":"","ms":6270}
+{"id":"BASE-01","title":"Enter baseline by hand","status":"PASS","note":"","ms":111}
+{"id":"BASE-02","title":"Baseline validation","status":"PASS","note":"","ms":47}
+{"id":"BASE-03","title":"Baseline from a document [AI off]","status":"PASS","note":"","ms":12}
+{"id":"BASE-04","title":"Onboarding from past records: upload [AI off]","status":"PASS","note":"","ms":37}
+{"id":"BASE-05","title":"Move and remove a record","status":"PASS","note":"","ms":49}
+{"id":"BASE-06","title":"Unreadable file","status":"PASS","note":"","ms":27}
+{"id":"BASE-07","title":"Typed record","status":"PASS","note":"","ms":40}
+{"id":"BASE-08","title":"Build history draft [AI off]","status":"PASS","note":"","ms":16}
+{"id":"BASE-09","title":"Edit draft and send to doctor","status":"PASS","note":"","ms":61}
+{"id":"BASE-10","title":"Doctor sends it back","status":"FAIL","note":"PLAN: the note reaches the assistant (Today task note \"Please add the 2023 echo report\"), but the status becomes RETURNED, not COLLECTING, by design (lib/onboarding.ts:719 sendBack sets status 'RETURNED'; adding a record then moves it to COLLECTING).","ms":19}
+{"id":"BASE-11","title":"Doctor confirms history","status":"PASS","note":"","ms":55}
+{"id":"BASE-12","title":"Update a confirmed history","status":"PASS","note":"","ms":96}
+{"id":"VIS-01","title":"Record Visit 1 and start the plan","status":"PASS","note":"","ms":216}
+{"id":"VIS-02","title":"Plan message content","status":"FAIL","note":"BUG: the fluid limit (plan.fluid {limitMl:1500}) and the lab plan (plan.labs) sent by the visit form are dropped: the stored plan has fluid=undefined labs=undefined template=undefined, so the message has no \"Fluid limit\" / \"Blood tests\" lines and no fluid tracking starts. validPlan() in app/api/patients/[id]/visits/route.ts:13-42 rebuilds the plan without copying raw.fluid, raw.labs or raw.template (the visit page sends them: app/patients/[id]/visit/page.tsx:297-308, \"Apply kidney template\"). Also PLAN: no \"In short\" text — that summary only comes from the plan builder's Send step (plan-draft/","ms":1}
+{"id":"VIS-03","title":"Save visit without starting plan","status":"PASS","note":"","ms":5776}
+{"id":"VIS-05","title":"Past visit from records","status":"PASS","note":"","ms":5672}
+{"id":"VIS-04","title":"Start care plan later","status":"PASS","note":"","ms":29}
+{"id":"VIS-06","title":"Visit 2 changes the plan","status":"FAIL","note":"PLAN: reminders follow the new plan (old future tasks replaced, no Atorvastatin tasks, Furosemide tasks at 40 mg), but the patient's WhatsApp only lists the new plan; it doesn't say that Atorvastatin was stopped or that Furosemide went from 20 to 40 mg. The visit form's message (lib/engine.ts:1221 announcePlan) has no change list; changes are spelled out only in the plan builder's \"In short\" (lib/aftervisit.ts ruleSummary). Message: \"👩‍⚕️ Dr. Meera Rao has set your care plan after today's visit:\\n\\n💊 Telmisartan 40 mg — 8:00 am\\n💊 Metoprolol succinate 25 mg — 8:00 am\\n💊 Furosemide 40 mg — ","ms":5366}
+{"id":"VIS-07","title":"Plan builder draft is kept","status":"PASS","note":"","ms":6381}
+{"id":"VIS-08","title":"Dictate a visit [AI off]","status":"PASS","note":"","ms":17}
+{"id":"VIS-09","title":"\"In short\" for the family [AI off]","status":"PASS","note":"","ms":5692}
+{"id":"VIS-10","title":"Suggested next visit","status":"PASS","note":"","ms":6109}
+{"id":"VIS-11","title":"Compare visits","status":"PASS","note":"","ms":6236}
+{"id":"VIS-12","title":"Prepare visit","status":"PASS","note":"","ms":8509}
+{"id":"VIS-13","title":"Next visit date picker","status":"PASS","note":"","ms":60}
+{"id":"OUT-01","title":"Reported on WhatsApp [AI off]","status":"PASS","note":"","ms":49}
+{"id":"OUT-02","title":"Ambiguous dose asked first","status":"FAIL","note":"PLAN: with AI off the first question is \"Which doctor did you see (cardiology)? Their name, and the hospital if you like.\", not a dose clarification. The rules fallback asks fixed questions in order doctor → prescription → next visit (lib/outside.ts:478-557 rulesTurn) and never asks about an unclear dose; clarifying questions come only from the AI path (unclear field, lib/outside.ts:228). Recorded: {\"med_name\":\"Lasix\",\"med_key\":null,\"new_dose\":\"half\"} (not matched to the plan's Furosemide). AI-on path not run.","ms":1}
+{"id":"OUT-05","title":"Readings during the conversation","status":"PASS","note":"","ms":26}
+{"id":"OUT-04","title":"Photo during the conversation","status":"PASS","note":"","ms":26}
+{"id":"OUT-09","title":"Visit on the record","status":"PASS","note":"","ms":46}
+{"id":"OUT-10","title":"Changes not applied automatically","status":"PASS","note":"","ms":8}
+{"id":"OUT-11","title":"Safety checks shown","status":"PASS","note":"","ms":68}
+{"id":"OUT-12","title":"Apply to plan","status":"PASS","note":"","ms":36}
+{"id":"OUT-13","title":"Reject / mark reviewed","status":"PASS","note":"","ms":50}
+{"id":"OUT-03","title":"Doctor choice","status":"PASS","note":"","ms":19}
+{"id":"OUT-06","title":"Urgent message skips it","status":"PASS","note":"","ms":28}
+{"id":"OUT-07","title":"Stop","status":"PASS","note":"","ms":26}
+{"id":"OUT-08","title":"Abandoned","status":"PASS","note":"","ms":119}
+{"id":"OUT-14","title":"Next appointment reminders","status":"PASS","note":"","ms":186}
+{"id":"OUT-15","title":"\"How did it go\" answers","status":"FAIL","note":"PLAN: \"No changes\" doesn't close at once: the reply is \"👍 Noted: no medicine changes.\\n\\nWhen is the next visit with Dr Lak? (e.g. “20 Oct” or “after 2 weeks”, or *NO* if not planned)\". The rules flow still wants the next-appointment slot for the follow-up row (lib/outside.ts:556-557, 'next' slot when next_visit_at is empty); after answering \"Not planned\" it closes with \"No medicine changes\" recorded and no medicine changes. Postponed (date moved, no visit) and changes (new conversation) passed.","ms":73}
+{"id":"OUT-18","title":"Postponed date in the past year","status":"PASS","note":"","ms":40}
+{"id":"OUT-16","title":"Entered on the web","status":"PASS","note":"","ms":5546}
+{"id":"OUT-17","title":"Tap \"From another doctor's visit\" under a document","status":"PASS","note":"","ms":32}
+{"id":"OUT-19","title":"Delete an outside visit","status":"PASS","note":"","ms":12}
