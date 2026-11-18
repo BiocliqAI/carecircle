@@ -94,6 +94,25 @@ describe("documents read on arrival", () => {
     run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify({ category: "lab", title: "Renal Function Test", date: "2026-10-03", prescriber: null, labs: [{ marker: "creatinine", value: 2.4, unit: "mg/dL" }], meds: 0, note: null }), id2);
     assert.equal(da.autoFile(id2, "u_pa_priya", now()).labs, 0, "same report twice does not duplicate the lab values");
   });
+  it("files the dated home readings of a vitals history on confirm, once, and deleting it with its data takes them along", () => {
+    const vit = { category: "other", title: "Vital history", kind: "vitals_diary", date: null, prescriber: null, labs: [], meds: 0, note: null,
+      readings: [{ type: "bp", v1: 152, v2: 88, date: "2026-10-01", time: "07:30" }, { type: "weight", v1: 63.4, date: "2026-10-01" }, { type: "glucose", v1: 141, date: "2026-10-02" }] };
+    const obs = () => get<{ n: number }>("SELECT COUNT(*) AS n FROM observations WHERE patient_id = 'p_ramesh' AND parser = 'document'")!.n;
+    const id = mk("APG vital history.pdf");
+    run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify(vit), id);
+    assert.equal(obs(), 0, "nothing entered before confirm");
+    assert.equal(da.autoFile(id, "u_pa_priya", now()).readings, 3);
+    assert.ok(get("SELECT 1 FROM observations WHERE patient_id = 'p_ramesh' AND type = 'bp' AND v1 = 152 AND v2 = 88 AND observed_at = ?", Date.parse("2026-10-01T07:30:00+05:30")));
+    const id2 = mk("APG vital history (copy).pdf");
+    run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify(vit), id2);
+    assert.equal(da.autoFile(id2, "u_pa_priya", now()).readings, 0, "the same readings aren't entered twice");
+    const id3 = mk("vitals unticked.pdf");
+    run("UPDATE patient_documents SET extract = ? WHERE id = ?", JSON.stringify({ ...vit, readings: [{ type: "hr", v1: 77, date: "2026-10-03" }] }), id3);
+    assert.equal(da.autoFile(id3, "u_pa_priya", now(), { skipReadings: true }).readings, 0, "the checker can leave them out");
+    assert.equal(records.listDocuments("p_ramesh").find((d) => d.id === id)!.filed_readings, 3);
+    assert.equal(records.deleteDocument(id, now(), "u_pa_priya", true).readings, 3);
+    assert.equal(obs(), 0);
+  });
   it("refuses to auto-file a document that was never read", () => {
     assert.throws(() => da.autoFile(mk("IMG_5.jpg"), "u_pa_priya", now()), /not been read/);
   });

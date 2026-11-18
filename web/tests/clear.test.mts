@@ -71,7 +71,7 @@ describe("clearing a patient's records, keeping the patient", () => {
 
     assert.deepEqual(documentData(doc), { labs: 2, visits: 1 });
     assert.equal(listDocuments(pid).find((d) => d.id === doc)!.filed_labs, 2);
-    assert.deepEqual(deleteDocument(doc, t, "u_dr_rao", true), { labs: 2, visits: 1, keptVisits: 0 });
+    assert.deepEqual(deleteDocument(doc, t, "u_dr_rao", true), { labs: 2, readings: 0, visits: 1, keptVisits: 0 });
     assert.equal(n("SELECT COUNT(*) AS n FROM labs WHERE document_id = ?", doc), 0);
     assert.equal(n("SELECT COUNT(*) AS n FROM outside_visits WHERE id = ?", ov), 0);
     assert.equal(n("SELECT COUNT(*) AS n FROM med_changes WHERE outside_visit_id = ?", ov), 0);
@@ -90,7 +90,7 @@ describe("clearing a patient's records, keeping the patient", () => {
     const doc = Number(run("INSERT INTO patient_documents(patient_id, title, category, mime, size, data, source, uploaded_by, uploaded_at) VALUES(?,?,?,?,?,?,?,?,?)", pid, "Rx", "prescription", "application/pdf", 4, new Uint8Array([37, 80, 68, 70]), "clinic", "u_dr_rao", t).lastInsertRowid);
     const ov = Number(run("INSERT INTO outside_visits(patient_id, visit_at, status, source, created_at, updated_at, document_id) VALUES(?,?,?,?,?,?,?)", pid, t, "COMPLETE", "document", t, t, doc).lastInsertRowid);
     run("INSERT INTO med_changes(patient_id, at, med_name, change, source, outside_visit_id, status, applied_at) VALUES(?,?,?,?,?,?,?,?)", pid, t, "Lasix", "dose_changed", "dashboard", ov, "CONFIRMED", t);
-    assert.deepEqual(deleteDocument(doc, t, "u_dr_rao", true), { labs: 0, visits: 0, keptVisits: 1 });
+    assert.deepEqual(deleteDocument(doc, t, "u_dr_rao", true), { labs: 0, readings: 0, visits: 0, keptVisits: 1 });
     assert.ok(get("SELECT 1 FROM outside_visits WHERE id = ?", ov));
     assert.equal(all("SELECT 1 FROM patient_documents WHERE id = ?", doc).length, 0);
   });

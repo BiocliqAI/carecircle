@@ -174,6 +174,7 @@ const COLUMNS: [table: string, column: string, ddl: string][] = [
   ["med_changes", "applied_at", "INTEGER"],
   ["labs", "document_id", "INTEGER"], // the document a value was read from (so deleting it can take its values along)
   ["outside_visits", "document_id", "INTEGER"],
+  ["observations", "document_id", "INTEGER"], // home readings filed from a document (a BP / vitals diary)
   ["patient_documents", "onboarding_id", "INTEGER"], // a record brought at onboarding
   ["patient_documents", "pile", "TEXT"], // onboarding: 'clinical' or 'lab'
   ["patient_documents", "pile_by", "TEXT"], // 'ai' or 'user' (a person's choice is kept when the AI re-reads)

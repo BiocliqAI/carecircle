@@ -1,6 +1,7 @@
 // The few lab results worth a glance on the chart: from the patient's last two lab reports (days with lab tests; imaging
 // measurements picked up from echo, ECG or scan reports don't count), the tests that matter most for this clinic,
-// abnormal ones first, each with the value from the report before.
+// abnormal ones first, each with the value from the report before. When those reports hold only a few tests, the other
+// key tests fill the free places with their latest value from the past year (dated, so it's clear they're older).
 import { all } from "./db";
 import { LAB_META } from "./types";
 import { dayKey } from "./time";
@@ -45,5 +46,20 @@ export function keyLabs(pid: string, limit = 8): KeyLabs {
   const rank = (m: string) => { const i = KEY_ORDER.indexOf(m); return i < 0 ? KEY_ORDER.length : i; };
   out.sort((a, b) => Number(ABNORMAL.has(b.flag ?? "")) - Number(ABNORMAL.has(a.flag ?? "")) || rank(a.marker) - rank(b.marker));
   const at = (k: string) => inReports.find((r) => dayKey(r.taken_at) === k)!.taken_at;
-  return { latestAt: at(days[0]), previousAt: days[1] ? at(days[1]) : null, rows: out.slice(0, limit), more: Math.max(0, out.length - limit) };
+  const latestAt = at(days[0]);
+  // The last two reports can be thin (a single repeat test, or values a dated history put on their own days):
+  // fill the free places with the latest value of the other key tests from the year before, each shown with its date.
+  const shown = out.slice(0, limit);
+  if (shown.length < limit) {
+    const extra: KeyLab[] = [];
+    for (const r of rows) {
+      if (r.taken_at < latestAt - 365 * 86_400_000 || !KEY_ORDER.includes(r.marker) || !isCoreLab(r.marker)) continue;
+      if (out.some((x) => x.marker === r.marker) || extra.some((x) => x.marker === r.marker)) continue;
+      const before = rows.find((x) => x.marker === r.marker && x.taken_at < r.taken_at && dayKey(x.taken_at) !== dayKey(r.taken_at));
+      extra.push({ marker: r.marker, value: r.value, at: r.taken_at, flag: r.flag, prev: before?.value ?? null, prevAt: before?.taken_at ?? null });
+    }
+    extra.sort((a, b) => rank(a.marker) - rank(b.marker));
+    shown.push(...extra.slice(0, limit - shown.length));
+  }
+  return { latestAt, previousAt: days[1] ? at(days[1]) : null, rows: shown, more: Math.max(0, out.length - limit) };
 }

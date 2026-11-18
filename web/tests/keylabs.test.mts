@@ -39,6 +39,14 @@ describe("key labs on the chart", () => {
     assert.equal(k.rows.find((r) => r.marker === "hb")!.prev, null, "Hb only in the previous report: shown with its own date");
     assert.ok(!k.rows.some((r) => r.marker === "lvidd" || r.marker === "esr_x" || r.marker === "ldl"), "no imaging, no unflagged learned tests, nothing older than the two reports");
     assert.equal(k.more, 1, "TSH is in the reports but past the limit");
+    // Thin latest reports (one test on each of the last two days, as a dated history can leave): the free places are
+    // filled with the latest value of the other key tests from the past year, each keeping its own date.
+    lab("uric_acid", 7.1, "2026-11-01"); lab("uric_acid", 6.8, "2026-11-10");
+    const thin = keyLabs(pid, 8);
+    assert.equal(new Date(thin.latestAt!).toISOString().slice(0, 10), "2026-11-10");
+    assert.deepEqual(thin.rows.map((r) => r.marker), ["uric_acid", "creatinine", "egfr", "potassium", "sodium", "hb", "ldl", "tsh"]);
+    assert.equal(new Date(thin.rows.find((r) => r.marker === "creatinine")!.at).toISOString().slice(0, 10), "2026-10-20");
+    assert.equal(thin.rows.find((r) => r.marker === "creatinine")!.prev, 1.9);
     assert.deepEqual(keyLabs("nobody"), { latestAt: null, previousAt: null, rows: [], more: 0 });
   });
 });

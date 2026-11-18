@@ -12,7 +12,7 @@ import { DOCUMENT_ACCEPT, mimeFor, readableType } from "@/lib/mimetypes";
 export interface ProfilePatient { id: string; name: string; age: number | null; sex: string; phone: string; conditions: string; address: string; user_id?: string | null; doctor_id?: string; hospital_id?: string | null }
 export interface ProfileCaregiver { id: string; name: string; relation: string | null; phone: string; level: number; user_id: string | null; dashboard?: number }
 export interface NoteItem { id: number; author_id: string; author_name: string | null; author_role: string | null; kind: string; body: string; created_at: number; updated_at: number }
-export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null; extract: string | null; filed_labs?: number; filed_visits?: number; onboarding_id?: number | null }
+export interface DocItem { id: number; title: string; category: string; mime: string; size: number; notes: string | null; source: string; uploaded_by_name: string | null; uploaded_at: number; filed_at: number | null; filed_by_name: string | null; extract: string | null; filed_labs?: number; filed_readings?: number; filed_visits?: number; onboarding_id?: number | null }
 
 const CATS: [string, string][] = [["prescription", "Prescription"], ["lab", "Lab report"], ["discharge", "Discharge summary"], ["imaging", "Imaging"], ["voice", "Voice note"], ["other", "Other"]];
 const catLabel = (c: string) => CATS.find((x) => x[0] === c)?.[1] ?? "Other";
@@ -364,7 +364,8 @@ export function NotesTab({ pid, notes, viewerId, viewerRole, onChange }: { pid: 
 type TextRow = { test: string; group?: string; result: string; reference?: string };
 type VisitRow = { date: string | null; doctorName: string; specialty?: string; hospital?: string; reason?: string; findings?: string; advice?: string; tests?: string; nextVisitDate?: string | null; medChanges?: { medName: string; change: string; newDose?: string; frequency?: string; detail?: string }[]; kind: "outside" | "treating" | "skip"; recorded?: string | null; nearby?: string | null };
 const shortDay = (d: string) => fmtDate(Date.parse(`${d}T12:00:00+05:30`), { day: "numeric", month: "short", year: "numeric" });
-interface ReadOut { title: string; date: string | null; prescriber: string | null; labs: { marker: string; value: number; unit: string; date?: string }[]; texts?: TextRow[]; visits?: VisitRow[]; meds: number; medList?: string[]; note: string | null; reread?: boolean; done?: boolean }
+interface ReadOut { title: string; date: string | null; prescriber: string | null; labs: { marker: string; value: number; unit: string; date?: string }[]; texts?: TextRow[]; visits?: VisitRow[]; readings?: { type: string; v1: number; v2?: number; date: string; time?: string }[]; meds: number; medList?: string[]; note: string | null; reread?: boolean; done?: boolean }
+const READING_LABEL: Record<string, string> = { bp: "BP", weight: "Weight", glucose: "Sugar", hr: "Pulse", spo2: "SpO₂", temp: "Temperature" };
 const readOut = (raw: string | null): ReadOut | null => { try { return raw ? (JSON.parse(raw) as ReadOut) : null; } catch { return null; } };
 const READ_WINDOW_MS = 3 * 60_000; // after this, an unread document is treated as "couldn't be read"
 const readable = (d: DocItem) => readableType(d.mime, d.title);
@@ -381,6 +382,7 @@ function ReadPanel({ d, pid, busy, act, refresh }: { d: DocItem; pid: string; bu
   const [date, setDate] = useState("");
   const [adding, setAdding] = useState("");
   const [texts, setTexts] = useState<TextRow[]>([]);
+  const [withReadings, setWithReadings] = useState(true);
   useEffect(() => { setRows(x?.labs.map((l) => ({ marker: l.marker, value: String(l.value), ...(l.date ? { date: l.date } : {}) })) ?? []); setTexts(x?.texts ?? []); setVisits(x?.visits ?? []); setDate(x?.date ?? ""); }, [d.extract]); // eslint-disable-line react-hooks/exhaustive-deps
   if (waiting) return <div className="callout" style={{ marginTop: 8 }}><span className="spin" /> Reading the document…</div>;
   if (!x) return <div className="callout" style={{ marginTop: 8 }}>The document couldn't be read automatically. Press Read again, or open it, enter any values by hand, then press Mark checked.</div>;
@@ -394,6 +396,10 @@ function ReadPanel({ d, pid, busy, act, refresh }: { d: DocItem; pid: string; bu
     || rows.some((r, i) => (r.date ?? "") !== (x.labs[i]?.date ?? ""))
     || JSON.stringify(visits) !== JSON.stringify(x.visits ?? []);
   const groups = [...new Set(texts.map((r) => r.group ?? ""))];
+  const readings = x.readings ?? [];
+  const homeN = withReadings ? readings.length : 0;
+  const readingDays = [...new Set(readings.map((r) => r.date))].sort();
+  const readingTypes = [...new Set(readings.map((r) => r.type))];
   const unused = Object.keys(LAB_META).filter((m) => !rows.some((r) => r.marker === m));
   return (
     <div className="callout" style={{ marginTop: 8 }}>
@@ -468,11 +474,24 @@ function ReadPanel({ d, pid, busy, act, refresh }: { d: DocItem; pid: string; bu
           ))}
         </div>
       )}
+      {readings.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <b style={{ fontSize: 13 }}>Home readings in this document ({readings.length})</b>
+          <div className="muted" style={{ fontSize: 13 }}>{readingTypes.map((t) => `${READING_LABEL[t] ?? t} ${readings.filter((r) => r.type === t).length}`).join(" · ")} · {readingDays.length > 1 ? `${shortDay(readingDays[0])} to ${shortDay(readingDays[readingDays.length - 1])}` : shortDay(readingDays[0])}</div>
+          <details style={{ marginTop: 4 }}>
+            <summary className="muted" style={{ fontSize: 13 }}>Show the readings</summary>
+            <div className="num" style={{ fontSize: 13, maxHeight: 220, overflow: "auto" }}>
+              {[...readings].sort((a, b) => `${a.date}${a.time ?? ""}`.localeCompare(`${b.date}${b.time ?? ""}`)).map((r, i) => <div key={i}>{shortDay(r.date)}{r.time ? ` ${r.time}` : ""} · {READING_LABEL[r.type] ?? r.type} {r.v1}{r.v2 != null ? `/${r.v2}` : ""}</div>)}
+            </div>
+          </details>
+          <label className="row" style={{ gap: 6, marginTop: 4, alignItems: "center" }}><input type="checkbox" checked={withReadings} onChange={(e) => setWithReadings(e.target.checked)} /> File them with the readings history (no alerts are sent for past readings)</label>
+        </div>
+      )}
       {x.medList && x.medList.length > 0 && <div className="muted" style={{ marginTop: 6 }}>Medicines seen (not entered from here): {x.medList.join("; ")}</div>}
       {x.note && <div className="muted" style={{ marginTop: 4 }}>Note: {x.note}</div>}
       <div className="row" style={{ gap: 6, marginTop: 8 }}>
-        <button className="btn sm primary" disabled={busy || bad} title={bad ? "Every value needs a number, every result some text, and every visit to record a date and a doctor" : undefined} onClick={() => act({ action: "autofile", id: d.id, date: date || null, labs: rows.map((r) => ({ marker: r.marker, value: Number(r.value), date: r.date ?? null })), texts, visits })}>
-          ✓ {changed ? "Save corrections" : "Reading is correct"}: file{rows.length + texts.length ? ` and enter ${[rows.length ? `${rows.length} value${rows.length > 1 ? "s" : ""}` : "", texts.length ? `${texts.length} other result${texts.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ")}` : ""}{toRecord.length ? `, record ${toRecord.length} visit${toRecord.length > 1 ? "s" : ""}` : ""}
+        <button className="btn sm primary" disabled={busy || bad} title={bad ? "Every value needs a number, every result some text, and every visit to record a date and a doctor" : undefined} onClick={() => act({ action: "autofile", id: d.id, date: date || null, labs: rows.map((r) => ({ marker: r.marker, value: Number(r.value), date: r.date ?? null })), texts, visits, skipReadings: !withReadings })}>
+          ✓ {changed ? "Save corrections" : "Reading is correct"}: file{rows.length + texts.length + homeN ? ` and enter ${[rows.length ? `${rows.length} value${rows.length > 1 ? "s" : ""}` : "", texts.length ? `${texts.length} other result${texts.length > 1 ? "s" : ""}` : "", homeN ? `${homeN} home reading${homeN > 1 ? "s" : ""}` : ""].filter(Boolean).join(", ")}` : ""}{toRecord.length ? `, record ${toRecord.length} visit${toRecord.length > 1 ? "s" : ""}` : ""}
         </button>
         <button className="btn sm" disabled={busy} title="Files the document and enters nothing; add the values by hand" onClick={() => act({ action: "autofile", id: d.id, reject: true })}>✗ Not usable: file without values</button>
       </div>
@@ -505,12 +524,12 @@ export function DocumentsTab({ pid, docs, canEdit, onChange }: { pid: string; do
     }
   }  // A document with values or visits filed from it: offer to remove those too, so nothing is left pointing at a deleted file.
   async function deleteDoc(d: DocItem) {
-    const labs = d.filed_labs ?? 0, visits = d.filed_visits ?? 0;
-    if (!labs && !visits) {
+    const labs = d.filed_labs ?? 0, visits = d.filed_visits ?? 0, homes = d.filed_readings ?? 0;
+    if (!labs && !visits && !homes) {
       if (window.confirm(`Delete “${d.title}”?`)) await act({ action: "delete", id: d.id });
       return;
     }
-    const what = [labs ? `${labs} lab value${labs > 1 ? "s" : ""}` : "", visits ? `${visits} visit${visits > 1 ? "s" : ""} to other doctors` : ""].filter(Boolean).join(" and ");
+    const what = [labs ? `${labs} lab value${labs > 1 ? "s" : ""}` : "", homes ? `${homes} home reading${homes > 1 ? "s" : ""}` : "", visits ? `${visits} visit${visits > 1 ? "s" : ""} to other doctors` : ""].filter(Boolean).join(" and ");
     if (window.confirm(`Delete “${d.title}” AND the ${what} filed from it?\n\nOK: delete both. Cancel: choose to keep them.`)) await act({ action: "delete", id: d.id, withData: true });
     else if (window.confirm(`Delete only the document “${d.title}”, keeping the ${what} in the record?`)) await act({ action: "delete", id: d.id });
   }

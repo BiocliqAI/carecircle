@@ -186,13 +186,14 @@ export interface ReadEdit {
   texts?: TextResult[]; // the checker's corrected text results; replaces what was read
   date?: string | null; // YYYY-MM-DD the samples were taken
   reject?: boolean; // the reading is wrong: file the document and enter nothing
+  skipReadings?: boolean; // file the values but leave out the home readings the AI found
 }
 
 /**
  * The checker confirms the reading, optionally corrected, and the lab values enter the lab history; or rejects it
  * and nothing is entered. A document that was already filed keeps its title and category.
  */
-export function autoFile(docId: number, userId: string, t: number, edit: ReadEdit = {}): { filed: string; labs: number; texts?: number; visits?: number } {
+export function autoFile(docId: number, userId: string, t: number, edit: ReadEdit = {}): { filed: string; labs: number; texts?: number; visits?: number; readings?: number } {
   const d = get<{ patient_id: string; extract: string | null; filed_at: number | null; title: string; category: string }>("SELECT patient_id, extract, filed_at, title, category FROM patient_documents WHERE id = ?", docId);
   if (!d) throw new Error("Document not found");
   const x = readExtract(d.extract);
@@ -249,14 +250,31 @@ export function autoFile(docId: number, userId: string, t: number, edit: ReadEdi
     }
   }
   const texts = textsIn.length ? enterTexts(p.id, textsIn, Math.min(at, t), userId, docId) : 0;
+  const readings = edit.skipReadings ? 0 : enterReadings(p.id, x.readings ?? [], userId, docId, t);
   let visits = 0;
   for (const v of visitsIn) {
     if (v.kind !== "outside") continue; // the treating doctor's visits are entered on the visit form (they set the care plan)
     saveDocumentVisit(p.id, userId, docId, { ...v, date: v.date!, medChanges: v.medChanges }, t);
     visits++;
   }
-  audit(t, userId, "DOCUMENT_AUTOFILED", "patient", p.id, { document: docId, category: x.category, labs, texts, visits, edited });
-  return { filed: title, labs, texts, visits };
+  audit(t, userId, "DOCUMENT_AUTOFILED", "patient", p.id, { document: docId, category: x.category, labs, texts, visits, readings, edited });
+  return { filed: title, labs, texts, visits, readings };
+}
+
+/**
+ * Files a document's dated home readings (a BP / sugar / weight diary, a vitals history) with the readings history,
+ * so they chart alongside readings sent on WhatsApp. A reading already on record at that moment isn't entered twice.
+ * No alerts are raised: these are past readings. Returns how many were new.
+ */
+export function enterReadings(pid: string, list: NonNullable<DocExtract["readings"]>, userId: string, docId: number, t: number): number {
+  let n = 0;
+  for (const h of cleanReadings(list)) {
+    const at = Math.min(Date.parse(`${h.date}T${h.time ?? "08:00"}:00+05:30`), t);
+    if (!Number.isFinite(at) || get("SELECT 1 FROM observations WHERE patient_id = ? AND type = ? AND observed_at = ? AND v1 = ?", pid, h.type, at, h.v1)) continue;
+    run("INSERT INTO observations(patient_id, type, v1, v2, observed_at, logged_by, parser, document_id) VALUES(?,?,?,?,?,?,?,?)", pid, h.type, h.v1, h.v2 ?? null, at, userId, "document", docId);
+    n++;
+  }
+  return n;
 }
 
 /** When a report's values were taken: its own date (never in the future), else now. */
