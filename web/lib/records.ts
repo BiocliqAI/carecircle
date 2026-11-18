@@ -6,8 +6,14 @@ import { sendWhatsApp } from "./whatsapp";
 import { consentReminderBody } from "./consenttext";
 import { MAX_CAREGIVERS, shortName } from "./types";
 
-const PHONE_RE = /^\+?[\d\s-]{8,}$/;
+import { e164, normalizePhone } from "./twilio";
+
 const digits = (s: string) => s.replace(/\D/g, "");
+/** Same WhatsApp number however it was typed ("09886020001" and "+91 98860 20001"). */
+const samePhone = (a: string | null | undefined, b: string | null | undefined) => {
+  const x = e164(a), y = e164(b);
+  return x ? x === y : !!a && !!b && digits(a) === digits(b);
+};
 
 // ---------------------------------------------------------------- demographics
 export interface PatientEdit {
@@ -24,11 +30,11 @@ export function updatePatient(pid: string, e: PatientEdit, t: number, actor: str
   const p = getPatient(pid);
   if (!p) throw new Error("Patient not found");
   const name = e.name?.trim() || p.name;
-  const phone = e.phone?.trim() || p.phone;
-  if (!PHONE_RE.test(phone) || digits(phone).length < 10) throw new Error("Enter a valid WhatsApp number with country code");
-  if (digits(phone) !== digits(p.phone) && all<{ phone: string }>("SELECT phone FROM patients WHERE id != ?", pid).some((x) => digits(x.phone) === digits(phone)))
+  // Re-checked only when changed, so an older record saved in another format can still be edited.
+  const phone = e.phone?.trim() && digits(e.phone) !== digits(p.phone) ? normalizePhone(e.phone, "the patient's WhatsApp number") : p.phone;
+  if (digits(phone) !== digits(p.phone) && all<{ phone: string }>("SELECT phone FROM patients WHERE id != ?", pid).some((x) => samePhone(x.phone, phone)))
     throw new Error("Another patient already uses this WhatsApp number");
-  if (getCaregivers(pid).some((c) => digits(c.phone) === digits(phone))) throw new Error("That number belongs to a caregiver in this care circle");
+  if (getCaregivers(pid).some((c) => samePhone(c.phone, phone))) throw new Error("That number belongs to a caregiver in this care circle");
   const age = e.age === undefined ? p.age : e.age === null ? null : Number(e.age);
   if (age !== null && (!Number.isFinite(age) || age < 0 || age > 120)) throw new Error("Age must be between 0 and 120");
   let doctorId = p.doctor_id;
@@ -68,27 +74,30 @@ export interface CaregiverInput {
 export function setCareCircle(pid: string, list: CaregiverInput[], t: number, actor: string): CaregiverRow[] {
   const p = getPatient(pid);
   if (!p) throw new Error("Patient not found");
-  const clean = list.filter((c) => c.name?.trim() || c.phone?.replace(/\D/g, "").length > 2);
-  if (!clean.length) throw new Error("The care circle needs at least one caregiver");
-  if (clean.length > MAX_CAREGIVERS) throw new Error(`A care circle has at most ${MAX_CAREGIVERS} caregivers (primary and backup)`);
-  for (const [i, c] of clean.entries()) {
-    if (!c.name?.trim()) throw new Error(`Enter a name for caregiver ${i + 1}`);
-    if (!PHONE_RE.test(c.phone || "") || digits(c.phone).length < 10) throw new Error(`Enter a WhatsApp number for caregiver ${i + 1}`);
-    if (digits(c.phone) === digits(p.phone)) throw new Error(`Caregiver ${i + 1} can't use the patient's own number`);
-  }
-  if (new Set(clean.map((c) => digits(c.phone))).size !== clean.length) throw new Error("Each caregiver needs a different WhatsApp number");
-
+  const filled = list.filter((c) => c.name?.trim() || c.phone?.replace(/\D/g, "").length > 2);
+  if (!filled.length) throw new Error("The care circle needs at least one caregiver");
+  if (filled.length > MAX_CAREGIVERS) throw new Error(`A care circle has at most ${MAX_CAREGIVERS} caregivers (primary and backup)`);
   const before = getCaregivers(pid);
+  const clean = filled.map((c, i) => {
+    if (!c.name?.trim()) throw new Error(`Enter a name for caregiver ${i + 1}`);
+    // An unchanged number on an existing caregiver is kept as it was saved; anything typed is checked and normalised.
+    const kept = c.id ? before.find((b) => b.id === c.id && digits(b.phone) === digits(c.phone || "")) : undefined;
+    const phone = kept ? kept.phone : normalizePhone(c.phone, `caregiver ${i + 1}'s WhatsApp number`);
+    if (samePhone(phone, p.phone)) throw new Error(`Caregiver ${i + 1} can't use the patient's own number`);
+    return { ...c, phone };
+  });
+  if (new Set(clean.map((c) => e164(c.phone) ?? digits(c.phone))).size !== clean.length) throw new Error("Each caregiver needs a different WhatsApp number");
+
   const clinic = clinicLabel();
   tx(() => {
     run("DELETE FROM caregivers WHERE patient_id = ?", pid);
     clean.forEach((c, i) => {
       const level = i + 1;
       const prev = c.id ? before.find((b) => b.id === c.id) : undefined;
-      const samePerson = prev && digits(prev.phone) === digits(c.phone);
+      const samePerson = prev && samePhone(prev.phone, c.phone);
       let uid = samePerson ? prev!.user_id : null;
       if (!uid) {
-        uid = all<{ id: string; phone: string }>("SELECT id, phone FROM users WHERE role = 'CAREGIVER'").find((u) => digits(u.phone) === digits(c.phone))?.id ?? null;
+        uid = all<{ id: string; phone: string }>("SELECT id, phone FROM users WHERE role = 'CAREGIVER'").find((u) => samePhone(u.phone, c.phone))?.id ?? null;
         if (!uid) {
           uid = `u_cg_${pid.slice(2, 22)}_${t.toString(36)}${level}`;
           run("INSERT INTO users(id, name, role, phone, title) VALUES(?,?,?,?,?)", uid, c.name.trim(), "CAREGIVER", c.phone.trim(), `${c.relation || "Family"} of ${shortName(p.name)}`);

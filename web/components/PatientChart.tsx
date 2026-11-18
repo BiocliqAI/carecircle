@@ -13,7 +13,7 @@ import { DocumentOcrModal } from "./DocumentOcrModal";
 import { PlanBuilder } from "./PlanBuilder";
 import { HistoryPopup } from "./HistoryPopup";
 import { ClinicOutsideVisits } from "./OutsideVisits";
-import { BaselineCard } from "./baseline";
+import { BaselineCard, DeliveryLine } from "./baseline";
 import { ClinicalHistoryCard } from "./ClinicalHistoryCard";
 import { CareCircleCard, ClearRecordsCard, DeletePatientCard, DetailsCard, DocumentsTab, NotesTab } from "./PatientRecordTabs";
 import { PlanTab, Timeline, type Data, type TL } from "./PatientView";
@@ -204,7 +204,7 @@ export function PatientChart({ id }: { id: string }) {
                 </section>
               </div>
               <div className="span4 stack gap16">
-                <CareCircleCard pid={id} patient={d.patient} caregivers={d.caregivers} consents={d.consents} onChange={changed} />
+                <CareCircleCard pid={id} patient={d.patient} caregivers={d.caregivers} consents={d.consents} delivery={d.delivery} onChange={changed} />
                 <section className="v2-card pad">
                   <h2 style={{ marginBottom: 4 }}>Pattern watch</h2>
                   <p className="v2-sub" style={{ margin: "0 0 8px" }}>Slow drifts that stay under your limits. Advisory only: a gentle heads-up to the family and a line on Today.</p>
@@ -679,7 +679,7 @@ function SideCards({ d, onSec, labs = true }: { d: Data; onSec: (x: Section) => 
         <div className="row between" style={{ marginBottom: 4 }}><h2>Care circle</h2><button className="tq-link" onClick={() => onSec("alerts")}>Manage</button></div>
         {d.caregivers.map((c) => {
           const st = consent(c.user_id);
-          return <div key={c.id} className="v2-kv"><span><b style={{ fontWeight: 600 }}>{c.name}</b> <span className="v2-sub">{c.relation} · {c.level === 1 ? "primary" : "backup"}</span></span><span style={{ fontSize: 12.5, fontWeight: 600, color: st === "GIVEN" ? "var(--c-green)" : st === "DECLINED" ? "var(--c-red)" : st === "PENDING" ? "var(--c-amber)" : "var(--c-mute)" }}>{st === "GIVEN" ? "Consented" : st === "DECLINED" ? "Declined" : st === "PENDING" ? "Awaiting YES" : ""}</span></div>;
+          return <div key={c.id} className="v2-kv" style={{ flexWrap: "wrap" }}><span><b style={{ fontWeight: 600 }}>{c.name}</b> <span className="v2-sub">{c.relation} · {c.level === 1 ? "primary" : "backup"}</span></span><span style={{ fontSize: 12.5, fontWeight: 600, color: st === "GIVEN" ? "var(--c-green)" : st === "DECLINED" ? "var(--c-red)" : st === "PENDING" ? "var(--c-amber)" : "var(--c-mute)" }}>{st === "GIVEN" ? "Consented" : st === "DECLINED" ? "Declined" : st === "PENDING" ? "Awaiting YES" : ""}</span>{c.user_id && d.delivery?.[c.user_id] && <div style={{ flexBasis: "100%" }}><DeliveryLine d={d.delivery[c.user_id]} compact /></div>}</div>;
         })}
         {!d.caregivers.length && <div className="v2-sub">No caregivers.</div>}
       </section>

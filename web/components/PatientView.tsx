@@ -12,7 +12,7 @@ import { describeMed } from "@/lib/meds";
 import { dayKey, fmtDate, fmtDateTime, fmtTime, relDays } from "@/lib/time";
 import { ClinicalSummaryCard } from "./ClinicalSummaryCard";
 import { DocumentOcrModal } from "./DocumentOcrModal";
-import { BaselineCard, ConsentList, type ConsentView } from "./baseline";
+import { BaselineCard, ConsentList, type ConsentView, type DeliveryMap } from "./baseline";
 import { DocumentsTab, NotesTab, ProfileTab, type DocItem, type NoteItem } from "./PatientRecordTabs";
 import type { Baseline } from "@/lib/types";
 
@@ -53,6 +53,7 @@ export interface Data {
   kidney: LongRange | null;
   baseline: (Baseline & { capturedAt: number; capturedBy: string | null; updatedAt: number }) | null;
   consents: ConsentView[];
+  delivery?: DeliveryMap;
   notes: NoteItem[];
   documents: DocItem[];
   latestLabs?: { marker: string; value: number; at: number; flag: string | null; prev: number | null }[];
@@ -203,7 +204,7 @@ export function PatientView({ id, embedded = false }: { id: string; embedded?: b
       )}
 
       {activeTab === "profile" && clinician && (
-        <ProfileTab patient={d.patient} caregivers={d.caregivers} consents={d.consents} onChange={() => { load(); notifyChange(); }}>
+        <ProfileTab patient={d.patient} caregivers={d.caregivers} consents={d.consents} delivery={d.delivery} onChange={() => { load(); notifyChange(); }}>
           <BaselineCard b={d.baseline} pid={id} canEdit={clinician} now={d.now} />
         </ProfileTab>
       )}
@@ -529,7 +530,7 @@ export function OnboardingCard({ d }: { d: Data }) {
         <div><h3>WhatsApp consent</h3><small>Requested in the welcome message at onboarding</small></div>
         {pending > 0 && <span className="badge warn">{pending} waiting</span>}
       </div>
-      {d.consents.length ? <ConsentList consents={d.consents} people={people} /> : <div className="muted">No consent requests on record.</div>}
+      {d.consents.length ? <ConsentList consents={d.consents} people={people} delivery={d.delivery} /> : <div className="muted">No consent requests on record.</div>}
       {pending > 0 && (d.viewer.role === "DOCTOR" || d.viewer.role === "PA") && <small className="muted" style={{ display: "block", marginTop: 8 }}>Open the WhatsApp simulator and reply <b>YES</b> from each phone.</small>}
     </div>
   );

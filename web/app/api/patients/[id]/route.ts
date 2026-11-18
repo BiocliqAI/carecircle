@@ -12,6 +12,7 @@ import { recordSummary } from "@/lib/onboarding";
 import { keyVitals } from "@/lib/keyvitals";
 import { deletePatient, listDocuments, listNotes, updatePatient, type PatientEdit } from "@/lib/records";
 import { DAY } from "@/lib/time";
+import { deliveryOf } from "@/lib/whatsapp";
 import { loadLearnedMarkers } from "@/lib/labmarkers";
 
 export const dynamic = "force-dynamic";
@@ -100,6 +101,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     kidney: hasKidney ? longRange(id) : null,
     baseline: getBaseline(id),
     consents: getConsents(id),
+    // Care team only: whether each person's latest WhatsApp message actually reached them, and why not.
+    delivery: user.role === "DOCTOR" || user.role === "PA" ? deliveryOf([p.user_id, ...caregivers.map((c) => c.user_id)]) : {},
     notes: user.role === "DOCTOR" || user.role === "PA" ? listNotes(id) : [],
     keyLabs: keyLabs(id),
     keyVitals: keyVitals(id),

@@ -213,6 +213,24 @@ describe("Live clinic onboarding", () => {
     assert.throws(() => records.setCareCircle(pid, [], t, paId), /at least one/);
   });
 
+  it("stores care-circle numbers in full international form and rejects ones WhatsApp can't reach", () => {
+    const [l1, l2] = engine.getCaregivers(pid);
+    const t = now();
+    records.setCareCircle(pid, [
+      { id: l1.id, name: l1.name, relation: l1.relation!, phone: l1.phone, dashboard: true },
+      { id: l2.id, name: l2.name, relation: l2.relation!, phone: "0 98000 66666", dashboard: true },
+    ], t, paId);
+    assert.equal(engine.getCaregivers(pid)[1].phone, "+91 98000 66666");
+    assert.throws(() => records.setCareCircle(pid, [
+      { id: l1.id, name: l1.name, relation: l1.relation!, phone: l1.phone, dashboard: true },
+      { name: "Abroad", relation: "Son", phone: "4155550100", dashboard: true },
+    ], t, paId), /country code/);
+    assert.throws(() => records.setCareCircle(pid, [
+      { id: l1.id, name: l1.name, relation: l1.relation!, phone: l1.phone, dashboard: true },
+      { name: "Same", relation: "Son", phone: l1.phone.replace(/^\+91\s*/, "0"), dashboard: true },
+    ], t, paId), /different WhatsApp number/, "the same number typed another way is still a duplicate");
+  });
+
   it("keeps notes per author", () => {
     const id = records.addNote(pid, "Advised low-salt diet.", "clinical", now(), drId);
     assert.equal(records.listNotes(pid)[0].author_name, "Dr. Anita Menon");

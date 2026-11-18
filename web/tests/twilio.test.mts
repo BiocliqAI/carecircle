@@ -14,6 +14,7 @@ process.env.TWILIO_TEMPLATE_UPDATE = "HXupdate";
 process.env.TWILIO_TEMPLATE_ALERT = "HXalert";
 process.env.TWILIO_TEMPLATE_ESCALATE = "HXescalate";
 process.env.TWILIO_TEMPLATE_ESCALATE_SOLO = "HXescalateSolo";
+process.env.TWILIO_TEMPLATE_CONSENT = "HXconsent";
 delete process.env.GEMINI_API_KEY;
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.WHATSAPP_ALLOWLIST;
@@ -62,6 +63,19 @@ describe("twilio: numbers and signatures", () => {
     assert.equal(tw.e164("9886020003"), "+919886020003");
     assert.equal(tw.e164("whatsapp:+14155238886"), "+14155238886");
     assert.equal(tw.e164("12"), null);
+    assert.equal(tw.e164("+91 0 98860 20001"), "+919886020001", "a trunk 0 typed after +91 still matches");
+  });
+  it("normalises a typed WhatsApp number for storage, or says what is wrong with it", () => {
+    for (const typed of ["9886020001", "098860 20001", "+91 98860 20001", "0091 98860-20001", "919886020001", "+91 0 98860 20001", "whatsapp:+919886020001"])
+      assert.equal(tw.normalizePhone(typed), "+91 98860 20001", typed);
+    assert.equal(tw.normalizePhone("+1 (415) 555-0100"), "+14155550100");
+    assert.equal(tw.normalizePhone("+44 7700 900123"), "+447700900123");
+    assert.throws(() => tw.normalizePhone("4155550100"), /country code/, "a 10-digit number that isn't an Indian mobile isn't guessed as +91");
+    assert.throws(() => tw.normalizePhone("+91 40 2345 6789"), /Indian mobile/);
+    assert.throws(() => tw.normalizePhone("+91 98860 2000"), /Indian mobile/);
+    assert.throws(() => tw.normalizePhone("98860 20001 ext 2"), /digits/);
+    assert.throws(() => tw.normalizePhone("  "), /Enter/);
+    assert.throws(() => tw.normalizePhone("123", "caregiver 1's WhatsApp number"), /caregiver 1's WhatsApp number/);
   });
   it("finds patients and caregivers by WhatsApp number, never clinic staff", () => {
     assert.equal(wa.userByPhone("whatsapp:+919886020001")?.id, "u_pat");
@@ -266,6 +280,53 @@ describe("twilio: delivery", () => {
     wa.deliveryStatus(sid, "read", null);
     wa.deliveryStatus(sid, "failed", "30008");
     assert.equal(status(id).wa_status, "read");
+  });
+
+  it("invites a caregiver outside the window with the consent template, answered from the notification", async () => {
+    run("INSERT OR IGNORE INTO caregivers(id, patient_id, user_id, name, relation, phone, level, dashboard) VALUES('cg1','p1','u_cg','Lakshmi Kumar','Wife','098860 20002',1,1)");
+    run("INSERT OR REPLACE INTO consents(patient_id, user_id, role, status, requested_at) VALUES('p1','u_cg','CAREGIVER','PENDING',?)", now());
+    closeWindow("u_cg");
+    const id = send("u_cg", "Hi Lakshmi, Ramesh Kumar has added you… Reply YES to join, or NO to decline.", { quick: ["YES", "NO"], kind: "info" });
+    await wa.deliveriesSettled();
+    const last = sends().at(-1)!.form!;
+    assert.equal(last.get("ContentSid"), "HXconsent");
+    const vars = JSON.parse(last.get("ContentVariables")!);
+    assert.equal(vars["1"], "Lakshmi");
+    assert.equal(vars["3"], "primary");
+    assert.equal(vars["4"], "Ramesh Kumar");
+    assert.equal(status(id).wa_status, "sent", "the template carries the question, so nothing waits to be re-sent");
+
+    // Once they've answered, a YES/NO message is an ordinary one again: the generic template, and it waits.
+    run("UPDATE consents SET status = 'GIVEN' WHERE user_id = 'u_cg'");
+    closeWindow("u_cg");
+    const later = send("u_cg", "Did Ramesh take his evening tablets?", { quick: ["YES", "NO"], kind: "info" });
+    await wa.deliveriesSettled();
+    assert.equal(sends().at(-1)!.form!.get("ContentSid"), "HXupdate");
+    assert.equal(status(later).wa_status, "waiting");
+  });
+
+  it("explains each person's latest delivery to the clinic", async () => {
+    run("DELETE FROM messages");
+    openWindow("u_pat");
+    const ok = send("u_pat", "Hello");
+    await wa.deliveriesSettled();
+    wa.deliveryStatus(get<{ wa_sid: string }>("SELECT wa_sid FROM messages WHERE id = ?", ok)!.wa_sid, "delivered", null);
+    assert.deepEqual(wa.deliveryOf(["u_pat"]).u_pat && { label: wa.deliveryOf(["u_pat"]).u_pat.label, tone: wa.deliveryOf(["u_pat"]).u_pat.tone }, { label: "Delivered", tone: "good" });
+
+    openWindow("u_cg");
+    failNext = { code: 63003, message: "Channel could not find To address" };
+    send("u_cg", "Hello Lakshmi");
+    await wa.deliveriesSettled();
+    const cg = wa.deliveryOf(["u_cg"]).u_cg;
+    assert.equal(cg.tone, "bad");
+    assert.match(cg.reason!, /isn't on WhatsApp|doesn't seem to be on WhatsApp/);
+
+    // The allowlist and a missing template are named, since those are server settings to fix.
+    run("UPDATE messages SET wa_status = 'skipped', wa_error = 'Number not on WHATSAPP_ALLOWLIST' WHERE user_id = 'u_cg'");
+    assert.match(wa.deliveryOf(["u_cg"]).u_cg.reason!, /WHATSAPP_ALLOWLIST/);
+    run("UPDATE messages SET wa_status = 'waiting', wa_error = 'Outside the 24-hour window and no TWILIO_TEMPLATE_UPDATE is set' WHERE user_id = 'u_cg'");
+    assert.match(wa.deliveryOf(["u_cg"]).u_cg.reason!, /TWILIO_TEMPLATE_UPDATE isn't set/);
+    assert.deepEqual(wa.deliveryOf(["u_dr", null]), {}, "nothing for someone never messaged");
   });
 
   it("splits long messages on line breaks within Twilio's limit", () => {
