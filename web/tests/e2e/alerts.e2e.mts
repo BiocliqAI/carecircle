@@ -463,8 +463,9 @@ await T("ESC-08", "L1 passes it on", async () => {
   const l2 = escMsgs("u_arjun", m);
   assert.equal(l2.length, 1); assert.match(l2[0].body, /couldn't take this and passed it to you/);
   const told = outText("u_lakshmi", m);
-  assert.match(told, /Escalated to Level 2 \(Arjun Kumar\)/);
-  // wording check (not failing): the note to L1 says "no response received" although L1 actively passed it
+  // L1 is told who has it now. The fix on claude/fix-consent-breathless-alerts says "Passed on: …"; older code said
+  // "no response received … Escalated to Level 2 (…)" although L1 actively passed it. Either names Arjun.
+  assert.match(told, /Passed on: Arjun Kumar now has the alert|Escalated to Level 2 \(Arjun Kumar\)/);
 });
 
 await T("ESC-09", "Exhausted", async () => {
