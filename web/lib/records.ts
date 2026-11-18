@@ -1,7 +1,7 @@
 // Patient record maintenance after onboarding: demographics, care circle (max 2), clinical notes,
 // documents, and the patient's WhatsApp SOS. Every change is audited.
 import { all, audit, get, run, tx } from "./db";
-import { clinicLabel, createEscalation, getCaregivers, getPatient, getUser, requestConsent, type CaregiverRow } from "./engine";
+import { circleCaregivers, clinicLabel, createEscalation, getCaregivers, getPatient, getUser, requestConsent, type CaregiverRow } from "./engine";
 import { sendWhatsApp } from "./whatsapp";
 import { consentReminderBody } from "./consenttext";
 import { MAX_CAREGIVERS, shortName } from "./types";
@@ -272,7 +272,7 @@ export function raiseSos(userId: string, t: number): { patientName: string; call
     : get<{ patient_id: string }>("SELECT patient_id FROM caregivers WHERE user_id = ? ORDER BY level LIMIT 1", userId)?.patient_id;
   const p = pid ? getPatient(pid) : undefined;
   if (!p) throw new Error("This number isn't linked to a patient");
-  const cgs = getCaregivers(p.id);
+  const cgs = circleCaregivers(p.id);
   const msgId = run("INSERT INTO messages(patient_id, user_id, direction, body, created_at, kind) VALUES(?,?,?,?,?,?)", p.id, userId, "IN", "🆘 Emergency: call for help", t, "sos").lastInsertRowid;
   createEscalation(
     p,
@@ -289,7 +289,7 @@ export function raiseSos(userId: string, t: number): { patientName: string; call
   const first = cgs[0];
   sendWhatsApp({
     userId, patientId: p.id, at: t + 1000, kind: "reply",
-    body: `🆘 Help is on the way.\n${first ? `I've alerted ${first.name} (${first.relation}) and I'm calling them now.` : "I've alerted your care circle."}\n\nIf this is severe (chest pain, can't breathe, fainting), call *108* now.`,
+    body: first ? `🆘 Help is on the way.\nI've alerted ${first.name} (${first.relation}) and I'm calling them now.\n\nIf this is severe (chest pain, can't breathe, fainting), call *108* now.` : `🆘 I couldn't reach anyone in your care circle.\nPlease call *108* now, or go to the nearest emergency department.`,
   });
   audit(t, userId, "SOS_RAISED", "patient", p.id, { message: msgId });
   return { patientName: p.name, calling: first ? first.name : null };

@@ -3,7 +3,7 @@
 // emergency readings alert at once, real-looking readings are always logged, and a held reading is
 // escalated anyway if no recheck arrives.
 import { all, audit, get, getSetting, run, setSetting } from "./db";
-import { createEscalation, evaluateVital, getCaregivers, getPatient, getUser, resolveEscalation, type Alert, type EscalationRow, type PatientRow, type UserRow } from "./engine";
+import { createEscalation, evaluateVital, circleCaregivers, getPatient, getUser, resolveEscalation, type Alert, type EscalationRow, type PatientRow, type UserRow } from "./engine";
 import { sendWhatsApp } from "./whatsapp";
 import { DAY, HOUR, MIN, atLocal, dayStart, fmtTime } from "./time";
 import { VITAL_META, shortName, type CarePlan, type ClinicVitals, type ParsedMessage, type VitalType } from "./types";
@@ -113,7 +113,7 @@ export function correctionPair(body: string): { from: number; to: number } | nul
 
 interface ObsRow { id: number; type: VitalType; v1: number; v2: number | null; observed_at: number; flag: string | null }
 const fmtVal = (type: VitalType, v1: number, v2: number | null) => `${VITAL_META[type].label.replace(/ \(.*\)/, "")} ${type === "bp" ? `${v1}/${v2}` : v1}`;
-const circle = (p: PatientRow, exceptUser: string) => [p.user_id, ...getCaregivers(p.id).map((c) => c.user_id)].filter((u): u is string => !!u && u !== exceptUser);
+const circle = (p: PatientRow, exceptUser: string) => [p.user_id, ...circleCaregivers(p.id).map((c) => c.user_id)].filter((u): u is string => !!u && u !== exceptUser);
 
 export interface CorrectionResult { lines: string[]; remove: Set<VitalType>; alerts: Alert[] }
 
@@ -268,7 +268,7 @@ export function recheckGate(p: PatientRow, plan: CarePlan, type: VitalType, v1: 
   const reading = type === "bp" ? `${v1}/${v2}` : String(v1);
   setSetting(rkey(p.id, type), JSON.stringify({ at: t, alert, reading, by: by.id } satisfies Pending));
   const caregiver = by.role === "CAREGIVER";
-  const first1 = getCaregivers(p.id)[0]?.name;
+  const first1 = circleCaregivers(p.id)[0]?.name;
   return {
     alert: null,
     say: `⏳ That's only a little above the limit. ${caregiver ? `Please let ${first(p.name)} sit quietly` : "Please sit quietly"} for 10 minutes (feet flat, arm resting), then measure again and send it.\nIf it's still high${first1 ? `, I'll let ${first1} know` : ", I'll let your care circle know"}. If ${caregiver ? "they feel" : "you feel"} unwell, don't wait.`,
