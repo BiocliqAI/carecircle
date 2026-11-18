@@ -3,7 +3,7 @@
 // They are advisory: a gentle heads-up to the family and a line for the doctor, never an escalation.
 // The doctor can dismiss one, or turn a pattern off for a patient.
 import { all, audit, get, getSetting, run, setSetting } from "./db";
-import { getCaregivers, getPatient, getUser, latestVisit, type PatientRow } from "./engine";
+import { circleCaregivers, getPatient, getUser, latestVisit, type PatientRow } from "./engine";
 import { sendWhatsApp } from "./whatsapp";
 import { DAY, HOUR, dayKey, dayStart, localHHMM } from "./time";
 import { isDiuretic, shortName, type Thresholds } from "./types";
@@ -133,7 +133,7 @@ export function evaluateWatches(p: PatientRow, t: number) {
 /** A gentle heads-up (explicitly "not an alarm") to the patient and the first caregiver. */
 function notify(p: PatientRow, h: Hit, t: number) {
   const doc = getUser(p.doctor_id)?.name ?? "the doctor";
-  const cg = getCaregivers(p.id)[0];
+  const cg = circleCaregivers(p.id)[0];
   const body = (you: boolean) => `👀 A heads-up, not an alarm: ${you ? h.detail.replace(/^Weight /, "Your weight ").replace(/^Average/, "Your average") : h.detail}\n${h.advice}\n${doc}'s team can see this too.`;
   if (p.user_id) sendWhatsApp({ userId: p.user_id, patientId: p.id, body: body(true), kind: "info", at: t });
   if (cg?.user_id && !get("SELECT 1 FROM consents WHERE patient_id = ? AND user_id = ? AND status != 'GIVEN'", p.id, cg.user_id)) sendWhatsApp({ userId: cg.user_id, patientId: p.id, body: `👀 ${first(p.name)}: a heads-up, not an alarm.\n${h.detail}\n${h.advice}`, kind: "info", at: t });

@@ -162,6 +162,30 @@ function severityNear(text: string, idx: number): ParsedSymptom["severity"] {
   return "moderate";
 }
 
+/** Words that mean breathing is failing now ("I can't breathe", "gasping for air"): always severe breathlessness. */
+const SEVERE_BREATHING = /\b(can'?t|cannot|can not|unable to|could ?n'?t|not able to) (breathe|get (my |a )?breath|catch (my |a )?breath)\b|struggling (to breathe|for (breath|air))|gasping( for (breath|air))?|fighting for (breath|air)|\bchoking\b/;
+
+/** The words in `text` that say breathing is failing now, unless negated ("no gasping"). */
+export function severeBreathingIn(text: string): string | null {
+  const t = " " + text.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ") + " ";
+  const m = SEVERE_BREATHING.exec(t);
+  if (!m || negated(t, m.index)) return null;
+  return m[0];
+}
+
+/**
+ * Deterministic safety net over any parser (rules or AI): a message saying breathing is failing now is recorded as
+ * severe breathlessness, so the severe-breathlessness emergency rule applies whatever severity was read.
+ */
+export function applySevereBreathing(parsed: ParsedMessage, body: string): void {
+  const words = severeBreathingIn(body);
+  if (!words) return;
+  const s = parsed.symptoms.find((x) => x.key === "breathlessness");
+  if (s) s.severity = "severe";
+  else parsed.symptoms.push({ key: "breathlessness", severity: "severe", text: words.trim() });
+  parsed.noSymptoms = false;
+}
+
 function num(s: string | undefined): number | undefined {
   if (s === undefined) return undefined;
   const n = Number(s);

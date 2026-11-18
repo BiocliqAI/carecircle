@@ -3,7 +3,7 @@
 // Doctors/PAs are NEVER notified by this engine — they see everything on the dashboard.
 import { all, audit, get, getSetting, run, setSetting, tx } from "./db";
 import { now, setSimNow } from "./clock";
-import { parseMessage } from "./parser";
+import { applySevereBreathing, parseMessage } from "./parser";
 import { sendWhatsApp, templateLine } from "./whatsapp";
 import { e164 } from "./twilio";
 import { DAY, HOUR, MIN, atLocal, dayKey, dayStart, fmtDate, fmtTime, localDow, localHHMM } from "./time";
@@ -89,6 +89,13 @@ export const getUser = (id: string) => get<UserRow>("SELECT * FROM users WHERE i
 export const getPatient = (id: string) => get<PatientRow>("SELECT * FROM patients WHERE id = ?", id);
 export const listPatients = () => all<PatientRow>("SELECT * FROM patients ORDER BY name");
 export const getCaregivers = (pid: string) => all<CaregiverRow>("SELECT * FROM caregivers WHERE patient_id = ? ORDER BY level", pid);
+/**
+ * The care circle that receives messages and alerts: every caregiver on WhatsApp except those who declined to join
+ * (they were told they won't hear from us). A caregiver whose consent is still pending stays in, so an emergency is
+ * never held back because an invitation hasn't been answered yet.
+ */
+export const circleCaregivers = (pid: string) =>
+  getCaregivers(pid).filter((c) => !!c.user_id && !get("SELECT 1 FROM consents WHERE patient_id = ? AND user_id = ? AND status = 'DECLINED'", pid, c.user_id));
 
 export function rowToVisit(r: Record<string, unknown>): Visit {
   return {
@@ -364,8 +371,8 @@ export function createEscalation(p: PatientRow, e: NewEsc, t: number): number | 
     escEvent(dup.id, t, "REPEAT", dup.level, "system", e.detail);
     return null;
   }
-  const cgs = getCaregivers(p.id);
-  const level = cgs[0]?.level ?? 1;
+  const cgs = circleCaregivers(p.id);
+  const level = cgs[0]?.level ?? getCaregivers(p.id)[0]?.level ?? 1;
   const r = run(
     `INSERT INTO escalations(patient_id, type, rule_key, title, detail, advice, state, level, started_at, level_at, trigger_message_id, trigger_observation_id, task_ids)
      VALUES(?,?,?,?,?,?,'NOTIFIED',?,?,?,?,?,?)`,
@@ -375,7 +382,8 @@ export function createEscalation(p: PatientRow, e: NewEsc, t: number): number | 
   escEvent(id, t, "CREATED", null, "system", e.detail);
   audit(t, "system", "ESCALATION_CREATED", "escalation", id, { type: e.type, rule: e.ruleKey });
   const esc = get<EscalationRow>("SELECT * FROM escalations WHERE id = ?", id)!;
-  notifyLevel(p, esc, level, t, null);
+  if (!cgs.length) exhaust(p, esc, t, "No one in the care circle can receive alerts"); // tell the patient at once
+  else notifyLevel(p, esc, level, t, null);
   return id;
 }
 
@@ -391,10 +399,11 @@ function escalationText(p: PatientRow, esc: EscalationRow, prev: CaregiverRow | 
 }
 
 function notifyLevel(p: PatientRow, esc: EscalationRow, level: number, t: number, prev: CaregiverRow | null, passed = false) {
-  const cg = getCaregivers(p.id).find((c) => c.level === level);
+  const circle = circleCaregivers(p.id);
+  const cg = circle.find((c) => c.level === level);
   if (!cg || !cg.user_id) return;
   const timer = TIMER_MIN(latestVisit(p.id, t)?.plan, esc.type);
-  const backup = getCaregivers(p.id).find((c) => c.level === level + 1);
+  const backup = circle.find((c) => c.level > level);
   const sentence = (s: string, max: number) => templateLine(s, max).replace(/[.\s]+$/, "");
   const card = {
     backup: !!backup,
@@ -416,11 +425,10 @@ export function timeoutCaregiver(escId: number, t: number, via: "whatsapp" | "da
   if (!esc) return "Not found";
   if (esc.state !== "NOTIFIED") return "Already acknowledged or closed";
   const p = getPatient(esc.patient_id)!;
-  const cgs = getCaregivers(p.id);
   const plan = latestVisit(p.id, t)?.plan;
   const timer = TIMER_MIN(plan, esc.type);
-  const cur = cgs.find((c) => c.level === esc.level) || null;
-  const next = cgs.find((c) => c.level > esc.level);
+  const cur = getCaregivers(p.id).find((c) => c.level === esc.level) || null;
+  const next = circleCaregivers(p.id).find((c) => c.level > esc.level); // a caregiver who declined is skipped
   if (next) {
     run("UPDATE escalations SET level = ?, level_at = ? WHERE id = ?", next.level, t, esc.id);
     escEvent(esc.id, t, "TIMEOUT", esc.level, via === "timer" ? "system" : cur?.name ?? "system", via === "timer" ? `${cur?.name ?? "Level " + esc.level} did not acknowledge within ${timer} min` : `${cur?.name ?? "Level " + esc.level} passed it on`);
@@ -430,20 +438,23 @@ export function timeoutCaregiver(escId: number, t: number, via: "whatsapp" | "da
       sendWhatsApp({
         userId: cur.user_id,
         patientId: p.id,
-        body: `⏱️ Alert timeout: no response received from Level ${esc.level} (${cur.name}). Escalated to Level ${next.level} (${next.name}).`,
+        body: `👍 Passed on: ${next.name} now has the alert about ${first(p.name)} (${esc.title}).`,
         kind: "info",
         at: t,
       });
     }
-  } else {
-    run("UPDATE escalations SET state = 'EXHAUSTED', resolved_at = ?, outcome_code = 'EXHAUSTED' WHERE id = ?", t, esc.id);
-    escEvent(esc.id, t, "EXHAUSTED", esc.level, "system", `No caregiver acknowledged at any level${via === "whatsapp" ? " (simulated miss)" : ""}`);
-    audit(t, "system", "ESCALATION_EXHAUSTED", "escalation", esc.id, { via });
-    const msg = `❗ Nobody in ${first(p.name)}'s care circle acknowledged: ${esc.title}.\nPlease act now — contact ${doctorName(p)}'s clinic or seek medical attention if needed.`;
-    for (const c of cgs) if (c.user_id) sendWhatsApp({ userId: c.user_id, patientId: p.id, body: msg, kind: "escalation", alert: `nobody has responded to "${esc.title}"`, at: t });
-    sendWhatsApp({ userId: p.user_id!, patientId: p.id, body: `❗ We couldn't reach your care circle about: ${esc.title}. If you feel unwell, please contact ${doctorName(p)}'s clinic or go to the nearest hospital.`, kind: "escalation", alert: `your care circle could not be reached about "${esc.title}"`, at: t });
-  }
+  } else exhaust(p, esc, t, `No caregiver acknowledged at any level${via === "whatsapp" ? " (simulated miss)" : ""}`, via);
   return null;
+}
+
+/** Nobody in the circle took the alert (or nobody can receive it): close it and tell the circle and the patient. */
+function exhaust(p: PatientRow, esc: EscalationRow, t: number, why: string, via: string = "timer") {
+  run("UPDATE escalations SET state = 'EXHAUSTED', resolved_at = ?, outcome_code = 'EXHAUSTED' WHERE id = ?", t, esc.id);
+  escEvent(esc.id, t, "EXHAUSTED", esc.level, "system", why);
+  audit(t, "system", "ESCALATION_EXHAUSTED", "escalation", esc.id, { via });
+  const msg = `❗ Nobody in ${first(p.name)}'s care circle acknowledged: ${esc.title}.\nPlease act now — contact ${doctorName(p)}'s clinic or seek medical attention if needed.`;
+  for (const c of circleCaregivers(p.id)) sendWhatsApp({ userId: c.user_id!, patientId: p.id, body: msg, kind: "escalation", alert: `nobody has responded to "${esc.title}"`, at: t });
+  if (p.user_id) sendWhatsApp({ userId: p.user_id, patientId: p.id, body: `❗ We couldn't reach your care circle about: ${esc.title}. If you feel unwell, please contact ${doctorName(p)}'s clinic or go to the nearest hospital.`, kind: "escalation", alert: `your care circle could not be reached about "${esc.title}"`, at: t });
 }
 
 function tickEscalations(p: PatientRow, t: number) {
@@ -881,6 +892,7 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   const canStart = !busy && !flowOpen && !HELP_RE.test(body);
   if (canStart && looksLikeOutsideVisit(body)) ov = await outsideVisitTurn(user, p, body, t, { start: true, msgId, allowAi: opts.allowAi });
   const { parsed, parser } = await parseMessage(body, plan.medications, opts.allowAi !== false && !ov?.handled);
+  applySevereBreathing(parsed, body); // "I can't breathe" is an emergency whatever severity the parser read
   if (canStart && !ov && !parsed.help && (parsed.outsideVisit || parsed.medChanges.length > 0)) ov = await outsideVisitTurn(user, p, body, t, { start: true, msgId, allowAi: opts.allowAi });
   if (ov?.handled) {
     parsed.medChanges = [];
@@ -1045,7 +1057,7 @@ export async function ingestMessage(userId: string, body: string, opts: { allowA
   }
   const created: { a: Alert; id: number | null }[] = [];
   for (const a of alerts) created.push({ a, id: createEscalation(p, { ...a, messageId: msgId }, t + 500) });
-  const cgs = getCaregivers(p.id);
+  const cgs = circleCaregivers(p.id);
   for (const { a, id } of created) {
     if (a.type === "URGENT") text += `\n\n🚨 ${a.detail.replace(/^.*?reported: /, "")}\n${a.advice}${id ? `\nAlerting your care circle now (${cgs[0]?.name ?? "caregiver"}).` : ""}`;
     else text += `\n\n⚠️ ${a.title} — ${a.detail}\n${a.advice}${id ? `\nI've let ${cgs[0]?.name ?? "your caregiver"} in your care circle know.` : ""}`;
@@ -1221,7 +1233,7 @@ function announcePlan(p: PatientRow, doctorId: string, plan: CarePlan, nextVisit
   const after = when ? `your visit on ${fmtDate(when, { day: "numeric", month: "short" })}` : "today's visit";
   sendWhatsApp({ userId: p.user_id!, patientId: p.id, body: `👩‍⚕️ ${doc} has set your care plan after ${after}:\n\n${meds}\n\n📏 Please send: ${mon || "—"}${fl}${lb}\n${physio}\n${life}${next}${qa}${fam}\n\nI'll remind you at the right times${when ? ", starting now" : ""}. Just reply here in your own words. 💙`, kind: "info", at: t });
   const upd = when ? `${first(p.name)}'s care plan from the visit with ${doc} on ${fmtDate(when, { day: "numeric", month: "short" })} starts today.` : `${first(p.name)}'s care plan was updated by ${doc} today.`;
-  for (const c of getCaregivers(p.id)) if (c.user_id) sendWhatsApp({ userId: c.user_id, patientId: p.id, body: `👩‍⚕️ ${upd}${fam} You're Level ${c.level} in the care circle — I'll message you only if something needs attention.${next}`, kind: "info", at: t });
+  for (const c of circleCaregivers(p.id)) if (c.user_id) sendWhatsApp({ userId: c.user_id, patientId: p.id, body: `👩‍⚕️ ${upd}${fam} You're Level ${c.level} in the care circle — I'll message you only if something needs attention.${next}`, kind: "info", at: t });
 }
 
 /** Whether the patient's care plan is running: there is a visit and the plan isn't paused / waiting to be started. */

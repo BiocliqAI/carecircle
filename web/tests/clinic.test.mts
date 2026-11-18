@@ -274,20 +274,23 @@ describe("Live clinic onboarding", () => {
     await engine.ingestMessage(p.user_id!, "BP 186/114, chest pain since morning", { allowAi: false, at: t + 60_000 });
     const urgent = get<{ type: string; level: number }>("SELECT type, level FROM escalations WHERE patient_id = ? AND started_at >= ? AND type = 'URGENT'", pid, t + 60_000);
     assert.ok(urgent, "emergency rules still alert the care circle");
-    const primary = engine.getCaregivers(pid)[0];
-    assert.ok(get("SELECT 1 FROM messages WHERE user_id = ? AND kind = 'escalation' AND created_at >= ?", primary.user_id!, t + 60_000), "primary caregiver alerted");
+    // Suresh (first in the circle) declined consent earlier, so the alert goes to Lata, who hasn't answered yet.
+    const [suresh, lata] = engine.getCaregivers(pid);
+    assert.ok(get("SELECT 1 FROM messages WHERE user_id = ? AND kind = 'escalation' AND created_at >= ?", lata.user_id!, t + 60_000), "next caregiver who hasn't declined is alerted");
+    assert.equal(get("SELECT 1 FROM messages WHERE user_id = ? AND kind = 'escalation' AND created_at >= ?", suresh.user_id!, t + 60_000), undefined, "caregiver who declined is not alerted");
   });
 
-  it("SOS raises an urgent alert to the primary caregiver", () => {
+  it("SOS raises an urgent alert to the first caregiver who hasn't declined", () => {
     const p = engine.getPatient(pid)!;
     const t = now() + 5000;
     const r = records.raiseSos(p.user_id!, t);
-    assert.equal(r.calling, "Suresh Iyer");
+    assert.equal(r.calling, "Lata Rao", "Suresh declined consent, so Lata is called");
     const esc = get<{ type: string; level: number; state: string }>("SELECT type, level, state FROM escalations WHERE patient_id = ? AND rule_key = 'sos'", pid)!;
     assert.equal(esc.type, "URGENT");
     assert.equal(esc.state, "NOTIFIED");
-    const primary = engine.getCaregivers(pid)[0];
-    assert.ok(get("SELECT 1 FROM messages WHERE user_id = ? AND kind = 'escalation' AND created_at >= ?", primary.user_id!, t));
+    const [suresh, lata] = engine.getCaregivers(pid);
+    assert.ok(get("SELECT 1 FROM messages WHERE user_id = ? AND kind = 'escalation' AND created_at >= ?", lata.user_id!, t));
+    assert.equal(get("SELECT 1 FROM messages WHERE user_id = ? AND kind = 'escalation' AND created_at >= ?", suresh.user_id!, t), undefined);
     assert.equal(get<{ n: number }>("SELECT COUNT(*) AS n FROM messages WHERE direction = 'OUT' AND user_id IN (SELECT id FROM users WHERE role IN ('DOCTOR','PA'))")!.n, 0, "the clinic is still never messaged");
   });
 

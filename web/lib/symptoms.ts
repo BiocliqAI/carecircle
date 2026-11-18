@@ -2,7 +2,7 @@
 // when, where, how much. The answers are saved for the doctor. Answers that match an existing red-flag rule
 // (breathless at rest, nearly fainted) raise that same alert; nothing new is decided here.
 import { audit, get, run } from "./db";
-import { createEscalation, evaluateSymptom, getCaregivers, type PatientRow, type UserRow } from "./engine";
+import { circleCaregivers, createEscalation, evaluateSymptom, type PatientRow, type UserRow } from "./engine";
 import { HOUR } from "./time";
 import { SYMPTOMS, shortName, type CarePlan } from "./types";
 
@@ -88,7 +88,7 @@ export function answerSymptomQ(user: UserRow, p: PatientRow, plan: CarePlan, bod
   if (st.key === "breathlessness" && a[0] === "lying flat") raise.push({ key: "orthopnea", severity: "moderate", text: "breathless lying flat" });
   if (st.key === "dizziness" && a[1] === "yes") raise.push({ key: "fainting", severity: "severe", text: "fell or nearly fainted with dizziness" });
   let reply = "Thank you, noted for the doctor. 🙏";
-  const circle = getCaregivers(p.id)[0]?.name ?? "your care circle";
+  const circle = circleCaregivers(p.id)[0]?.name ?? "your care circle";
   for (const r of raise) {
     const alert = evaluateSymptom(p, plan, r.key, r.severity, r.text, obsId);
     if (!alert) continue;

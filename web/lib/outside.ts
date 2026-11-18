@@ -3,7 +3,7 @@
 // documents and its next appointment are on everyone's record at once, but medicine changes are only logged
 // (med_changes, REPORTED). The primary doctor's team applies them to the plan, which is what changes reminders.
 import { all, audit, get, getSetting, run, setSetting, tx } from "./db";
-import { ensureTasks, getCaregivers, getPatient, getUser, latestVisit, type PatientRow, type UserRow } from "./engine";
+import { circleCaregivers, ensureTasks, getCaregivers, getPatient, getUser, latestVisit, type PatientRow, type UserRow } from "./engine";
 import { parseRules } from "./parser";
 import { sendWhatsApp } from "./whatsapp";
 import { addDocument } from "./records";
@@ -319,7 +319,7 @@ function finishVisit(id: number, t: number) {
     v.next_visit_at ? `📅 Next visit: ${fmtDate(v.next_visit_at, { weekday: "short", day: "numeric", month: "short" })}` : "",
     changes.length ? `${primary}'s team will review the medicine changes; reminders change once they update the plan.` : "",
   ].filter(Boolean).join("\n");
-  const circle = [p.user_id, ...getCaregivers(p.id).map((c) => c.user_id)].filter((u): u is string => !!u && u !== v.reported_by);
+  const circle = [p.user_id, ...circleCaregivers(p.id).map((c) => c.user_id)].filter((u): u is string => !!u && u !== v.reported_by);
   for (const u of circle) sendWhatsApp({ userId: u, patientId: p.id, body, kind: "info", at: t + 1500 });
 }
 
@@ -805,7 +805,7 @@ export function applyMedChanges(pid: string, edits: ApplyEdit[], by: string, t: 
   if (done.length) {
     const who = getUser(by)?.name ?? "The clinic";
     const body = `💊 ${who} has updated ${first(p.name)}'s medicines:\n${done.map((d) => `• ${d}`).join("\n")}\n\nReminders follow the new plan from now.`;
-    for (const u of [p.user_id, ...getCaregivers(pid).map((c) => c.user_id)]) if (u) sendWhatsApp({ userId: u, patientId: pid, body, kind: "info", at: t });
+    for (const u of [p.user_id, ...circleCaregivers(pid).map((c) => c.user_id)]) if (u) sendWhatsApp({ userId: u, patientId: pid, body, kind: "info", at: t });
   }
   return done;
 }
