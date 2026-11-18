@@ -1,7 +1,8 @@
 // Consistent snapshot of the live clinic database (safe while the app is running).
 // Usage: npm run clinic:backup            -> backups/clinic-YYYY-MM-DD_HHMM.db
 //        CARECIRCLE_DB=/path/x.db npm run clinic:backup
-// Restore: stop the app, copy the snapshot over data/clinic.db, start the app.
+// Restore: Clinic & staff → Backup and restore (admin), then restart the app. By hand: stop the app, copy the snapshot
+// over data/clinic.db, delete data/clinic.db-wal and data/clinic.db-shm, start the app.
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";

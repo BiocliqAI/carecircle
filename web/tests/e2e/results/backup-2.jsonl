@@ -1,0 +1,2 @@
+{"id":"BK-05","title":"Staged restore shows what's in the backup and leaves the clinic running unchanged","status":"PASS","note":"","ms":26}
+{"id":"BK-06","title":"After a restart the clinic matches the backup; the previous data is kept","status":"PASS","note":"","ms":1206}

@@ -70,9 +70,9 @@ function cleanEnv(extra: Record<string, string | undefined>): NodeJS.ProcessEnv 
   return env;
 }
 
-export async function startApp(opts: { mode?: "demo" | "live"; port: number; suite: string; env?: Record<string, string | undefined> }): Promise<App> {
+export async function startApp(opts: { mode?: "demo" | "live"; port: number; suite: string; env?: Record<string, string | undefined>; /** reuse a database (e.g. to test a restart) */ dbFile?: string }): Promise<App> {
   const mode = opts.mode ?? "demo";
-  const dbFile = path.join(os.tmpdir(), `cc-e2e-${opts.suite}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
+  const dbFile = opts.dbFile ?? path.join(os.tmpdir(), `cc-e2e-${opts.suite}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
   const base = `http://127.0.0.1:${opts.port}`;
   const env = cleanEnv({ CARECIRCLE_DB: dbFile, CARECIRCLE_MODE: mode === "live" ? "live" : undefined, PORT: String(opts.port), ...opts.env });
   const log = fs.createWriteStream(path.join(os.tmpdir(), `cc-e2e-${opts.suite}.server.log`));
