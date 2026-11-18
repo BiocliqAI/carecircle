@@ -49,7 +49,11 @@ Rules for baseline data:
 
 **Access from other devices:** the clinic server listens on all interfaces. A phone or laptop on the same Wi-Fi can open `http://<your-mac's-LAN-IP>:3100`; find the IP with `ipconfig getifaddr en0`. For a remote customer, share your screen.
 
-**Backups:** `npm run clinic:backup` writes a consistent snapshot to `backups/clinic-<timestamp>.db`. It's safe while the app is running. To restore, stop the app and copy the snapshot over `data/clinic.db`.
+**Backups:** as the clinic admin, open **Clinic & staff → Backup and restore**.
+
+- **Download backup** saves a complete, consistent copy of the clinic (staff, patients, messages, documents and settings) to your computer. It's safe while the app is running, and each download is recorded in the audit log.
+- **Restore from a backup:** choose a backup file and press **Check and prepare restore**. The app checks the file (an intact CareCircle clinic database, not the demo) and shows what's in it. Nothing changes until the app restarts; then the backup replaces the database before it opens. The previous database is kept beside it as `clinic.db.before-restore-<date>`, so a restore can be undone. **Cancel restore** drops a prepared restore.
+- From the command line, `npm run clinic:backup` writes the same kind of snapshot to `backups/clinic-<timestamp>.db`. To restore by hand: stop the app, copy the snapshot over `data/clinic.db`, **delete `clinic.db-wal` and `clinic.db-shm`** (otherwise leftover changes can be replayed onto the restored file), then start the app.
 
 **Password gate:** set `APP_PASSWORD` (and optionally `APP_USER`) to require HTTP Basic auth on every page and API route (`proxy.ts`). It's off when unset.
 
@@ -80,7 +84,7 @@ Notes:
 
 - **Replicas:** keep exactly 1. The database is a single SQLite file on the volume.
 - **Scheduler:** a background timer (`instrumentation.ts`) runs it every minute, so reminders and escalations fire without traffic.
-- **Backups:** run `npm run clinic:backup` from a Railway shell, or download `/data/clinic.db`.
+- **Backups:** use **Clinic & staff → Backup and restore** (see above). To finish a prepared restore, open the service in Railway and click **Restart**. Uploads are limited to 80 MB; for a larger database, restore by hand from a Railway shell. Don't copy `/data/clinic.db` directly while the app runs: recent changes may still be in `clinic.db-wal`.
 - **Sample kidney patient:** once the clinic has a doctor, the app adds **A Gopal** with real (anonymised) history: baseline / Visit 1 on 13 Aug 2025, later prescriptions as visits, home readings, labs and medicine changes. It happens once per database; nothing is sent. Set `CARECIRCLE_SAMPLE_PATIENT=off` to skip it. To import the same history into another patient instead: `npm run clinic:import-appa -- <patient-id>`.
 - **Data:** synthetic data only. There are no per-user accounts, and everyone who has the password sees everything.
 

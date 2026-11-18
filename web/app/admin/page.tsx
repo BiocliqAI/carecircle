@@ -2,6 +2,7 @@
 // Clinic admin: create / edit the clinic and manage doctors and assistants. No patient data here.
 import { useEffect, useState } from "react";
 import { api, useSession } from "@/components/client";
+import { BackupRestore } from "@/components/BackupRestore";
 import { EraseClinic } from "@/components/EraseClinic";
 import { GeminiSettingsModal } from "@/components/GeminiSettingsModal";
 import { StaffManager } from "@/components/StaffManager";
@@ -58,6 +59,8 @@ export default function Admin() {
         </form>
 
         {clinic && <StaffManager roles={["DOCTOR", "PA"]} />}
+
+        <BackupRestore />
 
         {clinic && (
           <div className="grid g2">

@@ -1,0 +1,4 @@
+{"id":"BK-01","title":"Admin downloads a consistent backup","status":"PASS","note":"","ms":99}
+{"id":"BK-02","title":"Only the admin can back up or restore","status":"PASS","note":"","ms":84}
+{"id":"BK-03","title":"A file that isn't a clinic backup is refused with a clear message","status":"PASS","note":"","ms":28}
+{"id":"BK-04","title":"A cancelled restore changes nothing after a restart","status":"PASS","note":"","ms":1260}

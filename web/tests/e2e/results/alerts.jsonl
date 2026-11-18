@@ -1,0 +1,82 @@
+{"id":"RULE-01","title":"BP crisis","status":"PASS","note":"","ms":5411}
+{"id":"RULE-02","title":"BP above limit (well above)","status":"PASS","note":"","ms":5240}
+{"id":"RULE-03","title":"Borderline BP → recheck","status":"PASS","note":"","ms":5060}
+{"id":"RULE-04","title":"Recheck still high","status":"PASS","note":"","ms":5127}
+{"id":"RULE-05","title":"Recheck normal","status":"PASS","note":"","ms":5347}
+{"id":"RULE-06","title":"No recheck → alert anyway","status":"PASS","note":"","ms":5061}
+{"id":"RULE-07","title":"Low BP","status":"PASS","note":"","ms":5196}
+{"id":"RULE-08","title":"Rapid weight gain","status":"PASS","note":"","ms":5489}
+{"id":"RULE-09","title":"Weight above dry-weight band (Gopal 59.2 ± 1)","status":"PASS","note":"","ms":5028}
+{"id":"RULE-10","title":"Weight below band","status":"PASS","note":"","ms":5090}
+{"id":"RULE-11","title":"Very low sugar","status":"PASS","note":"","ms":5041}
+{"id":"RULE-12","title":"Low / high sugar","status":"PASS","note":"","ms":5075}
+{"id":"RULE-13","title":"Pulse outside limits (+ borderline recheck)","status":"PASS","note":"","ms":5381}
+{"id":"RULE-14","title":"Very low oxygen (Abdul)","status":"PASS","note":"","ms":5009}
+{"id":"RULE-15","title":"Oxygen below limit (Abdul, limit 92)","status":"PASS","note":"","ms":5058}
+{"id":"RULE-16","title":"Fever","status":"PASS","note":"","ms":5783}
+{"id":"RULE-17","title":"High pain score (Sunita, limit 7)","status":"PASS","note":"","ms":5318}
+{"id":"RULE-18","title":"Red-flag symptoms: chest pain, fainted, can't breathe","status":"FAIL","note":"BUG: \"I can't breathe\" → no URGENT (got DEVIATION sx:breathlessness); reply: ✅ Logged: • Symptom noted: Breathlessness (moderate) A quick question so the doctor has the full picture: When do you feel breathless? ⚠️ Br. \"can't breathe\" is parsed as breathlessness of moderate severity (lib/parser.ts:17, severityNear lib/parser.ts:158) and evaluateSymptom only makes severe breathlessness URGENT (lib/engine.ts:586); for Ramesh it becomes the watched-symptom DEVIATION and follow-up questions are asked.","ms":15532}
+{"id":"RULE-19","title":"Severe breathlessness","status":"PASS","note":"","ms":5634}
+{"id":"RULE-20","title":"Watched symptom (swelling)","status":"PASS","note":"","ms":4890}
+{"id":"RULE-21","title":"Very high potassium (Gopal)","status":"PASS","note":"","ms":5078}
+{"id":"RULE-22","title":"Potassium high / low, sodium out of range (Gopal)","status":"PASS","note":"","ms":5185}
+{"id":"RULE-23","title":"Creatinine rising (Gopal)","status":"PASS","note":"","ms":4723}
+{"id":"RULE-24","title":"Low haemoglobin (Gopal, limit 8)","status":"PASS","note":"","ms":4940}
+{"id":"RULE-25","title":"Kidney fluid check (2 days over limit / low ratio → next morning after 06:00, once)","status":"PASS","note":"","ms":5749}
+{"id":"RULE-26","title":"Same rule while open → REPEAT","status":"PASS","note":"","ms":5269}
+{"id":"RULE-27","title":"Emergency rules before Visit 1","status":"PASS","note":"","ms":5191}
+{"id":"RULE-28","title":"Abnormal ≠ emergency","status":"PASS","note":"","ms":5311}
+{"id":"RULE-29","title":"AI cannot raise an emergency","status":"NOT_RUN","note":"Needs AI on (no GEMINI/ANTHROPIC key in this environment). AI-off sanity check: ambiguous worrying text raised 0 URGENT alerts.","ms":4774}
+{"id":"ESC-01","title":"L1 notified","status":"PASS","note":"","ms":4792}
+{"id":"ESC-02","title":"L1 acknowledges (ACK / ok / on it / I'll handle it / 👍)","status":"PASS","note":"","ms":4911}
+{"id":"ESC-03","title":"Outcome recorded (2)","status":"FAIL","note":"PLAN: \"2\" does not resolve the alert by itself — it asks for a note first (\"Got it. Briefly, what did the doctor / clinic advise?\"; lib/engine.ts:810-815) and resolves with outcome 2 once the note arrives; L1 thanked and patient told as expected. Only \"1\" resolves at once.","ms":5071}
+{"id":"ESC-04","title":"Outcome with a note (4)","status":"PASS","note":"","ms":5233}
+{"id":"ESC-05","title":"Timeout moves to L2 (deviation 60 min)","status":"PASS","note":"","ms":4949}
+{"id":"ESC-06","title":"Urgent timer 15 min","status":"PASS","note":"","ms":5776}
+{"id":"ESC-07","title":"Compliance timer 120 min","status":"PASS","note":"","ms":5761}
+{"id":"ESC-08","title":"L1 passes it on","status":"PASS","note":"","ms":5845}
+{"id":"ESC-09","title":"Exhausted","status":"PASS","note":"","ms":5420}
+{"id":"ESC-10","title":"Others told when one acknowledges","status":"PASS","note":"","ms":5170}
+{"id":"ESC-11","title":"Only circle members can ACK","status":"PASS","note":"","ms":5780}
+{"id":"ESC-12","title":"Ack after close","status":"PASS","note":"","ms":5644}
+{"id":"ESC-13","title":"Acknowledge from the dashboard, then close","status":"PASS","note":"","ms":5602}
+{"id":"ESC-14","title":"Acknowledged alert does not time out","status":"PASS","note":"","ms":5531}
+{"id":"ESC-15","title":"Plan overrides timers","status":"PASS","note":"","ms":5603}
+{"id":"ESC-16","title":"Declined caregiver is skipped","status":"FAIL","note":"BUG: after Arjun declined consent (told \"You won't receive care-circle alerts\"), the timeout moved the alert to level 2 and sent Arjun 1 alert message(s) (\"⚠️ Care Circle alert — Ramesh Kumar Lakshmi Kumar hasn't responded in 60 min, so\"); Kavya (L3) got 0. notifyLevel/timeoutCaregiver pick the next level without checking consents (lib/engine.ts:392-394, 422).","ms":5430}
+{"id":"ESC-17","title":"Alert timeline","status":"PASS","note":"","ms":5936}
+{"id":"SOS-01","title":"Patient presses SOS","status":"PASS","note":"","ms":5292}
+{"id":"SOS-02","title":"Caregiver presses SOS","status":"PASS","note":"","ms":4890}
+{"id":"SOS-03","title":"SOS escalates after 15 min","status":"PASS","note":"","ms":4675}
+{"id":"SOS-04","title":"Second SOS while open","status":"PASS","note":"","ms":5412}
+{"id":"SOS-05","title":"Unlinked number","status":"PASS","note":"","ms":5143}
+{"id":"SOS-06","title":"Typed \"help\" / \"emergency\"","status":"PASS","note":"","ms":10012}
+{"id":"LOOP-01","title":"Symptom follow-up questions","status":"PASS","note":"","ms":5218}
+{"id":"LOOP-02","title":"Answer matches a rule (At rest → severe breathlessness)","status":"PASS","note":"","ms":5056}
+{"id":"LOOP-03","title":"Lying flat → orthopnoea; near-faint → fainting red flag","status":"PASS","note":"","ms":5051}
+{"id":"LOOP-04","title":"Reading interrupts the questions","status":"PASS","note":"","ms":5192}
+{"id":"LOOP-05","title":"Not asked again within 12 h","status":"PASS","note":"","ms":4893}
+{"id":"LOOP-06","title":"Recheck after an alert closes (2 h; weight next morning)","status":"PASS","note":"","ms":4973}
+{"id":"LOOP-07","title":"Recheck normal → closer told","status":"PASS","note":"","ms":4881}
+{"id":"LOOP-08","title":"Recheck still out of range → alert without the borderline hold","status":"PASS","note":"","ms":4941}
+{"id":"LOOP-09","title":"No recheck → caregiver told","status":"PASS","note":"","ms":4952}
+{"id":"LOOP-10","title":"No recheck after hospital (3)","status":"PASS","note":"","ms":5052}
+{"id":"LOOP-11","title":"Recheck already in the plan → no extra request","status":"PASS","note":"","ms":5080}
+{"id":"WATCH-01","title":"Weight creep","status":"FAIL","note":"PLAN: heads-up sent to patient and L1 once and the watch is on the chart, but not \"next morning after 09:30\": evaluateWatches also runs right after each reading (lib/engine.ts:1056), so it opened at 21:56 IST right after the 3rd reading.","ms":5311}
+{"id":"WATCH-06","title":"Turn a pattern off","status":"PASS","note":"","ms":76}
+{"id":"WATCH-07","title":"Not repeated next morning","status":"PASS","note":"","ms":73}
+{"id":"WATCH-05","title":"Dismiss","status":"PASS","note":"","ms":191}
+{"id":"WATCH-02","title":"BP drift","status":"PASS","note":"","ms":5955}
+{"id":"WATCH-04","title":"Adherence slip","status":"PASS","note":"","ms":0}
+{"id":"WATCH-03","title":"Fluid build-up","status":"PASS","note":"","ms":5246}
+{"id":"DOC-01","title":"Device photo [AI±]","status":"PASS","note":"","ms":4971}
+{"id":"DOC-02","title":"Device photo rejected","status":"PASS","note":"","ms":5063}
+{"id":"DOC-03","title":"Prescription / lab photo [AI±]","status":"PASS","note":"","ms":4944}
+{"id":"DOC-04","title":"Nothing filed before confirmation","status":"PASS","note":"","ms":519}
+{"id":"DOC-05","title":"Confirm & file","status":"PASS","note":"","ms":31}
+{"id":"DOC-06","title":"Same report twice","status":"PASS","note":"","ms":18}
+{"id":"DOC-07","title":"PDF","status":"PASS","note":"","ms":4785}
+{"id":"DOC-08","title":"Clinic upload: edit, verify, download","status":"PASS","note":"","ms":4892}
+{"id":"DOC-09","title":"Delete document with its data","status":"PASS","note":"","ms":4903}
+{"id":"DOC-10","title":"Unsupported file (.exe / huge)","status":"FAIL","note":"PLAN: a 51 MB file is rejected (\"Files are limited to 50 MB\"), but an .exe (application/x-msdownload) is accepted and stored as document 1 with reply \"📄 Received “setup.exe”. It's been added to the record for your care team to review. If it\". addDocument has no type allowlist (lib/records.ts:206); the download route deliberately serves unknown types as opaque attachments (app/api/documents/[id]/route.ts:15), so this looks intentional — the plan's \"rejected\" isn't how it is designed.","ms":5783}
+{"id":"DOC-11","title":"Voice note [AI±] (typed transcript)","status":"PASS","note":"","ms":5188}
+{"id":"DOC-12","title":"Reader output never shown as real (AI off)","status":"PASS","note":"","ms":6018}

@@ -1,0 +1,12 @@
+{"id":"CLIN-01","title":"First run on an empty database","status":"FAIL","note":"PLAN: no Getting Started checklist on first run. The admin sees the \"Set up your clinic\" form (app/admin/page.tsx:46) and the picker's \"Start here\" card; the GettingStarted checklist component is rendered only on the assistant's Today page (components/today/PaToday.tsx:85), which needs a PA to exist. Only-admin part passes.","ms":1734}
+{"id":"CLIN-02","title":"Set up the clinic","status":"PASS","note":"","ms":767}
+{"id":"CLIN-03","title":"Add a PA and a second doctor","status":"PASS","note":"","ms":741}
+{"id":"CLIN-04","title":"Edit staff","status":"PASS","note":"","ms":1026}
+{"id":"CLIN-06","title":"Cannot remove a doctor who still has patients","status":"PASS","note":"","ms":25}
+{"id":"CLIN-05","title":"Remove staff","status":"FAIL","note":"BUG: history loses the removed PA's name: the note is still there but author_name = null. removeStaff hard-deletes the user row (lib/clinic.ts:125) and notes/audit/review screens resolve names by joining users (lib/records.ts:138), so they show no author.","ms":38}
+{"id":"CLIN-07","title":"Validation","status":"PASS","note":"","ms":572}
+{"id":"CLIN-08","title":"Edit clinic details","status":"PASS","note":"","ms":383}
+{"id":"AUTH-12","title":"Admin navigation","status":"PASS","note":"","ms":3236}
+{"id":"CLIN-11","title":"AI settings [AI off at start]","status":"FAIL","note":"BUG: /api/settings/gemini has no authorization — a signed-out request replaced the clinic's Gemini key (POST -> 200) and GET returns the masked key to anyone (200); compare anthropic/route.ts:8-11 which allows only admin/doctor (app/api/settings/gemini/route.ts:6-27). PLAN: keys cannot be cleared — empty key is rejected (gemini 400 \"apiKey required\", anthropic 400); there is no clear/delete action in app/api/settings/gemini/route.ts:18 or anthropic/route.ts:25 and none in components/GeminiSettingsModal.tsx","ms":127}
+{"id":"CLIN-09","title":"Reset clinic","status":"PASS","note":"","ms":407}
+{"id":"CLIN-10","title":"Reset blocked in demo API for live","status":"PASS","note":"","ms":10}

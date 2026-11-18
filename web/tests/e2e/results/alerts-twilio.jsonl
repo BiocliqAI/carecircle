@@ -1,0 +1,10 @@
+{"id":"TW-01","title":"Webhook signature","status":"PASS","note":"","ms":528}
+{"id":"TW-02","title":"Valid inbound message","status":"PASS","note":"","ms":44}
+{"id":"TW-03","title":"Idempotent inbound","status":"PASS","note":"","ms":1526}
+{"id":"TW-04","title":"Inbound media (download + size limit)","status":"PASS","note":"","ms":463}
+{"id":"TW-05","title":"Delivery status callbacks","status":"FAIL","note":"BUG: message status is updated (delivered; failed with error 30008 kept in messages.wa_error), but no API or page shows delivery failures to the clinic — wa_status/wa_error are only read in lib/whatsapp.ts and lib/engine.ts (no reference under app/ or components/).","ms":55}
+{"id":"TW-06","title":"Templates outside 24 h","status":"NOT_RUN","note":"Needs a real Twilio account and approved templates delivered to an allowlisted test phone; with the fake credentials any allowlisted send would hit api.twilio.com. Template choice logic (lib/whatsapp.ts hold()) not exercised end to end.","ms":0}
+{"id":"TW-07","title":"Buttons","status":"NOT_RUN","note":"Needs a real Twilio account (Content API button resources are created on send, lib/twilio.ts buttonsContent).","ms":0}
+{"id":"TW-08","title":"Long message split","status":"NOT_RUN","note":"Needs a real Twilio send to observe the split parts (lib/whatsapp.ts splitText/sendSession).","ms":0}
+{"id":"TW-09","title":"Stranger","status":"FAIL","note":"PLAN: polite reply sent, nothing revealed, body not stored — but nothing is \"logged for the clinic\": only timestamps are kept (wa:lastin:+919000088888, wa:stranger:whatsapp:+919000088888) and no page lists unknown senders. By design (app/api/twilio/inbound/route.ts:22 \"only the time they wrote is kept\").","ms":533}
+{"id":"TW-10","title":"No health data in logs","status":"PASS","note":"checked 632 bytes of server logs (demo + live) for message bodies/readings; none found","ms":0}

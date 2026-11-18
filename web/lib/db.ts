@@ -3,6 +3,7 @@ import type { DatabaseSync as DatabaseSyncT } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 import { LIVE } from "./mode";
+import { applyPendingRestore, takeRestoreMarker } from "./backup";
 
 type SqliteModule = typeof import("node:sqlite");
 
@@ -210,12 +211,18 @@ export function getDb(): DatabaseSyncT {
   const sqlite = process.getBuiltinModule("node:sqlite") as SqliteModule;
   const file = dbPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  applyPendingRestore(file); // a backup the admin uploaded goes in place before the database is opened
   const db = new sqlite.DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
   db.exec(SCHEMA);
   migrate(db);
   g.__ccDb = db;
   g.__ccSchema = SCHEMA;
+  const restored = takeRestoreMarker(file);
+  if (restored) {
+    setSetting("restore:last", JSON.stringify(restored));
+    audit(restored.restoredAt, restored.stagedBy, "CLINIC_RESTORED", "clinic", "database", restored);
+  }
   return db;
 }
 
